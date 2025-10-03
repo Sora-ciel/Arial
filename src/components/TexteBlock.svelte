@@ -21,8 +21,8 @@
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
-  function sendUpdate() {
-    dispatch('update', { id, position, size, bgColor, textColor, content });
+  function sendUpdate({ pushToHistory = true } = {}) {
+    dispatch('update', { id, position, size, bgColor, textColor, content, pushToHistory });
   }
 
   // Drag start
@@ -219,7 +219,7 @@
     <textarea
       spellcheck="false"
       bind:value={content}
-      on:input={sendUpdate}
+      on:input={() => sendUpdate({ pushToHistory: false })}
     ></textarea>
   </div>
 

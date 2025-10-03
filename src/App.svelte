@@ -79,13 +79,15 @@ async function pushHistory(newBlocks) {
     pushHistory(blocks);
   }
 
-  async function updateBlockHandler(event, pushToHistory = true) {
-    const idx = blocks.findIndex(b => b.id === event.detail.id);
+  async function updateBlockHandler(event) {
+    const { pushToHistory = true, ...detail } = event.detail || {};
+
+    const idx = blocks.findIndex(b => b.id === detail.id);
     if (idx === -1) return;
 
-    const updatedBlock = { 
-      ...blocks[idx], 
-      ...event.detail, 
+    const updatedBlock = {
+      ...blocks[idx],
+      ...detail,
       _version: pushToHistory ? (blocks[idx]._version || 0) + 1 : blocks[idx]._version || 0
     };
 
