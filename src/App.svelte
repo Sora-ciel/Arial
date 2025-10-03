@@ -19,41 +19,51 @@
   let history = [];
   let historyIndex = -1;
 
-async function pushHistory(newBlocks) {
-  // Increment _version for all blocks to ensure a unique snapshot
-  const blocksWithVersion = newBlocks.map(b => ({ ...b, _version: (b._version || 0) + 1 }));
-
-  const snapshot = JSON.stringify(blocksWithVersion);
-
-  // Only skip duplicates if snapshot is exactly same
-  if (historyIndex >= 0 && history[historyIndex] === snapshot) return;
-
-  if (historyIndex < history.length - 1) history = history.slice(0, historyIndex + 1);
-
-  history.push(snapshot);
-  historyIndex++;
-
-  // Update blocks immediately
-  blocks = blocksWithVersion;
-
-  // auto-save
-  if (currentSaveName) {
-    await saveBlocks(currentSaveName, blocksWithVersion);
+  async function persistAutosave(blocksToPersist) {
+    if (!currentSaveName) return;
+    await saveBlocks(currentSaveName, blocksToPersist);
     savedList = await listSavedBlocks();
   }
-}
 
-  function undo() {
+  async function pushHistory(newBlocks) {
+    // Increment _version for all blocks to ensure a unique snapshot
+    const blocksWithVersion = newBlocks.map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+
+    const snapshot = JSON.stringify(blocksWithVersion);
+
+    // Only skip duplicates if snapshot is exactly same
+    if (historyIndex >= 0 && history[historyIndex] === snapshot) {
+      blocks = blocksWithVersion;
+      await persistAutosave(blocksWithVersion);
+      return;
+    }
+
+    if (historyIndex < history.length - 1) history = history.slice(0, historyIndex + 1);
+
+    history.push(snapshot);
+    historyIndex++;
+
+    // Update blocks immediately
+    blocks = blocksWithVersion;
+
+    await persistAutosave(blocksWithVersion);
+  }
+
+  async function undo() {
     if (historyIndex > 0) {
       historyIndex--;
-      blocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      blocks = snapshotBlocks;
+      await persistAutosave(snapshotBlocks);
     }
   }
 
-  function redo() {
+  async function redo() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
-      blocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      blocks = snapshotBlocks;
+      await persistAutosave(snapshotBlocks);
     }
   }
 
@@ -97,9 +107,9 @@ async function pushHistory(newBlocks) {
       // Only remount when making a snapshot
       blocks = [...blocks];
       await pushHistory(blocks);
-    } else if (currentSaveName) {
+    } else {
       // Auto-save without triggering remount
-      await saveBlocks(currentSaveName, blocks);
+      await persistAutosave(blocks);
     }
   }
 
