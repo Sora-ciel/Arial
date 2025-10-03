@@ -26,9 +26,16 @@
     if (editableDiv) editableDiv.innerText = content;
   });
 
-  function sendUpdate({ pushToHistory = true } = {}) {
-    content = editableDiv.innerText;
-    dispatch('update', { id, position, size, bgColor, textColor, content, pushToHistory });
+  function sendUpdate(changedKeys, { pushToHistory } = {}) {
+    content = editableDiv?.innerText ?? content;
+
+    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
+    const detail = { id, position, size, bgColor, textColor, content };
+
+    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
+    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
+
+    dispatch('update', detail);
   }
 
   // Drag start
@@ -67,7 +74,7 @@
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
-    sendUpdate();
+    sendUpdate(['position']);
   }
 
   // Resize start
@@ -108,7 +115,7 @@
     window.removeEventListener('mouseup', onResizeEnd);
     window.removeEventListener('touchmove', onResizing);
     window.removeEventListener('touchend', onResizeEnd);
-    sendUpdate();
+    sendUpdate(['size']);
   }
 
   // Delete
@@ -215,8 +222,8 @@
       <button on:click={() => showSettings = !showSettings} class="gear-btn" aria-label="Settings">
         ⚙︎
       </button>
-      <input type="color" bind:value={bgColor} title="BG" on:change={sendUpdate} />
-      <input type="color" bind:value={textColor} title="Text" on:change={sendUpdate} />
+      <input type="color" bind:value={bgColor} title="BG" on:change={() => sendUpdate(['bgColor'])} />
+      <input type="color" bind:value={textColor} title="Text" on:change={() => sendUpdate(['textColor'])} />
       <button class="delete-btn" on:click={deleteBlock}>×</button>
     </div>
   </div>
@@ -226,7 +233,7 @@
     bind:this={editableDiv}
     class="editable"
     spellcheck="false"
-    on:input={() => sendUpdate({ pushToHistory: false })}
+    on:input={() => sendUpdate(['content'], { pushToHistory: false })}
   ></div>
 
   <div

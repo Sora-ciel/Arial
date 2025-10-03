@@ -8,8 +8,16 @@
     dispatch('delete', { id });
   }
 
-  function updateBlock(id, updates, { pushToHistory = true } = {}) {
-    dispatch('update', { id, ...updates, pushToHistory });
+  function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
+    const detail = { id, ...updates };
+    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
+      ? changedKeys
+      : Object.keys(updates || {});
+
+    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
+    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
+
+    dispatch('update', detail);
   }
 
   function autoResize(textarea) {
@@ -216,7 +224,7 @@ li {
             style="overflow:hidden;"
             on:input={(e) => {
               autoResize(e.target);
-              updateBlock(block.id, { content: e.target.value }, { pushToHistory: false });
+              updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
             }}
             on:focus={(e) => focusScroll(e.target)}
             placeholder="Type your note here..."
