@@ -5,6 +5,20 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
 
+  const DEFAULT_HISTORY_TRIGGERS = {
+    text: ['position', 'size', 'bgColor', 'textColor'],
+    cleantext: ['position', 'size', 'bgColor', 'textColor'],
+    image: ['position', 'size', 'bgColor', 'textColor', 'src'],
+    music: ['position', 'size', 'bgColor', 'textColor', 'trackUrl', 'title', 'content'],
+    embed: ['position', 'size', 'bgColor', 'textColor', 'content'],
+    __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
+  };
+
+  function applyHistoryTriggers(block) {
+    const triggers = block.historyTriggers ?? DEFAULT_HISTORY_TRIGGERS[block.type] ?? DEFAULT_HISTORY_TRIGGERS.__default;
+    return { ...block, historyTriggers: triggers };
+  }
+
   let controlsRef;
   let canvasRef;
 
@@ -19,47 +33,66 @@
   let history = [];
   let historyIndex = -1;
 
-async function pushHistory(newBlocks) {
-  // Increment _version for all blocks to ensure a unique snapshot
-  const blocksWithVersion = newBlocks.map(b => ({ ...b, _version: (b._version || 0) + 1 }));
-
-  const snapshot = JSON.stringify(blocksWithVersion);
-
-  // Only skip duplicates if snapshot is exactly same
-  if (historyIndex >= 0 && history[historyIndex] === snapshot) return;
-
-  if (historyIndex < history.length - 1) history = history.slice(0, historyIndex + 1);
-
-  history.push(snapshot);
-  historyIndex++;
-
-  // Update blocks immediately
-  blocks = blocksWithVersion;
-
-  // auto-save
-  if (currentSaveName) {
-    await saveBlocks(currentSaveName, blocksWithVersion);
+  async function persistAutosave(blocksToPersist) {
+    if (!currentSaveName) return;
+    await saveBlocks(currentSaveName, blocksToPersist);
     savedList = await listSavedBlocks();
   }
-}
 
-  function undo() {
+  async function pushHistory(newBlocks) {
+    // Increment _version for all blocks to ensure a unique snapshot
+    const blocksWithVersion = newBlocks.map((b) => {
+      const withTriggers = applyHistoryTriggers(b);
+      return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
+    });
+
+    const snapshot = JSON.stringify(blocksWithVersion);
+
+    // Only skip duplicates if snapshot is exactly same
+    if (historyIndex >= 0 && history[historyIndex] === snapshot) {
+      blocks = blocksWithVersion;
+      await persistAutosave(blocksWithVersion);
+      return;
+    }
+
+    if (historyIndex < history.length - 1) history = history.slice(0, historyIndex + 1);
+
+    history.push(snapshot);
+    historyIndex++;
+
+    // Update blocks immediately
+    blocks = blocksWithVersion;
+
+    await persistAutosave(blocksWithVersion);
+  }
+
+  async function undo() {
     if (historyIndex > 0) {
       historyIndex--;
-      blocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map((b) => {
+        const withTriggers = applyHistoryTriggers(b);
+        return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
+      });
+      blocks = snapshotBlocks;
+      await persistAutosave(snapshotBlocks);
     }
   }
 
-  function redo() {
+  async function redo() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
-      blocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map((b) => {
+        const withTriggers = applyHistoryTriggers(b);
+        return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
+      });
+      blocks = snapshotBlocks;
+      await persistAutosave(snapshotBlocks);
     }
   }
 
   // --- Block operations ---
   function addBlock(type = 'text') {
-    const newBlock = {
+    const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
       content: '',
@@ -69,7 +102,7 @@ async function pushHistory(newBlocks) {
       bgColor: '#000000',
       textColor: '#ffffff',
       _version: 0
-    };
+    });
     blocks = [...blocks, newBlock];
     pushHistory(blocks);
   }
@@ -80,26 +113,46 @@ async function pushHistory(newBlocks) {
   }
 
   async function updateBlockHandler(event) {
-    const { pushToHistory = true, ...detail } = event.detail || {};
+    const detail = event.detail || {};
+    const {
+      pushToHistory,
+      changedKeys,
+      id,
+      historyTriggers: incomingHistoryTriggers,
+      ...updates
+    } = detail;
 
-    const idx = blocks.findIndex(b => b.id === detail.id);
+    const idx = blocks.findIndex((b) => b.id === id);
     if (idx === -1) return;
 
+    const existing = blocks[idx];
+    const historyTriggers = incomingHistoryTriggers ?? existing.historyTriggers ?? DEFAULT_HISTORY_TRIGGERS[existing.type] ?? DEFAULT_HISTORY_TRIGGERS.__default;
+    const normalizedChangedKeys = Array.isArray(changedKeys) && changedKeys.length
+      ? changedKeys
+      : Object.keys(updates);
+
+    let shouldSnapshot;
+    if (typeof pushToHistory === 'boolean') {
+      shouldSnapshot = pushToHistory;
+    } else if (normalizedChangedKeys.length) {
+      shouldSnapshot = normalizedChangedKeys.some((key) => historyTriggers.includes(key));
+    } else {
+      shouldSnapshot = true;
+    }
+
     const updatedBlock = {
-      ...blocks[idx],
-      ...detail,
-      _version: pushToHistory ? (blocks[idx]._version || 0) + 1 : blocks[idx]._version || 0
+      ...existing,
+      ...updates,
+      historyTriggers
     };
 
-    blocks[idx] = updatedBlock;
+    const newBlocks = blocks.map((block, index) => (index === idx ? updatedBlock : block));
 
-    if (pushToHistory) {
-      // Only remount when making a snapshot
-      blocks = [...blocks];
-      await pushHistory(blocks);
-    } else if (currentSaveName) {
-      // Auto-save without triggering remount
-      await saveBlocks(currentSaveName, blocks);
+    if (shouldSnapshot) {
+      await pushHistory(newBlocks);
+    } else {
+      blocks = newBlocks;
+      await persistAutosave(newBlocks);
     }
   }
 
@@ -118,7 +171,7 @@ async function pushHistory(newBlocks) {
     currentSaveName = '';
     await tick();
     currentSaveName = name;
-    blocks = (await loadBlocks(name)).map(b => ({ ...b, _version: 0 }));
+    blocks = (await loadBlocks(name)).map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
     pushHistory(blocks);
   }
 
@@ -148,7 +201,7 @@ async function pushHistory(newBlocks) {
       try {
         const imported = JSON.parse(e.target.result);
         if (Array.isArray(imported)) {
-          blocks = imported.map(b => ({ ...b, _version: 0 }));
+          blocks = imported.map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
           pushHistory(blocks);
           alert('Imported successfully!');
         } else alert('Invalid file structure!');
@@ -178,7 +231,7 @@ async function pushHistory(newBlocks) {
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
-    blocks = (await loadBlocks(currentSaveName)).map(b => ({ ...b, _version: 0 }));
+    blocks = (await loadBlocks(currentSaveName)).map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
 
     // Initialize history AFTER load
     history = [JSON.stringify(blocks)];
