@@ -5,6 +5,20 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
 
+  const DEFAULT_HISTORY_TRIGGERS = {
+    text: ['position', 'size', 'bgColor', 'textColor'],
+    cleantext: ['position', 'size', 'bgColor', 'textColor'],
+    image: ['position', 'size', 'bgColor', 'textColor', 'src'],
+    music: ['position', 'size', 'bgColor', 'textColor', 'trackUrl', 'title', 'content'],
+    embed: ['position', 'size', 'bgColor', 'textColor', 'content'],
+    __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
+  };
+
+  function applyHistoryTriggers(block) {
+    const triggers = block.historyTriggers ?? DEFAULT_HISTORY_TRIGGERS[block.type] ?? DEFAULT_HISTORY_TRIGGERS.__default;
+    return { ...block, historyTriggers: triggers };
+  }
+
   let controlsRef;
   let canvasRef;
 
@@ -69,7 +83,7 @@
 
   // --- Block operations ---
   function addBlock(type = 'text') {
-    const newBlock = {
+    const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
       content: '',
@@ -79,7 +93,7 @@
       bgColor: '#000000',
       textColor: '#ffffff',
       _version: 0
-    };
+    });
     blocks = [...blocks, newBlock];
     pushHistory(blocks);
   }
@@ -90,18 +104,40 @@
   }
 
   async function updateBlockHandler(event) {
-    const { pushToHistory = true, ...detail } = event.detail || {};
+    const detail = event.detail || {};
+    const {
+      pushToHistory,
+      changedKeys,
+      id,
+      historyTriggers: incomingHistoryTriggers,
+      ...updates
+    } = detail;
 
-    const idx = blocks.findIndex(b => b.id === detail.id);
+    const idx = blocks.findIndex((b) => b.id === id);
     if (idx === -1) return;
 
+    const existing = blocks[idx];
+    const historyTriggers = incomingHistoryTriggers ?? existing.historyTriggers ?? DEFAULT_HISTORY_TRIGGERS[existing.type] ?? DEFAULT_HISTORY_TRIGGERS.__default;
+    const normalizedChangedKeys = Array.isArray(changedKeys) && changedKeys.length
+      ? changedKeys
+      : Object.keys(updates);
+
+    let shouldSnapshot;
+    if (typeof pushToHistory === 'boolean') {
+      shouldSnapshot = pushToHistory;
+    } else if (normalizedChangedKeys.length) {
+      shouldSnapshot = normalizedChangedKeys.some((key) => historyTriggers.includes(key));
+    } else {
+      shouldSnapshot = true;
+    }
+
     const updatedBlock = {
-      ...blocks[idx],
-      ...detail,
-      _version: pushToHistory ? (blocks[idx]._version || 0) + 1 : blocks[idx]._version || 0
+      ...existing,
+      ...updates,
+      historyTriggers
     };
 
-    blocks[idx] = updatedBlock;
+    const newBlocks = blocks.map((block, index) => (index === idx ? updatedBlock : block));
 
     if (pushToHistory) {
       // Only remount when making a snapshot
@@ -128,7 +164,7 @@
     currentSaveName = '';
     await tick();
     currentSaveName = name;
-    blocks = (await loadBlocks(name)).map(b => ({ ...b, _version: 0 }));
+    blocks = (await loadBlocks(name)).map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
     pushHistory(blocks);
   }
 
@@ -158,7 +194,7 @@
       try {
         const imported = JSON.parse(e.target.result);
         if (Array.isArray(imported)) {
-          blocks = imported.map(b => ({ ...b, _version: 0 }));
+          blocks = imported.map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
           pushHistory(blocks);
           alert('Imported successfully!');
         } else alert('Invalid file structure!');
@@ -188,7 +224,7 @@
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
-    blocks = (await loadBlocks(currentSaveName)).map(b => ({ ...b, _version: 0 }));
+    blocks = (await loadBlocks(currentSaveName)).map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
 
     // Initialize history AFTER load
     history = [JSON.stringify(blocks)];

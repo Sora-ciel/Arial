@@ -21,8 +21,14 @@
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
-  function sendUpdate({ pushToHistory = true } = {}) {
-    dispatch('update', { id, position, size, bgColor, textColor, content, pushToHistory });
+  function sendUpdate(changedKeys, { pushToHistory } = {}) {
+    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
+    const detail = { id, position, size, bgColor, textColor, content };
+
+    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
+    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
+
+    dispatch('update', detail);
   }
 
   // Drag start
@@ -51,7 +57,6 @@
     position.y = clientY - offset.y;
 
     if (e.cancelable) e.preventDefault();
-    sendUpdate();
   }
 
   // Drag end
@@ -61,6 +66,7 @@
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
+    sendUpdate(['position']);
   }
 
   // Resize start
@@ -99,7 +105,6 @@
     size.height = Math.max(50, resizeStart.height + deltaY);
 
     if (e.cancelable) e.preventDefault();
-    sendUpdate();
   }
 
   // Resize end
@@ -110,6 +115,7 @@
     window.removeEventListener('mouseup', onResizeEnd);
     window.removeEventListener('touchmove', onResizing);
     window.removeEventListener('touchend', onResizeEnd);
+    sendUpdate(['size']);
   }
 
   // Delete block
@@ -206,10 +212,10 @@
     <div>text</div>
     <div class="header-controls" on:mousedown|stopPropagation>
       <label title="Background Color">
-        <input type="color" bind:value={bgColor} on:change={sendUpdate}/>
+        <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
       </label>
       <label title="Text Color">
-        <input type="color" bind:value={textColor} on:change={sendUpdate}/>
+        <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
       </label>
       <button class="delete-btn" on:click={deleteBlock}>×</button>
     </div>
@@ -219,7 +225,7 @@
     <textarea
       spellcheck="false"
       bind:value={content}
-      on:input={() => sendUpdate({ pushToHistory: false })}
+      on:input={() => sendUpdate(['content'], { pushToHistory: false })}
     ></textarea>
   </div>
 
