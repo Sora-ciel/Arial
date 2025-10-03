@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Arial</string>
+    <string name="title_activity_main">Arial</string>
+    <string name="package_name">com.sora.arial</string>
+    <string name="custom_url_scheme">com.sora.arial</string>
+</resources>
