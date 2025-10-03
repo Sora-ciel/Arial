@@ -8,8 +8,8 @@
     dispatch('delete', { id });
   }
 
-  function updateBlock(id, updates) {
-    dispatch('update', { id, ...updates });
+  function updateBlock(id, updates, { pushToHistory = true } = {}) {
+    dispatch('update', { id, ...updates, pushToHistory });
   }
 
   function autoResize(textarea) {
@@ -216,7 +216,7 @@ li {
             style="overflow:hidden;"
             on:input={(e) => {
               autoResize(e.target);
-              updateBlock(block.id, { content: e.target.value });
+              updateBlock(block.id, { content: e.target.value }, { pushToHistory: false });
             }}
             on:focus={(e) => focusScroll(e.target)}
             placeholder="Type your note here..."

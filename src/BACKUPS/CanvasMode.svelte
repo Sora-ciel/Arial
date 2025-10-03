@@ -31,7 +31,7 @@
   }
 
   function updateBlockHandler(event) {
-   dispatch ('update', event.detail);
+   dispatch('update', { ...event.detail });
   }
 
 
@@ -174,7 +174,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             on:delete={deleteBlockHandler}
-            on:update={e => updateBlockHandler(e, false)}
+            on:update={updateBlockHandler}
 
           />
         {:else if block.type === 'image'}
@@ -197,7 +197,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             on:delete={deleteBlockHandler}
-            on:update={e => updateBlockHandler(e, false)}
+            on:update={updateBlockHandler}
 
           />
         {:else if block.type === 'music'}

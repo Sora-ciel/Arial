@@ -26,9 +26,9 @@
     if (editableDiv) editableDiv.innerText = content;
   });
 
-  function sendUpdate() {
+  function sendUpdate({ pushToHistory = true } = {}) {
     content = editableDiv.innerText;
-    dispatch('update', { id, position, size, bgColor, textColor, content });
+    dispatch('update', { id, position, size, bgColor, textColor, content, pushToHistory });
   }
 
   // Drag start
@@ -226,7 +226,7 @@
     bind:this={editableDiv}
     class="editable"
     spellcheck="false"
-    on:input={sendUpdate}
+    on:input={() => sendUpdate({ pushToHistory: false })}
   ></div>
 
   <div
