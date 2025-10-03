@@ -22,8 +22,9 @@
   let offset = { x: 0, y: 0 }, resizeStart = {};
   let showSettings = false;
 
-  function sendUpdate() {
-    dispatch('update', {
+  function sendUpdate(changedKeys, { pushToHistory } = {}) {
+    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
+    const detail = {
       id,
       position,
       size,
@@ -31,7 +32,12 @@
       textColor,
       trackUrl,
       title
-    });
+    };
+
+    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
+    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
+
+    dispatch('update', detail);
   }
 
   // Handle local audio file upload
@@ -39,7 +45,7 @@
     const file = event.target.files?.[0];
     if (file) {
       trackUrl = URL.createObjectURL(file);
-      sendUpdate();
+      sendUpdate(['trackUrl']);
     }
   }
 
@@ -72,7 +78,7 @@
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
-    sendUpdate();
+    sendUpdate(['position']);
   }
 
   // Resize start
@@ -106,7 +112,7 @@
     window.removeEventListener('mouseup', onResizeEnd);
     window.removeEventListener('touchmove', onResizing);
     window.removeEventListener('touchend', onResizeEnd);
-    sendUpdate();
+    sendUpdate(['size']);
   }
 
   function deleteBlock() {
@@ -204,8 +210,8 @@
     <span>{title}</span>
     <div class="header-controls" on:mousedown|stopPropagation>
       <button on:click={() => showSettings = !showSettings} class="gear-btn">⚙︎</button>
-      <input type="color" bind:value={bgColor} on:change={sendUpdate} />
-      <input type="color" bind:value={textColor} on:change={sendUpdate} />
+      <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])} />
+      <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])} />
       <button class="delete-btn" on:click={deleteBlock}>×</button>
     </div>
   </div>
@@ -219,12 +225,12 @@
       <audio controls src={trackUrl}></audio>
       <label>
         Title:
-        <input type="text" bind:value={title} on:input={sendUpdate} />
+        <input type="text" bind:value={title} on:input={() => sendUpdate(['title'])} />
       </label>
       <br />
       <label>
         Track URL:
-        <input type="text" bind:value={trackUrl} on:input={sendUpdate} placeholder="https://example.com/song.mp3" />
+        <input type="text" bind:value={trackUrl} on:input={() => sendUpdate(['trackUrl'])} placeholder="https://example.com/song.mp3" />
       </label>
       <br />
       <label>

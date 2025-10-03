@@ -26,8 +26,14 @@
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
 
-  function sendUpdate() {
-    dispatch('update', { id, position, size, bgColor, textColor, src });
+  function sendUpdate(changedKeys, { pushToHistory } = {}) {
+    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
+    const detail = { id, position, size, bgColor, textColor, src };
+
+    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
+    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
+
+    dispatch('update', detail);
   }
 
 
@@ -63,7 +69,7 @@
           aspectRatio = targetWidth / targetHeight;   // media content ratio only
 
 
-          sendUpdate();
+          sendUpdate(['src', 'size']);
         };
       } else {
         const videoEl = document.createElement('video');
@@ -83,7 +89,7 @@
           size.width = targetWidth;
           size.height = targetHeight + HEADER_HEIGHT;
 
-          sendUpdate();
+          sendUpdate(['src', 'size']);
         };
       }
     };
@@ -127,7 +133,7 @@ function onMouseUp() {
   window.removeEventListener('mouseup', onMouseUp);
   window.removeEventListener('touchmove', onMouseMove);
   window.removeEventListener('touchend', onMouseUp);
-  sendUpdate();
+  sendUpdate(['position']);
 }
 
 
@@ -177,7 +183,7 @@ function onResizeEnd() {
   window.removeEventListener('mouseup', onResizeEnd);
   window.removeEventListener('touchmove', onResizing);
   window.removeEventListener('touchend', onResizeEnd);
-  sendUpdate();
+  sendUpdate(['size']);
 }
 
 
@@ -290,8 +296,8 @@ function onResizeEnd() {
     <div>image</div>
     <div class="header-controls" on:mousedown|stopPropagation>
 
-        <input type="color" bind:value={bgColor} on:change={sendUpdate}/>
-        <input type="color" bind:value={textColor} on:change={sendUpdate}/>
+        <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
+        <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
 
       <label title="Change Image" class="media-btn">
         <input type="file" accept="image/*,video/mp4" on:change={onMediaChange} />
