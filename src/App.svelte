@@ -41,10 +41,7 @@
 
   async function pushHistory(newBlocks) {
     // Increment _version for all blocks to ensure a unique snapshot
-    const blocksWithVersion = newBlocks.map((b) => {
-      const withTriggers = applyHistoryTriggers(b);
-      return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
-    });
+    const blocksWithVersion = newBlocks.map(b => ({ ...b, _version: (b._version || 0) + 1 }));
 
     const snapshot = JSON.stringify(blocksWithVersion);
 
@@ -69,10 +66,7 @@
   async function undo() {
     if (historyIndex > 0) {
       historyIndex--;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map((b) => {
-        const withTriggers = applyHistoryTriggers(b);
-        return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
-      });
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
       blocks = snapshotBlocks;
       await persistAutosave(snapshotBlocks);
     }
@@ -81,10 +75,7 @@
   async function redo() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map((b) => {
-        const withTriggers = applyHistoryTriggers(b);
-        return { ...withTriggers, _version: (withTriggers._version || 0) + 1 };
-      });
+      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({ ...b, _version: (b._version || 0) + 1 }));
       blocks = snapshotBlocks;
       await persistAutosave(snapshotBlocks);
     }
@@ -148,11 +139,13 @@
 
     const newBlocks = blocks.map((block, index) => (index === idx ? updatedBlock : block));
 
-    if (shouldSnapshot) {
-      await pushHistory(newBlocks);
+    if (pushToHistory) {
+      // Only remount when making a snapshot
+      blocks = [...blocks];
+      await pushHistory(blocks);
     } else {
-      blocks = newBlocks;
-      await persistAutosave(newBlocks);
+      // Auto-save without triggering remount
+      await persistAutosave(blocks);
     }
   }
 
