@@ -27,6 +27,10 @@
 
   let mode = "default";
   let blocks = [];
+  let blocksRenderNonce = 0;
+  $: blocksKey = `${blocksRenderNonce}:${blocks
+    .map(b => `${b.id}:${b._version ?? 0}`)
+    .join('|')}`;
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
@@ -55,6 +59,7 @@
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = blocksWithVersion;
+      blocksRenderNonce += 1;
       await persistAutosave(blocksWithVersion);
       return;
     }
@@ -67,6 +72,7 @@
     historyIndex++;
 
     blocks = blocksWithVersion;
+    blocksRenderNonce += 1;
 
     await persistAutosave(blocksWithVersion);
   }
@@ -80,7 +86,8 @@
         position: { ...b.position },
         size: { ...b.size }
       }));
-      blocks = snapshotBlocks;
+      blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -94,7 +101,8 @@
         position: { ...b.position },
         size: { ...b.size }
       }));
-      blocks = snapshotBlocks;
+      blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -371,14 +379,16 @@
   </div>
 
   <div class="modes">
-  <ModeArea
-    {mode}
-    {blocks}
-    {groupedBlocks}
-    bind:canvasRef
-    on:update={updateBlockHandler}
-    on:delete={deleteBlockHandler}
-  />
+    {#key blocksKey}
+      <ModeArea
+        {mode}
+        {blocks}
+        {groupedBlocks}
+        bind:canvasRef
+        on:update={updateBlockHandler}
+        on:delete={deleteBlockHandler}
+      />
+    {/key}
   </div>
 </div>
 
