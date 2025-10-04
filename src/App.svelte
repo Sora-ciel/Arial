@@ -27,6 +27,7 @@
 
   let mode = "default";
   let blocks = [];
+  $: blocksKey = blocks.map(b => `${b.id}:${b._version ?? 0}`).join('|');
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
@@ -80,7 +81,7 @@
         position: { ...b.position },
         size: { ...b.size }
       }));
-      blocks = snapshotBlocks;
+      blocks = [...snapshotBlocks];
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -94,7 +95,7 @@
         position: { ...b.position },
         size: { ...b.size }
       }));
-      blocks = snapshotBlocks;
+      blocks = [...snapshotBlocks];
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -371,14 +372,16 @@
   </div>
 
   <div class="modes">
-  <ModeArea
-    {mode}
-    {blocks}
-    {groupedBlocks}
-    bind:canvasRef
-    on:update={updateBlockHandler}
-    on:delete={deleteBlockHandler}
-  />
+    {#key blocksKey}
+      <ModeArea
+        {mode}
+        {blocks}
+        {groupedBlocks}
+        bind:canvasRef
+        on:update={updateBlockHandler}
+        on:delete={deleteBlockHandler}
+      />
+    {/key}
   </div>
 </div>
 
