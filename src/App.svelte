@@ -27,7 +27,10 @@
 
   let mode = "default";
   let blocks = [];
-  $: blocksKey = blocks.map(b => `${b.id}:${b._version ?? 0}`).join('|');
+  let blocksRenderNonce = 0;
+  $: blocksKey = `${blocksRenderNonce}:${blocks
+    .map(b => `${b.id}:${b._version ?? 0}`)
+    .join('|')}`;
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
@@ -56,6 +59,7 @@
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = blocksWithVersion;
+      blocksRenderNonce += 1;
       await persistAutosave(blocksWithVersion);
       return;
     }
@@ -68,6 +72,7 @@
     historyIndex++;
 
     blocks = blocksWithVersion;
+    blocksRenderNonce += 1;
 
     await persistAutosave(blocksWithVersion);
   }
@@ -82,6 +87,7 @@
         size: { ...b.size }
       }));
       blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -96,6 +102,7 @@
         size: { ...b.size }
       }));
       blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
