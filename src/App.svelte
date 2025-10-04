@@ -39,6 +39,44 @@
   // --- Undo/Redo history ---
   let history = [];
   let historyIndex = -1;
+  let hasUnsnapshottedChanges = false;
+
+  function cloneBlocksForHistory(blockList, { bumpVersion = true } = {}) {
+    return blockList.map(b => ({
+      ...b,
+      _version: bumpVersion ? (b._version || 0) + 1 : b._version ?? 0,
+      // ✅ deep-clone position & size so snapshots always have fresh refs
+      position: { ...b.position },
+      size: { ...b.size }
+    }));
+  }
+
+  function serializeBlocks(blockList, { bumpVersion = false } = {}) {
+    return JSON.stringify(cloneBlocksForHistory(blockList, { bumpVersion }));
+  }
+
+  async function ensureCurrentHistorySnapshot() {
+    if (!blocks.length && history.length) return;
+
+    if (!hasUnsnapshottedChanges) return;
+
+    if (!history.length) {
+      await pushHistory(blocks);
+      return;
+    }
+
+    const isAtLatestSnapshot = historyIndex === history.length - 1;
+    if (!isAtLatestSnapshot) return;
+
+    const currentSnapshot = serializeBlocks(blocks, { bumpVersion: false });
+    const latestHistorySnapshot = history[historyIndex];
+
+    if (latestHistorySnapshot !== currentSnapshot) {
+      await pushHistory(blocks);
+    } else {
+      hasUnsnapshottedChanges = false;
+    }
+  }
 
   async function persistAutosave(blocksToPersist) {
     if (!currentSaveName) return;
@@ -47,13 +85,7 @@
   }
 
   async function pushHistory(newBlocks) {
-    const blocksWithVersion = newBlocks.map(b => ({
-      ...b,
-      _version: (b._version || 0) + 1,
-      // ✅ deep-clone position & size so snapshots always have fresh refs
-      position: { ...b.position },
-      size: { ...b.size }
-    }));
+    const blocksWithVersion = cloneBlocksForHistory(newBlocks);
 
     const snapshot = JSON.stringify(blocksWithVersion);
 
@@ -61,6 +93,7 @@
       blocks = blocksWithVersion;
       blocksRenderNonce += 1;
       await persistAutosave(blocksWithVersion);
+      hasUnsnapshottedChanges = false;
       return;
     }
 
@@ -75,9 +108,12 @@
     blocksRenderNonce += 1;
 
     await persistAutosave(blocksWithVersion);
+    hasUnsnapshottedChanges = false;
   }
 
   async function undo() {
+    await ensureCurrentHistorySnapshot();
+
     if (historyIndex > 0) {
       historyIndex--;
       const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({
@@ -184,6 +220,7 @@
     } else {
       blocks = [...newBlocks];
       await persistAutosave(blocks);
+      hasUnsnapshottedChanges = true;
     }
   }
 
