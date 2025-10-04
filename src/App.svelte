@@ -39,6 +39,7 @@
   // --- Undo/Redo history ---
   let history = [];
   let historyIndex = -1;
+  let hasUnsnapshottedChanges = false;
 
   function cloneBlocksForHistory(blockList, { bumpVersion = true } = {}) {
     return blockList.map(b => ({
@@ -57,6 +58,8 @@
   async function ensureCurrentHistorySnapshot() {
     if (!blocks.length && history.length) return;
 
+    if (!hasUnsnapshottedChanges) return;
+
     if (!history.length) {
       await pushHistory(blocks);
       return;
@@ -70,6 +73,8 @@
 
     if (latestHistorySnapshot !== currentSnapshot) {
       await pushHistory(blocks);
+    } else {
+      hasUnsnapshottedChanges = false;
     }
   }
 
@@ -88,6 +93,7 @@
       blocks = blocksWithVersion;
       blocksRenderNonce += 1;
       await persistAutosave(blocksWithVersion);
+      hasUnsnapshottedChanges = false;
       return;
     }
 
@@ -102,6 +108,7 @@
     blocksRenderNonce += 1;
 
     await persistAutosave(blocksWithVersion);
+    hasUnsnapshottedChanges = false;
   }
 
   async function undo() {
@@ -213,6 +220,7 @@
     } else {
       blocks = [...newBlocks];
       await persistAutosave(blocks);
+      hasUnsnapshottedChanges = true;
     }
   }
 
