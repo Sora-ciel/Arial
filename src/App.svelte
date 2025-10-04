@@ -27,14 +27,53 @@
 
   let mode = "default";
   let blocks = [];
+  let blocksRenderNonce = 0;
+  $: blocksKey = `${blocksRenderNonce}:${blocks
+    .map(b => `${b.id}:${b._version ?? 0}`)
+    .join('|')}`;
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
   let Pc = window.innerWidth > 1024;
 
   // --- Undo/Redo history ---
+  /** @type {{ key: string; snapshot: string }[]} */
   let history = [];
   let historyIndex = -1;
+
+  function cloneBlocksForHistory(blocksToClone) {
+    return blocksToClone.map(block => ({
+      ...block,
+      position: { ...block.position },
+      size: { ...block.size }
+    }));
+  }
+
+  function createHistoryKeyFromClones(clones) {
+    return JSON.stringify(
+      clones.map(({ _version, ...rest }) => rest)
+    );
+  }
+
+  function buildHistoryEntry(blocksToSnapshot) {
+    const clonedBlocks = cloneBlocksForHistory(blocksToSnapshot);
+    const key = createHistoryKeyFromClones(clonedBlocks);
+    const blocksWithVersion = clonedBlocks.map(block => ({
+      ...block,
+      _version: (block._version || 0) + 1
+    }));
+    const snapshot = JSON.stringify(blocksWithVersion);
+    return { key, snapshot, blocksWithVersion };
+  }
+
+  function reviveBlocksFromSnapshot(snapshotString) {
+    return JSON.parse(snapshotString).map(block => ({
+      ...block,
+      _version: (block._version || 0) + 1,
+      position: { ...block.position },
+      size: { ...block.size }
+    }));
+  }
 
   async function persistAutosave(blocksToPersist) {
     if (!currentSaveName) return;
@@ -43,19 +82,13 @@
   }
 
   async function pushHistory(newBlocks) {
-    const blocksWithVersion = newBlocks.map(b => ({
-      ...b,
-      _version: (b._version || 0) + 1,
-      // ✅ deep-clone position & size so snapshots always have fresh refs
-      position: { ...b.position },
-      size: { ...b.size }
-    }));
+    const entry = buildHistoryEntry(newBlocks);
 
-    const snapshot = JSON.stringify(blocksWithVersion);
-
-    if (historyIndex >= 0 && history[historyIndex] === snapshot) {
-      blocks = blocksWithVersion;
-      await persistAutosave(blocksWithVersion);
+    if (historyIndex >= 0 && history[historyIndex]?.key === entry.key) {
+      history[historyIndex] = { key: entry.key, snapshot: entry.snapshot };
+      blocks = entry.blocksWithVersion;
+      blocksRenderNonce += 1;
+      await persistAutosave(entry.blocksWithVersion);
       return;
     }
 
@@ -63,24 +96,32 @@
       history = history.slice(0, historyIndex + 1);
     }
 
-    history.push(snapshot);
+    history.push({ key: entry.key, snapshot: entry.snapshot });
     historyIndex++;
 
-    blocks = blocksWithVersion;
+    blocks = entry.blocksWithVersion;
+    blocksRenderNonce += 1;
 
-    await persistAutosave(blocksWithVersion);
+    await persistAutosave(entry.blocksWithVersion);
   }
 
   async function undo() {
+    if (historyIndex >= 0 && historyIndex === history.length - 1) {
+      const currentKey = createHistoryKeyFromClones(
+        cloneBlocksForHistory(blocks)
+      );
+      if (!history[historyIndex] || history[historyIndex].key !== currentKey) {
+        await pushHistory(blocks);
+      }
+    }
+
     if (historyIndex > 0) {
       historyIndex--;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({
-        ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
-      }));
-      blocks = snapshotBlocks;
+      const snapshotBlocks = reviveBlocksFromSnapshot(
+        history[historyIndex].snapshot
+      );
+      blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -88,13 +129,11 @@
   async function redo() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({
-        ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
-      }));
-      blocks = snapshotBlocks;
+      const snapshotBlocks = reviveBlocksFromSnapshot(
+        history[historyIndex].snapshot
+      );
+      blocks = [...snapshotBlocks];
+      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks);
     }
   }
@@ -371,14 +410,16 @@
   </div>
 
   <div class="modes">
-  <ModeArea
-    {mode}
-    {blocks}
-    {groupedBlocks}
-    bind:canvasRef
-    on:update={updateBlockHandler}
-    on:delete={deleteBlockHandler}
-  />
+    {#key blocksKey}
+      <ModeArea
+        {mode}
+        {blocks}
+        {groupedBlocks}
+        bind:canvasRef
+        on:update={updateBlockHandler}
+        on:delete={deleteBlockHandler}
+      />
+    {/key}
   </div>
 </div>
 
