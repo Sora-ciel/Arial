@@ -1,5 +1,6 @@
 <script>
   import { onMount, tick } from 'svelte';
+  import { writable } from 'svelte/store';
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
@@ -35,6 +36,10 @@
   let savedList = [];
   let fileInputRef;
   let Pc = window.innerWidth > 1024;
+
+  const focusedBlockId = writable(null);
+  let currentFocusedBlockId = null;
+  $: currentFocusedBlockId = $focusedBlockId;
 
   // --- Undo/Redo history ---
   let history = [];
@@ -161,8 +166,20 @@
   }
 
   function deleteBlockHandler(event) {
-    blocks = blocks.filter(b => b.id !== event.detail.id);
+    const deletedId = event.detail.id;
+    blocks = blocks.filter(b => b.id !== deletedId);
+    focusedBlockId.update(current => (current === deletedId ? null : current));
     pushHistory(blocks);
+  }
+
+  function handleFocusToggle(event) {
+    const requestedId = event?.detail?.id ?? null;
+    if (requestedId === null) {
+      focusedBlockId.set(null);
+      return;
+    }
+
+    focusedBlockId.update(current => (current === requestedId ? null : requestedId));
   }
 
   async function updateBlockHandler(event) {
@@ -226,12 +243,14 @@
 
   async function clear() {
     blocks = [];
+    focusedBlockId.set(null);
     await pushHistory(blocks);
   }
 
   async function load(name) {
     blocks = [];
     currentSaveName = "";
+    focusedBlockId.set(null);
     await tick();
     currentSaveName = name;
     blocks = (await loadBlocks(name)).map(b => ({
@@ -247,6 +266,7 @@
   async function deleteSave(name) {
     await deleteBlocks(name);
     if (currentSaveName === name) blocks = [];
+    focusedBlockId.set(null);
     savedList = await listSavedBlocks();
 
     history = [];
@@ -277,6 +297,7 @@
             ...applyHistoryTriggers(b),
             _version: 0
           }));
+          focusedBlockId.set(null);
           history = [];
           historyIndex = -1;
           await pushHistory(blocks);
@@ -314,6 +335,8 @@
       ...applyHistoryTriggers(b),
       _version: 0
     }));
+
+    focusedBlockId.set(null);
 
     history = [];
     historyIndex = -1;
@@ -422,8 +445,10 @@
         {blocks}
         {groupedBlocks}
         bind:canvasRef
+        focusedBlockId={currentFocusedBlockId}
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
+        on:focusToggle={handleFocusToggle}
       />
     {/key}
   </div>

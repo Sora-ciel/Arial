@@ -7,6 +7,7 @@
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#ffffff';
   export let initialSrc = '';
+  export let focused = false;
 
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
@@ -24,6 +25,23 @@
   let resizing = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+
+  function handleFocusRequest(event) {
+    if (dragging || resizing) return;
+
+    const target = event?.target;
+    if (target?.closest('[data-focus-ignore]')) return;
+
+    const isContent = !!target?.closest('[data-focus-content]');
+    if (focused && isContent) return;
+
+    if (focused && !isContent) {
+      dispatch('focusToggle', { id: null });
+      return;
+    }
+
+    dispatch('focusToggle', { id });
+  }
 
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
@@ -209,6 +227,14 @@ function onResizeEnd() {
     display: flex;
     flex-direction: column;
     border-radius: 8px;
+    outline: 2px solid transparent;
+    transition: outline 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .wrapper.focused {
+    outline: 2px solid rgba(77, 171, 247, 0.9);
+    box-shadow: 0 0 8px 2px rgba(77, 171, 247, 0.65),
+                0 0 18px 6px rgba(77, 171, 247, 0.35);
   }
 
   .header {
@@ -288,13 +314,25 @@ function onResizeEnd() {
   
 </style>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="wrapper"
+  class:focused={focused}
+  on:click={handleFocusRequest}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor}"
 >
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="header" on:mousedown={onDragStart} on:touchstart={onDragStart}>
     <div>image</div>
-    <div class="header-controls" on:mousedown|stopPropagation>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="header-controls"
+      data-focus-ignore
+      on:mousedown|stopPropagation
+      on:click|stopPropagation
+    >
 
         <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
         <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
@@ -304,16 +342,16 @@ function onResizeEnd() {
         <span class="emoji">⏏</span>
       </label>
 
-      <button class="delete-btn" on:click={deleteBlock}>×</button>
+      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
-  <div class="media-container" style="flex-grow:1;">
+  <div class="media-container" style="flex-grow:1;" data-focus-content>
     {#if src}
       {#if src.startsWith('data:video')}
         <video src={src} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
       {:else}
-        <img src={src} alt="Image block" style="width:100%; height:100%; object-fit:contain;" />
+        <img src={src} alt="Block content preview" style="width:100%; height:100%; object-fit:contain;" />
       {/if}
     {:else}
       <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777;">
@@ -321,5 +359,11 @@ function onResizeEnd() {
       </div>
     {/if}
   </div>
-  <div class="resize-handle" on:mousedown={onResizeStart} on:touchstart={onResizeStart}></div>
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div
+    class="resize-handle"
+    on:mousedown={onResizeStart}
+    on:touchstart={onResizeStart}
+    data-focus-ignore
+  ></div>
 </div>
