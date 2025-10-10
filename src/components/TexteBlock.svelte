@@ -7,6 +7,7 @@
   export let initialBgColor = '#000000';
   export let initialTextColor = '#ffffff';
   export let initialContent = '';
+  export let focused = false;
 
   const dispatch = createEventDispatcher();
 
@@ -20,6 +21,23 @@
   let resizing = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+
+  function handleFocusRequest(event) {
+    if (dragging || resizing) return;
+
+    const target = event?.target;
+    if (target?.closest('[data-focus-ignore]')) return;
+
+    const isContent = !!target?.closest('[data-focus-content]');
+    if (focused && isContent) return;
+
+    if (focused && !isContent) {
+      dispatch('focusToggle', { id: null });
+      return;
+    }
+
+    dispatch('focusToggle', { id });
+  }
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
@@ -135,6 +153,13 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    outline: 2px solid transparent;
+    transition: outline 0.15s ease, box-shadow 0.15s ease;
+  }
+  .wrapper.focused {
+    outline: 2px solid rgba(77, 171, 247, 0.9);
+    box-shadow: 0 0 8px 2px rgba(77, 171, 247, 0.65),
+                0 0 18px 6px rgba(77, 171, 247, 0.35);
   }
   .header {
     background: #000;
@@ -200,38 +225,53 @@
   }
 </style>
 
+<!-- svelte-ignore a11y_click_events_have_key_events -->
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
   class="wrapper"
+  class:focused={focused}
+  on:click={handleFocusRequest}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
 >
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="header"
     on:mousedown={onDragStart}
     on:touchstart={onDragStart}
   >
     <div>text</div>
-    <div class="header-controls" on:mousedown|stopPropagation>
+    <!-- svelte-ignore a11y_click_events_have_key_events -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="header-controls"
+      data-focus-ignore
+      on:mousedown|stopPropagation
+      on:click|stopPropagation
+    >
       <label title="Background Color">
         <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
       </label>
       <label title="Text Color">
         <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
       </label>
-      <button class="delete-btn" on:click={deleteBlock}>×</button>
+      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
-  <div class="text-container">
+  <div class="text-container" data-focus-content>
     <textarea
       spellcheck="false"
       bind:value={content}
       on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+      data-focus-content
     ></textarea>
   </div>
 
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div
     class="resize-handle"
     on:mousedown={onResizeStart}
     on:touchstart={onResizeStart}
+    data-focus-ignore
   ></div>
 </div>
