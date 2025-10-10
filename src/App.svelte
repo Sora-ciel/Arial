@@ -27,6 +27,7 @@
 
   let mode = "default";
   let blocks = [];
+  let focusedBlockId = null;
   let blocksRenderNonce = 0;
   $: blocksKey = `${blocksRenderNonce}:${blocks
     .map(b => `${b.id}:${b._version ?? 0}`)
@@ -161,7 +162,11 @@
   }
 
   function deleteBlockHandler(event) {
-    blocks = blocks.filter(b => b.id !== event.detail.id);
+    const id = event.detail?.id;
+    blocks = blocks.filter(b => b.id !== id);
+    if (focusedBlockId === id) {
+      focusedBlockId = null;
+    }
     pushHistory(blocks);
   }
 
@@ -226,12 +231,14 @@
 
   async function clear() {
     blocks = [];
+    focusedBlockId = null;
     await pushHistory(blocks);
   }
 
   async function load(name) {
     blocks = [];
     currentSaveName = "";
+    focusedBlockId = null;
     await tick();
     currentSaveName = name;
     blocks = (await loadBlocks(name)).map(b => ({
@@ -247,6 +254,9 @@
   async function deleteSave(name) {
     await deleteBlocks(name);
     if (currentSaveName === name) blocks = [];
+    if (focusedBlockId && !blocks.some(b => b.id === focusedBlockId)) {
+      focusedBlockId = null;
+    }
     savedList = await listSavedBlocks();
 
     history = [];
@@ -277,6 +287,7 @@
             ...applyHistoryTriggers(b),
             _version: 0
           }));
+          focusedBlockId = null;
           history = [];
           historyIndex = -1;
           await pushHistory(blocks);
@@ -300,6 +311,48 @@
         `${controlsRef.offsetHeight}px`
       );
     }
+  }
+
+  function handleFocusToggle(event) {
+    const { id } = event.detail || {};
+    if (!id) {
+      focusedBlockId = null;
+      return;
+    }
+
+    focusedBlockId = focusedBlockId === id ? null : id;
+  }
+
+  async function moveFocusedBlock(offset) {
+    if (!focusedBlockId) return;
+
+    const index = blocks.findIndex(block => block.id === focusedBlockId);
+    if (index === -1) {
+      focusedBlockId = null;
+      return;
+    }
+
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= blocks.length) {
+      return;
+    }
+
+    const newBlocks = [...blocks];
+    const [moved] = newBlocks.splice(index, 1);
+    newBlocks.splice(targetIndex, 0, moved);
+
+    blocks = newBlocks;
+    await pushHistory(blocks);
+  }
+
+  const moveFocusedBlockUp = () => moveFocusedBlock(-1);
+  const moveFocusedBlockDown = () => moveFocusedBlock(1);
+
+  $: if (
+    focusedBlockId &&
+    !blocks.some(block => block.id === focusedBlockId)
+  ) {
+    focusedBlockId = null;
   }
 
   onMount(async () => {
@@ -401,6 +454,7 @@
       {mode}
       {blocks}
       {savedList}
+      {focusedBlockId}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -409,6 +463,8 @@
       on:toggleMode={() => mode = mode === "default" ? "simple" : "default"}
       on:undo={undo}
       on:redo={redo}
+      on:moveUp={moveFocusedBlockUp}
+      on:moveDown={moveFocusedBlockDown}
     />
     <div class="right-controls">
       <RightControls {savedList} {load} {deleteSave}/>
@@ -421,9 +477,11 @@
         {mode}
         {blocks}
         {groupedBlocks}
+        {focusedBlockId}
         bind:canvasRef
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
+        on:focusToggle={handleFocusToggle}
       />
     {/key}
   </div>
