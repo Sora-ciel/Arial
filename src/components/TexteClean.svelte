@@ -7,6 +7,7 @@
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#000000';
   export let initialContent = '';
+  export let focused = false;
 
   const dispatch = createEventDispatcher();
 
@@ -18,6 +19,9 @@
 
   let dragging = false, resizing = false;
   let offset = { x: 0, y: 0 }, resizeStart = {};
+  let suppressClick = false;
+  let hasDragged = false;
+  let hasResized = false;
   let showSettings = false;
 
   let editableDiv;
@@ -40,7 +44,9 @@
 
   // Drag start
   function onDragStart(e) {
+    ensureFocus();
     dragging = true;
+    hasDragged = false;
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -61,6 +67,7 @@
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
 
     position = { x: clientX - offset.x, y: clientY - offset.y };
+    hasDragged = true;
 
     if (e.cancelable) e.preventDefault(); // stop scrolling on mobile
   }
@@ -75,12 +82,19 @@
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
     sendUpdate(['position']);
+    if (hasDragged) {
+      suppressClick = true;
+      hasDragged = false;
+      requestAnimationFrame(() => (suppressClick = false));
+    }
   }
 
   // Resize start
   function onResizeStart(e) {
     e.stopPropagation();
+    ensureFocus();
     resizing = true;
+    hasResized = false;
     document.body.style.userSelect = 'none';
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -103,6 +117,7 @@
 
     size.width = Math.max(100, resizeStart.width + (clientX - resizeStart.x));
     size.height = Math.max(50, resizeStart.height + (clientY - resizeStart.y));
+    hasResized = true;
 
     if (e.cancelable) e.preventDefault();
   }
@@ -116,11 +131,39 @@
     window.removeEventListener('touchmove', onResizing);
     window.removeEventListener('touchend', onResizeEnd);
     sendUpdate(['size']);
+    if (hasResized) {
+      suppressClick = true;
+      hasResized = false;
+      requestAnimationFrame(() => (suppressClick = false));
+    }
   }
 
   // Delete
   function deleteBlock() {
     dispatch('delete', { id });
+  }
+
+  function ensureFocus() {
+    if (!focused) {
+      dispatch('focusToggle', { id });
+    }
+  }
+
+  function handleWrapperClick(event) {
+    if (suppressClick) return;
+    if (event.defaultPrevented) return;
+    if (event.target.closest('[data-focus-guard]')) {
+      ensureFocus();
+      return;
+    }
+    dispatch('focusToggle', { id });
+  }
+
+  function handleWrapperKeydown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      handleWrapperClick(event);
+    }
   }
 </script>
 
@@ -136,6 +179,13 @@
     overflow: hidden;
     background-color: var(--bg);
     color: var(--text);
+    outline: 2px solid transparent;
+    transition: box-shadow 0.15s ease, outline 0.15s ease;
+  }
+  .note.focused {
+    outline: 2px solid rgba(110, 168, 255, 0.85);
+    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
+                0 0 12px rgba(110, 168, 255, 0.5);
   }
   .header {
     padding: 6px;
@@ -210,21 +260,45 @@
 
 <div
   class="note"
+  class:focused={focused}
   style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: {textColor};"
+  role="button"
+  tabindex="0"
+  aria-pressed={focused}
+  on:click={handleWrapperClick}
+  on:keydown={handleWrapperKeydown}
 >
   <div
     class="header"
     on:mousedown={onDragStart}
     on:touchstart={onDragStart}
+    role="presentation"
   >
     <span>Note</span>
-    <div class="header-controls" on:mousedown|stopPropagation>
-      <button on:click={() => showSettings = !showSettings} class="gear-btn" aria-label="Settings">
+    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
+      <button
+        on:click={() => { ensureFocus(); showSettings = !showSettings; }}
+        class="gear-btn"
+        aria-label="Settings"
+        data-focus-guard
+      >
         ⚙︎
       </button>
-      <input type="color" bind:value={bgColor} title="BG" on:change={() => sendUpdate(['bgColor'])} />
-      <input type="color" bind:value={textColor} title="Text" on:change={() => sendUpdate(['textColor'])} />
-      <button class="delete-btn" on:click={deleteBlock}>×</button>
+      <input
+        type="color"
+        bind:value={bgColor}
+        title="BG"
+        on:change={() => sendUpdate(['bgColor'])}
+        data-focus-guard
+      />
+      <input
+        type="color"
+        bind:value={textColor}
+        title="Text"
+        on:change={() => sendUpdate(['textColor'])}
+        data-focus-guard
+      />
+      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
@@ -234,10 +308,13 @@
     class="editable"
     spellcheck="false"
     on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+    on:focus={ensureFocus}
+    data-focus-guard
   ></div>
 
   <div
     class="resize-handle"
+    role="presentation"
     on:mousedown={onResizeStart}
     on:touchstart={onResizeStart}
   ></div>
