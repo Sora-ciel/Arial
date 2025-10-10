@@ -41,10 +41,16 @@
   }
 
   function handleBlockKeydown(event, id) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleBlockClick(event, id);
+    if (event.target !== event.currentTarget) {
+      return;
     }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    handleBlockClick(event, id);
   }
 
   function autoResize(textarea) {
