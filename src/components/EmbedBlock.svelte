@@ -148,10 +148,16 @@
   }
 
   function handleWrapperKeydown(event) {
-    if (event.key === 'Enter' || event.key === ' ') {
-      event.preventDefault();
-      handleWrapperClick(event);
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
     }
+
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    handleWrapperClick(event);
   }
 </script>
 
