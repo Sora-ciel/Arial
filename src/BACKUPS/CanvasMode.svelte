@@ -12,6 +12,7 @@
   export let blocks;
 
   export let canvasRef;
+  export let focusedBlockId = null;
 
   
 
@@ -32,6 +33,10 @@
 
   function updateBlockHandler(event) {
    dispatch('update', { ...event.detail });
+  }
+
+  function focusToggleHandler(event) {
+    dispatch('focusToggle', event.detail);
   }
 
 
@@ -175,7 +180,8 @@
             initialContent={block.content}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
-
+            on:focusToggle={focusToggleHandler}
+            focused={block.id === focusedBlockId}
           />
         {:else if block.type === 'image'}
           <ImgBlock
@@ -187,6 +193,8 @@
             initialSrc={block.src}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
+            focused={block.id === focusedBlockId}
           />
         {:else if block.type === 'cleantext'}
           <Texteclean
@@ -198,6 +206,8 @@
             initialContent={block.content}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
+            focused={block.id === focusedBlockId}
 
           />
         {:else if block.type === 'music'}
@@ -210,6 +220,8 @@
             initialContent={block.content}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
+            focused={block.id === focusedBlockId}
           />
         {:else if block.type === 'embed'}
           <Embed
@@ -221,6 +233,8 @@
             initialContent={block.content}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
+            focused={block.id === focusedBlockId}
           />
         {/if}
       {/each}
