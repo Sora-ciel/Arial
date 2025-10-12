@@ -3,6 +3,7 @@
 
   export let mode;
   export let currentSaveName;
+  export let focusedBlockId = null;
 
 
   const dispatch = createEventDispatcher();
@@ -45,6 +46,18 @@
   function toggleMode() {
     dispatch("toggleMode");
     if (compactUI) showMobileMenu = false;
+  }
+
+  function moveUp() {
+    if (!focusedBlockId) return;
+    dispatch("moveUp");
+    if (compactUI) showMobileMenu = true;
+  }
+
+  function moveDown() {
+    if (!focusedBlockId) return;
+    dispatch("moveDown");
+    if (compactUI) showMobileMenu = true;
   }
 
   function checkWidth() {
@@ -147,6 +160,22 @@ onMount(() => {
   <button on:click={() => addBlock("image")}>+ Image</button>
   <button on:click={() => addBlock("music")}>+ Music</button>
   <button on:click={() => addBlock("embed")}>+ Embed</button>
+  <button
+    on:click={moveUp}
+    disabled={!focusedBlockId}
+    aria-label="Move block down"
+    title="Move block down"
+  >
+    ⬇
+  </button>
+  <button
+    on:click={moveDown}
+    disabled={!focusedBlockId}
+    aria-label="Move block up"
+    title="Move block up"
+  >
+    ⬆
+  </button>
   <button on:click={clear}>🗑️ Clear</button>
   <button on:click={exportJSON}>⬇ Export</button>
   <button on:click={triggerFileInput}>📁 Import JSON</button>
