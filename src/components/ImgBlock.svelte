@@ -264,9 +264,8 @@ function onResizeEnd() {
   }
 
   .wrapper.focused {
-    outline: 2px solid rgba(110, 168, 255, 0.85);
-    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-                0 0 12px rgba(110, 168, 255, 0.5);
+    outline: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--bg);
   }
 
   .header {
