@@ -15,6 +15,30 @@
   };
 
   const KNOWN_MODES = ["default", "simple"];
+  const LAST_OPENED_KEY = "codex-last-opened";
+
+  function readLastOpenedName() {
+    if (typeof localStorage === "undefined") return null;
+    try {
+      return localStorage.getItem(LAST_OPENED_KEY);
+    } catch (error) {
+      console.warn("Unable to read last opened file", error);
+      return null;
+    }
+  }
+
+  function rememberLastOpened(name) {
+    if (typeof localStorage === "undefined") return;
+    try {
+      if (name) {
+        localStorage.setItem(LAST_OPENED_KEY, name);
+      } else {
+        localStorage.removeItem(LAST_OPENED_KEY);
+      }
+    } catch (error) {
+      console.warn("Unable to remember last opened file", error);
+    }
+  }
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -145,11 +169,18 @@
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
     if (!currentSaveName) return;
     const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
+    rememberLastOpened(currentSaveName);
     await saveBlocks(currentSaveName, {
       blocks: blocksToPersist,
       modeOrders: normalizedOrders
     });
     savedList = await listSavedBlocks();
+  }
+
+  async function save() {
+    await ensureCurrentHistorySnapshot();
+    await persistAutosave(blocks, modeOrders);
+    hasUnsnapshottedChanges = false;
   }
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
@@ -352,6 +383,7 @@
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
+    rememberLastOpened(currentSaveName);
   }
 
   async function deleteSave(name) {
@@ -366,6 +398,9 @@
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
+    if (currentSaveName === name) {
+      rememberLastOpened("");
+    }
   }
 
   function exportJSON() {
@@ -515,7 +550,12 @@
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
-    const initialData = await loadBlocks(currentSaveName);
+    let initialName = readLastOpenedName() || currentSaveName;
+    if (!initialName) {
+      initialName = "default";
+    }
+    currentSaveName = initialName;
+    const initialData = await loadBlocks(initialName);
     const initialBlocks = Array.isArray(initialData)
       ? initialData
       : Array.isArray(initialData?.blocks)
