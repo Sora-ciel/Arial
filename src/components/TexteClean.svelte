@@ -222,6 +222,21 @@
     overflow-y: auto;
     user-select: text;
   }
+  .editable::selection,
+  .editable::-moz-selection,
+  :global(.editable *)::selection,
+  :global(.editable *)::-moz-selection {
+    color: var(--text);
+    background: var(--bg);
+  }
+  @supports (background: color-mix(in srgb, white 50%, black 50%)) {
+    .editable::selection,
+    .editable::-moz-selection,
+    :global(.editable *)::selection,
+    :global(.editable *)::-moz-selection {
+      background: color-mix(in srgb, var(--bg) 70%, white 30%);
+    }
+  }
   .resize-handle {
     position: absolute;
     bottom: 0px;
