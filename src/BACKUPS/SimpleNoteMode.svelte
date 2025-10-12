@@ -31,6 +31,12 @@
     }
   }
 
+  function handleBackgroundPointerDown(event) {
+    if (event.target === event.currentTarget) {
+      dispatch('focusToggle', {});
+    }
+  }
+
   function handleBlockClick(event, id) {
     if (event.defaultPrevented) return;
     if (event.target.closest('[data-focus-guard]')) {
@@ -125,9 +131,8 @@
 }
 
 .container.focused {
-  outline: 2px solid rgba(110, 168, 255, 0.85);
-  box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-              0 0 12px rgba(110, 168, 255, 0.5);
+  outline: 2px solid var(--bg-color);
+  box-shadow: 0 0 0 2px var(--bg-color);
 }
 
 textarea {
@@ -250,9 +255,9 @@ li {
 
 
 
-<div class="simple-wrapper">
+<div class="simple-wrapper" on:pointerdown={handleBackgroundPointerDown}>
   {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
-    <div class="canvas">
+    <div class="canvas" on:pointerdown={handleBackgroundPointerDown}>
       <div
         class="container"
         class:focused={block.id === focusedBlockId}
