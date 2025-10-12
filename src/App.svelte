@@ -1,5 +1,5 @@
 <script>
-  import { onMount, tick } from 'svelte';
+  import { onMount, onDestroy, tick } from 'svelte';
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
@@ -14,6 +14,8 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
+  const KNOWN_MODES = ["default", "simple"];
+
   function applyHistoryTriggers(block) {
     const triggers =
       block.historyTriggers ??
@@ -22,15 +24,89 @@
     return { ...block, historyTriggers: triggers };
   }
 
+  function ensureModeOrders(allBlocks, incomingOrders = {}) {
+    const idsInBlockOrder = allBlocks.map(block => block.id);
+    const validIds = new Set(idsInBlockOrder);
+    const modeNames = new Set([
+      ...KNOWN_MODES,
+      ...Object.keys(incomingOrders || {})
+    ]);
+
+    const normalized = {};
+    for (const name of modeNames) {
+      const existing = Array.isArray(incomingOrders?.[name])
+        ? incomingOrders[name].filter(id => validIds.has(id))
+        : [];
+      const missing = idsInBlockOrder.filter(id => !existing.includes(id));
+      normalized[name] = [...existing, ...missing];
+    }
+
+    return normalized;
+  }
+
+  function cloneModeOrders(orders) {
+    const clone = {};
+    for (const [modeName, order] of Object.entries(orders || {})) {
+      clone[modeName] = [...order];
+    }
+    return clone;
+  }
+
+  function cloneState(blockList, orders, { bumpVersion = true } = {}) {
+    const normalizedOrders = ensureModeOrders(blockList, orders);
+    const blocksClone = blockList.map(block => ({
+      ...block,
+      _version: bumpVersion ? (block._version || 0) + 1 : block._version ?? 0,
+      position: { ...block.position },
+      size: { ...block.size }
+    }));
+
+    return {
+      blocks: blocksClone,
+      modeOrders: cloneModeOrders(normalizedOrders)
+    };
+  }
+
+  function serializeState(blockList, orders, { bumpVersion = false } = {}) {
+    const snapshot = cloneState(blockList, orders, { bumpVersion });
+    return JSON.stringify(snapshot);
+  }
+
   let controlsRef;
   let canvasRef;
+  let controlsResizeObserver;
+  let observedControlsEl;
 
   let mode = "default";
   let blocks = [];
+  let modeOrders = {};
+  let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
+  let modeOrderedBlocks = [];
+  let focusedBlockId = null;
   let blocksRenderNonce = 0;
-  $: blocksKey = `${blocksRenderNonce}:${blocks
+  $: normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
+  $: blocksKey = `${blocksRenderNonce}:${(normalizedModeOrders[mode] || [])
+    .join('|')}:${blocks
     .map(b => `${b.id}:${b._version ?? 0}`)
     .join('|')}`;
+  $: modeOrderedBlocks = (() => {
+    const order = normalizedModeOrders[mode] || [];
+    const blockMap = new Map(blocks.map(block => [block.id, block]));
+    const ordered = [];
+    for (const id of order) {
+      const block = blockMap.get(id);
+      if (block) ordered.push(block);
+    }
+    if (ordered.length < blocks.length) {
+      const seen = new Set(order);
+      for (const block of blocks) {
+        if (!seen.has(block.id)) {
+          ordered.push(block);
+        }
+      }
+    }
+    return ordered;
+  })();
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
@@ -41,58 +117,50 @@
   let historyIndex = -1;
   let hasUnsnapshottedChanges = false;
 
-  function cloneBlocksForHistory(blockList, { bumpVersion = true } = {}) {
-    return blockList.map(b => ({
-      ...b,
-      _version: bumpVersion ? (b._version || 0) + 1 : b._version ?? 0,
-      // ✅ deep-clone position & size so snapshots always have fresh refs
-      position: { ...b.position },
-      size: { ...b.size }
-    }));
-  }
-
-  function serializeBlocks(blockList, { bumpVersion = false } = {}) {
-    return JSON.stringify(cloneBlocksForHistory(blockList, { bumpVersion }));
-  }
-
   async function ensureCurrentHistorySnapshot() {
     if (!blocks.length && history.length) return;
 
     if (!hasUnsnapshottedChanges) return;
 
     if (!history.length) {
-      await pushHistory(blocks);
+      await pushHistory(blocks, modeOrders);
       return;
     }
 
     const isAtLatestSnapshot = historyIndex === history.length - 1;
     if (!isAtLatestSnapshot) return;
 
-    const currentSnapshot = serializeBlocks(blocks, { bumpVersion: false });
+    const currentSnapshot = serializeState(blocks, modeOrders, {
+      bumpVersion: false
+    });
     const latestHistorySnapshot = history[historyIndex];
 
     if (latestHistorySnapshot !== currentSnapshot) {
-      await pushHistory(blocks);
+      await pushHistory(blocks, modeOrders);
     } else {
       hasUnsnapshottedChanges = false;
     }
   }
 
-  async function persistAutosave(blocksToPersist) {
+  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
     if (!currentSaveName) return;
-    await saveBlocks(currentSaveName, blocksToPersist);
+    const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
+    await saveBlocks(currentSaveName, {
+      blocks: blocksToPersist,
+      modeOrders: normalizedOrders
+    });
     savedList = await listSavedBlocks();
   }
 
-  async function pushHistory(newBlocks) {
-    const blocksWithVersion = cloneBlocksForHistory(newBlocks);
-
-    const snapshot = JSON.stringify(blocksWithVersion);
+  async function pushHistory(newBlocks, newOrders = modeOrders) {
+    const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
+    const snapshot = JSON.stringify(stateSnapshot);
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
-      blocks = blocksWithVersion;
+      blocks = stateSnapshot.blocks;
+      modeOrders = stateSnapshot.modeOrders;
       blocksRenderNonce += 1;
-      await persistAutosave(blocksWithVersion);
+      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
       hasUnsnapshottedChanges = false;
       return;
     }
@@ -104,10 +172,11 @@
     history.push(snapshot);
     historyIndex++;
 
-    blocks = blocksWithVersion;
+    blocks = stateSnapshot.blocks;
+    modeOrders = stateSnapshot.modeOrders;
     blocksRenderNonce += 1;
 
-    await persistAutosave(blocksWithVersion);
+    await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
     hasUnsnapshottedChanges = false;
   }
 
@@ -116,30 +185,42 @@
 
     if (historyIndex > 0) {
       historyIndex--;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({
+      const snapshotState = JSON.parse(history[historyIndex]) || {};
+      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
         ...b,
         _version: (b._version || 0) + 1,
         position: { ...b.position },
         size: { ...b.size }
       }));
+      const snapshotOrders = ensureModeOrders(
+        snapshotBlocks,
+        snapshotState.modeOrders
+      );
       blocks = [...snapshotBlocks];
+      modeOrders = cloneModeOrders(snapshotOrders);
       blocksRenderNonce += 1;
-      await persistAutosave(snapshotBlocks);
+      await persistAutosave(snapshotBlocks, snapshotOrders);
     }
   }
 
   async function redo() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
-      const snapshotBlocks = JSON.parse(history[historyIndex]).map(b => ({
+      const snapshotState = JSON.parse(history[historyIndex]) || {};
+      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
         ...b,
         _version: (b._version || 0) + 1,
         position: { ...b.position },
         size: { ...b.size }
       }));
+      const snapshotOrders = ensureModeOrders(
+        snapshotBlocks,
+        snapshotState.modeOrders
+      );
       blocks = [...snapshotBlocks];
+      modeOrders = cloneModeOrders(snapshotOrders);
       blocksRenderNonce += 1;
-      await persistAutosave(snapshotBlocks);
+      await persistAutosave(snapshotBlocks, snapshotOrders);
     }
   }
 
@@ -157,12 +238,26 @@
       _version: 0
     });
     blocks = [...blocks, newBlock];
-    pushHistory(blocks);
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    pushHistory(blocks, modeOrders);
   }
 
   function deleteBlockHandler(event) {
-    blocks = blocks.filter(b => b.id !== event.detail.id);
-    pushHistory(blocks);
+    const id = event.detail?.id;
+    blocks = blocks.filter(b => b.id !== id);
+    modeOrders = ensureModeOrders(
+      blocks,
+      Object.fromEntries(
+        Object.entries(modeOrders).map(([modeName, order]) => [
+          modeName,
+          order.filter(existingId => existingId !== id)
+        ])
+      )
+    );
+    if (focusedBlockId === id) {
+      focusedBlockId = null;
+    }
+    pushHistory(blocks, modeOrders);
   }
 
   async function updateBlockHandler(event) {
@@ -216,46 +311,72 @@
 
     if (shouldSnapshot) {
       blocks = [...newBlocks];
-      await pushHistory(blocks);
+      modeOrders = ensureModeOrders(blocks, modeOrders);
+      await pushHistory(blocks, modeOrders);
     } else {
       blocks = [...newBlocks];
-      await persistAutosave(blocks);
+      modeOrders = ensureModeOrders(blocks, modeOrders);
+      await persistAutosave(blocks, modeOrders);
       hasUnsnapshottedChanges = true;
     }
   }
 
   async function clear() {
     blocks = [];
-    await pushHistory(blocks);
+    focusedBlockId = null;
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    await pushHistory(blocks, modeOrders);
   }
 
   async function load(name) {
     blocks = [];
     currentSaveName = "";
+    focusedBlockId = null;
     await tick();
     currentSaveName = name;
-    blocks = (await loadBlocks(name)).map(b => ({
+    const loaded = await loadBlocks(name);
+    const loadedBlocks = Array.isArray(loaded)
+      ? loaded
+      : Array.isArray(loaded?.blocks)
+      ? loaded.blocks
+      : [];
+    const loadedOrders = !Array.isArray(loaded)
+      ? loaded?.modeOrders
+      : {};
+    blocks = loadedBlocks.map(b => ({
       ...applyHistoryTriggers(b),
       _version: 0
     }));
+    modeOrders = ensureModeOrders(blocks, loadedOrders);
 
     history = [];
     historyIndex = -1;
-    await pushHistory(blocks);
+    await pushHistory(blocks, modeOrders);
   }
 
   async function deleteSave(name) {
     await deleteBlocks(name);
     if (currentSaveName === name) blocks = [];
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    if (focusedBlockId && !blocks.some(b => b.id === focusedBlockId)) {
+      focusedBlockId = null;
+    }
     savedList = await listSavedBlocks();
 
     history = [];
     historyIndex = -1;
-    await pushHistory(blocks);
+    await pushHistory(blocks, modeOrders);
   }
 
   function exportJSON() {
-    const dataStr = JSON.stringify(blocks, null, 2);
+    const dataStr = JSON.stringify(
+      {
+        blocks,
+        modeOrders: ensureModeOrders(blocks, modeOrders)
+      },
+      null,
+      2
+    );
     const blob = new Blob([dataStr], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -272,14 +393,24 @@
     reader.onload = async e => {
       try {
         const imported = JSON.parse(e.target.result);
-        if (Array.isArray(imported)) {
-          blocks = imported.map(b => ({
+        if (Array.isArray(imported) || (imported && typeof imported === "object")) {
+          const importedBlocks = Array.isArray(imported)
+            ? imported
+            : Array.isArray(imported.blocks)
+            ? imported.blocks
+            : [];
+          const importedOrders = Array.isArray(imported)
+            ? {}
+            : imported.modeOrders;
+          blocks = importedBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
+          modeOrders = ensureModeOrders(blocks, importedOrders);
+          focusedBlockId = null;
           history = [];
           historyIndex = -1;
-          await pushHistory(blocks);
+          await pushHistory(blocks, modeOrders);
           alert("Imported successfully!");
         } else alert("Invalid file structure!");
       } catch {
@@ -290,41 +421,140 @@
     event.target.value = "";
   }
 
-  function adjustCanvasPadding() {
-    if (!canvasRef) return;
-    if (window.innerWidth <= 1024) {
-      canvasRef.style.setProperty("--controls-height", "75px");
-    } else if (controlsRef) {
-      canvasRef.style.setProperty(
-        "--controls-height",
-        `${controlsRef.offsetHeight}px`
-      );
+  function setControlsHeight(value) {
+    const px = `${value}px`;
+    if (canvasRef) {
+      canvasRef.style.setProperty("--controls-height", px);
+    }
+    if (typeof document !== "undefined") {
+      document.documentElement.style.setProperty("--controls-height", px);
     }
   }
 
+  function adjustCanvasPadding() {
+    if (typeof window === "undefined") return;
+
+    if (window.innerWidth <= 1024) {
+      setControlsHeight(75);
+      return;
+    }
+
+    const height = controlsRef?.offsetHeight || 56;
+    setControlsHeight(height);
+  }
+
+  function setupControlsObserver() {
+    if (typeof ResizeObserver === "undefined" || !controlsRef) {
+      return;
+    }
+
+    if (observedControlsEl === controlsRef) {
+      return;
+    }
+
+    controlsResizeObserver?.disconnect();
+    controlsResizeObserver = new ResizeObserver(() => adjustCanvasPadding());
+    controlsResizeObserver.observe(controlsRef);
+    observedControlsEl = controlsRef;
+  }
+
+  const handleWindowResize = () => {
+    adjustCanvasPadding();
+    Pc = window.innerWidth > 1024;
+  };
+
+  function handleFocusToggle(event) {
+    const { id } = event.detail || {};
+    if (!id) {
+      focusedBlockId = null;
+      return;
+    }
+
+    focusedBlockId = focusedBlockId === id ? null : id;
+  }
+
+  async function moveFocusedBlock(offset) {
+    if (!focusedBlockId) return;
+
+    const ordersForMode = normalizedModeOrders[mode] || [];
+    const index = ordersForMode.indexOf(focusedBlockId);
+    if (index === -1) {
+      focusedBlockId = null;
+      return;
+    }
+
+    const targetIndex = index + offset;
+    if (targetIndex < 0 || targetIndex >= ordersForMode.length) {
+      return;
+    }
+
+    const updatedOrder = [...ordersForMode];
+    updatedOrder.splice(index, 1);
+    updatedOrder.splice(targetIndex, 0, focusedBlockId);
+
+    modeOrders = {
+      ...modeOrders,
+      [mode]: updatedOrder
+    };
+    await pushHistory(blocks, modeOrders);
+  }
+
+  const moveFocusedBlockUp = () => moveFocusedBlock(-1);
+  const moveFocusedBlockDown = () => moveFocusedBlock(1);
+
+  $: if (
+    focusedBlockId &&
+    !blocks.some(block => block.id === focusedBlockId)
+  ) {
+    focusedBlockId = null;
+  }
+
   onMount(async () => {
-    window.addEventListener("resize", () => {
-      adjustCanvasPadding();
-      Pc = window.innerWidth > 1024;
-    });
+    Pc = window.innerWidth > 1024;
+    window.addEventListener("resize", handleWindowResize);
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
-    blocks = (await loadBlocks(currentSaveName)).map(b => ({
+    const initialData = await loadBlocks(currentSaveName);
+    const initialBlocks = Array.isArray(initialData)
+      ? initialData
+      : Array.isArray(initialData?.blocks)
+      ? initialData.blocks
+      : [];
+    const initialOrders = !Array.isArray(initialData)
+      ? initialData?.modeOrders
+      : {};
+    blocks = initialBlocks.map(b => ({
       ...applyHistoryTriggers(b),
       _version: 0
     }));
+    modeOrders = ensureModeOrders(blocks, initialOrders);
 
     history = [];
     historyIndex = -1;
-    await pushHistory(blocks);
+    await pushHistory(blocks, modeOrders);
   });
+
+  onDestroy(() => {
+    window.removeEventListener("resize", handleWindowResize);
+    controlsResizeObserver?.disconnect();
+    observedControlsEl = null;
+  });
+
+  $: if (controlsRef) {
+    setupControlsObserver();
+    adjustCanvasPadding();
+  }
+
+  $: if (canvasRef) {
+    adjustCanvasPadding();
+  }
 
   $: groupedBlocks = (() => {
     const groups = [];
-    for (let i = 0; i < blocks.length; i++) {
-      const block = blocks[i];
-      const next = blocks[i + 1];
+    for (let i = 0; i < modeOrderedBlocks.length; i++) {
+      const block = modeOrderedBlocks[i];
+      const next = modeOrderedBlocks[i + 1];
       if (
         block.type === "image" &&
         next &&
@@ -332,7 +562,9 @@
       ) {
         groups.push({ type: "pair", image: block, text: next });
         i++;
-      } else groups.push(block);
+      } else {
+        groups.push(block);
+      }
     }
     return groups;
   })();
@@ -401,6 +633,7 @@
       {mode}
       {blocks}
       {savedList}
+      {focusedBlockId}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -409,6 +642,8 @@
       on:toggleMode={() => mode = mode === "default" ? "simple" : "default"}
       on:undo={undo}
       on:redo={redo}
+      on:moveUp={moveFocusedBlockUp}
+      on:moveDown={moveFocusedBlockDown}
     />
     <div class="right-controls">
       <RightControls {savedList} {load} {deleteSave}/>
@@ -419,11 +654,13 @@
     {#key blocksKey}
       <ModeArea
         {mode}
-        {blocks}
+        blocks={modeOrderedBlocks}
         {groupedBlocks}
+        {focusedBlockId}
         bind:canvasRef
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
+        on:focusToggle={handleFocusToggle}
       />
     {/key}
   </div>
