@@ -152,8 +152,19 @@
   function handleWrapperClick(event) {
     if (suppressClick) return;
     if (event.defaultPrevented) return;
-    if (event.target.closest('[data-focus-guard]')) {
-      ensureFocus();
+    const guarded = event.target.closest('[data-focus-guard]');
+    if (guarded) {
+      if (guarded === editableDiv) {
+        if (focused) {
+          editableDiv?.blur?.();
+          document.getSelection()?.removeAllRanges?.();
+          dispatch('focusToggle', { id });
+        } else {
+          ensureFocus();
+        }
+      } else {
+        ensureFocus();
+      }
       return;
     }
     dispatch('focusToggle', { id });
@@ -189,9 +200,8 @@
     transition: box-shadow 0.15s ease, outline 0.15s ease;
   }
   .note.focused {
-    outline: 2px solid rgba(110, 168, 255, 0.85);
-    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-                0 0 12px rgba(110, 168, 255, 0.5);
+    outline: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--bg);
   }
   .header {
     padding: 6px;
