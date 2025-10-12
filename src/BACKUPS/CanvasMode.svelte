@@ -39,6 +39,12 @@
     dispatch('focusToggle', event.detail);
   }
 
+  function clearFocus(event) {
+    if (event.target === event.currentTarget) {
+      dispatch('focusToggle', {});
+    }
+  }
+
 
   function getDistance(touches) {
     const dx = touches[0].clientX - touches[1].clientX;
@@ -164,10 +170,12 @@
   on:touchstart={onTouchStart}
   on:touchmove={onTouchMove}
   on:touchend={onTouchEnd}
+  on:pointerdown={clearFocus}
 >
     <div
       class="canvas-inner"
       style="transform: scale({isMobile ? scale : 1})"
+      on:pointerdown={clearFocus}
     >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}

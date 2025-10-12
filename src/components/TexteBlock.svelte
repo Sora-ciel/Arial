@@ -149,11 +149,23 @@
     }
   }
 
+  let textareaRef;
+
   function handleWrapperClick(event) {
     if (suppressClick) return;
     if (event.defaultPrevented) return;
-    if (event.target.closest('[data-focus-guard]')) {
-      ensureFocus();
+    const guarded = event.target.closest('[data-focus-guard]');
+    if (guarded) {
+      if (guarded === textareaRef) {
+        if (focused) {
+          textareaRef?.blur();
+          dispatch('focusToggle', { id });
+        } else {
+          ensureFocus();
+        }
+      } else {
+        ensureFocus();
+      }
       return;
     }
     dispatch('focusToggle', { id });
@@ -187,9 +199,8 @@
     flex-direction: column;
   }
   .wrapper.focused {
-    outline: 2px solid rgba(110, 168, 255, 0.85);
-    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-                0 0 12px rgba(110, 168, 255, 0.5);
+    outline: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--bg);
   }
   .header {
     background: #000;
@@ -295,6 +306,7 @@
 
   <div class="text-container">
     <textarea
+      bind:this={textareaRef}
       spellcheck="false"
       bind:value={content}
       on:input={() => sendUpdate(['content'], { pushToHistory: false })}
