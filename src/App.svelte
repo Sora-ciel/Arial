@@ -28,6 +28,7 @@
   };
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
+  const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
 
   function normalizeControlColors(raw = {}) {
     const left = {
@@ -57,6 +58,28 @@
       return normalizeControlColors(parsed);
     } catch (error) {
       return null;
+    }
+  }
+
+  function loadStoredLastSaveName() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistLastSaveName(name) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      if (name) {
+        localStorage.setItem(LAST_SAVE_STORAGE_KEY, name);
+      } else {
+        localStorage.removeItem(LAST_SAVE_STORAGE_KEY);
+      }
+    } catch (error) {
+      /* ignore persistence failures */
     }
   }
 
@@ -245,6 +268,7 @@
 
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
     if (!currentSaveName) return;
+    persistLastSaveName(currentSaveName);
     const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
     await saveBlocks(currentSaveName, {
       blocks: blocksToPersist,
@@ -435,6 +459,7 @@
     focusedBlockId = null;
     await tick();
     currentSaveName = name;
+    persistLastSaveName(name);
     const loaded = await loadBlocks(name);
     const loadedBlocks = Array.isArray(loaded)
       ? loaded
@@ -463,6 +488,10 @@
       focusedBlockId = null;
     }
     savedList = await listSavedBlocks();
+
+    if (loadStoredLastSaveName() === name) {
+      persistLastSaveName(currentSaveName === name ? "" : currentSaveName);
+    }
 
     history = [];
     historyIndex = -1;
@@ -616,6 +645,13 @@
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
+    const storedLastSave = loadStoredLastSaveName();
+    if (storedLastSave && savedList.includes(storedLastSave)) {
+      currentSaveName = storedLastSave;
+    } else if (!currentSaveName && savedList.length) {
+      currentSaveName = savedList[0];
+    }
+
     const initialData = await loadBlocks(currentSaveName);
     const initialBlocks = Array.isArray(initialData)
       ? initialData
@@ -634,6 +670,7 @@
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
+    persistLastSaveName(currentSaveName);
   });
 
   onDestroy(() => {

@@ -113,6 +113,7 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+  $: innerScale = isMobile ? scale : 1;
 
   onMount(() => {
     checkIsMobile();
@@ -177,7 +178,8 @@
 >
     <div
       class="canvas-inner"
-      style="transform: scale({isMobile ? scale : 1})"
+      style:transform={`scale(${innerScale})`}
+      style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
     >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}
