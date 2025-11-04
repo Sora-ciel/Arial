@@ -3,7 +3,16 @@
 
   export let blocks = [];
   export let focusedBlockId = null;
+  export let canvasColors = {};
   const dispatch = createEventDispatcher();
+
+  const defaultCanvasColors = {
+    outerBg: '#000000',
+    innerBg: '#000000'
+  };
+
+  $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
   function deleteBlock(id) {
     dispatch('delete', { id });
@@ -98,7 +107,7 @@
 }
 
 .canvas {
-  background: #00000041;
+  background: var(--canvas-outer-bg, #00000041);
   border-radius: 8px;
   padding: 5px;
   margin-bottom: 0;
@@ -218,7 +227,7 @@ li {
     flex: 1 1 48%;          /* roughly half width per block */
     min-width: 300px;       /* optional for responsiveness */
     margin-bottom: 0rem;
-    background: #00000041;
+    background: var(--canvas-outer-bg, #00000041);
     border-radius: 8px;
     padding: 5px;
     box-sizing: border-box;
@@ -250,7 +259,7 @@ li {
 
 
 
-<div class="simple-wrapper">
+<div class="simple-wrapper" style={canvasCssVars}>
   {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
     <div class="canvas">
       <div

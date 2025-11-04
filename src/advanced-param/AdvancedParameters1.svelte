@@ -15,6 +15,10 @@
       buttonBg: "#222222",
       buttonText: "#ffffff",
       borderColor: "#444444"
+    },
+    canvas: {
+      outerBg: "#000000",
+      innerBg: "#000000"
     }
   };
 
@@ -24,11 +28,13 @@
 
   let left = { ...defaultColors.left, ...(controlColors.left || {}) };
   let right = { ...defaultColors.right, ...(controlColors.right || {}) };
+  let canvas = { ...defaultColors.canvas, ...(controlColors.canvas || {}) };
 
   $: left = { ...defaultColors.left, ...(controlColors.left || {}) };
   $: right = { ...defaultColors.right, ...(controlColors.right || {}) };
+  $: canvas = { ...defaultColors.canvas, ...(controlColors.canvas || {}) };
 
-  const fields = [
+  const controlFields = [
     { key: "panelBg", label: "Panel background" },
     { key: "textColor", label: "Text color" },
     { key: "buttonBg", label: "Button background" },
@@ -36,14 +42,21 @@
     { key: "borderColor", label: "Border color" }
   ];
 
-  function handleColorChange(side, key, value) {
-    if (side === "left") {
+  const canvasFields = [
+    { key: "outerBg", label: "Canvas background" },
+    { key: "innerBg", label: "Canvas inner area" }
+  ];
+
+  function handleColorChange(section, key, value) {
+    if (section === "left") {
       left = { ...left, [key]: value };
-    } else {
+    } else if (section === "right") {
       right = { ...right, [key]: value };
+    } else if (section === "canvas") {
+      canvas = { ...canvas, [key]: value };
     }
 
-    dispatch("change", { side, key, value });
+    dispatch("change", { section, side: section, key, value });
   }
 </script>
 
@@ -110,7 +123,7 @@
     <h5>Left Controls</h5>
     <p>Update the toolbar that appears on the left side of the canvas.</p>
     <div class="field-list">
-      {#each fields as field}
+      {#each controlFields as field}
         <label>
           <span>{field.label}</span>
           <input
@@ -128,7 +141,7 @@
     <h5>Right Controls</h5>
     <p>Customize the parameter dropdown shown on the right.</p>
     <div class="field-list">
-      {#each fields as field}
+      {#each controlFields as field}
         <label>
           <span>{field.label}</span>
           <input
@@ -136,6 +149,24 @@
             bind:value={right[field.key]}
             on:input={(event) =>
               handleColorChange("right", field.key, event.target.value)}
+          />
+        </label>
+      {/each}
+    </div>
+  </div>
+
+  <div class="section">
+    <h5>Canvas</h5>
+    <p>Set the background for the main canvas and its inner workspace.</p>
+    <div class="field-list">
+      {#each canvasFields as field}
+        <label>
+          <span>{field.label}</span>
+          <input
+            type="color"
+            bind:value={canvas[field.key]}
+            on:input={(event) =>
+              handleColorChange("canvas", field.key, event.target.value)}
           />
         </label>
       {/each}
