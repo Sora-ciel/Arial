@@ -23,10 +23,47 @@
     }
   };
 
-  let controlColors = {
-    left: { ...CONTROL_COLOR_DEFAULTS.left },
-    right: { ...CONTROL_COLOR_DEFAULTS.right }
-  };
+  const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
+
+  function normalizeControlColors(raw = {}) {
+    const left = {
+      ...CONTROL_COLOR_DEFAULTS.left,
+      ...(raw.left || {})
+    };
+
+    const right = {
+      ...CONTROL_COLOR_DEFAULTS.right,
+      ...(raw.right || {})
+    };
+
+    return { left, right };
+  }
+
+  function loadStoredControlColors() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serialized = localStorage.getItem(CONTROL_COLOR_STORAGE_KEY);
+      if (!serialized) return null;
+      const parsed = JSON.parse(serialized);
+      return normalizeControlColors(parsed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistControlColors(colors) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        CONTROL_COLOR_STORAGE_KEY,
+        JSON.stringify(colors)
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  let controlColors = normalizeControlColors();
 
   function handleControlColorChange(event) {
     const { side, key, value } = event.detail || {};
@@ -45,7 +82,16 @@
       ...controlColors,
       [side]: nextSideTheme
     };
+
+    persistControlColors(controlColors);
   }
+
+  onMount(() => {
+    const stored = loadStoredControlColors();
+    if (stored) {
+      controlColors = stored;
+    }
+  });
 
   const DEFAULT_HISTORY_TRIGGERS = {
     text: ['position', 'size', 'bgColor', 'textColor'],
