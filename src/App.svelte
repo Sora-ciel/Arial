@@ -20,15 +20,10 @@
       buttonBg: '#222222',
       buttonText: '#ffffff',
       borderColor: '#444444'
-    },
-    canvas: {
-      outerBg: '#000000',
-      innerBg: '#000000'
     }
   };
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
-  const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
 
   function normalizeControlColors(raw = {}) {
     const left = {
@@ -41,12 +36,7 @@
       ...(raw.right || {})
     };
 
-    const canvas = {
-      ...CONTROL_COLOR_DEFAULTS.canvas,
-      ...(raw.canvas || {})
-    };
-
-    return { left, right, canvas };
+    return { left, right };
   }
 
   function loadStoredControlColors() {
@@ -58,28 +48,6 @@
       return normalizeControlColors(parsed);
     } catch (error) {
       return null;
-    }
-  }
-
-  function loadStoredLastSaveName() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function persistLastSaveName(name) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      if (name) {
-        localStorage.setItem(LAST_SAVE_STORAGE_KEY, name);
-      } else {
-        localStorage.removeItem(LAST_SAVE_STORAGE_KEY);
-      }
-    } catch (error) {
-      /* ignore persistence failures */
     }
   }
 
@@ -98,22 +66,21 @@
   let controlColors = normalizeControlColors();
 
   function handleControlColorChange(event) {
-    const { section, side, key, value } = event.detail || {};
-    const target = section || side;
-    if (!target || !key) return;
+    const { side, key, value } = event.detail || {};
+    if (!side || !key) return;
 
-    const nextSectionTheme = {
-      ...controlColors[target],
+    const nextSideTheme = {
+      ...controlColors[side],
       [key]: value
     };
 
-    if (target === 'left' && key === 'panelBg') {
-      nextSectionTheme.inputBg = value;
+    if (side === 'left' && key === 'panelBg') {
+      nextSideTheme.inputBg = value;
     }
 
     controlColors = {
       ...controlColors,
-      [target]: nextSectionTheme
+      [side]: nextSideTheme
     };
 
     persistControlColors(controlColors);
