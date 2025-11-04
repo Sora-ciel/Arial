@@ -5,6 +5,94 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
 
+  const CONTROL_COLOR_DEFAULTS = {
+    left: {
+      panelBg: '#111111b0',
+      textColor: '#ffffff',
+      buttonBg: '#333333',
+      buttonText: '#ffffff',
+      borderColor: '#444444',
+      inputBg: '#1d1d1d'
+    },
+    right: {
+      panelBg: '#222222',
+      textColor: '#ffffff',
+      buttonBg: '#222222',
+      buttonText: '#ffffff',
+      borderColor: '#444444'
+    }
+  };
+
+  const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
+
+  function normalizeControlColors(raw = {}) {
+    const left = {
+      ...CONTROL_COLOR_DEFAULTS.left,
+      ...(raw.left || {})
+    };
+
+    const right = {
+      ...CONTROL_COLOR_DEFAULTS.right,
+      ...(raw.right || {})
+    };
+
+    return { left, right };
+  }
+
+  function loadStoredControlColors() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serialized = localStorage.getItem(CONTROL_COLOR_STORAGE_KEY);
+      if (!serialized) return null;
+      const parsed = JSON.parse(serialized);
+      return normalizeControlColors(parsed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistControlColors(colors) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        CONTROL_COLOR_STORAGE_KEY,
+        JSON.stringify(colors)
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  let controlColors = normalizeControlColors();
+
+  function handleControlColorChange(event) {
+    const { side, key, value } = event.detail || {};
+    if (!side || !key) return;
+
+    const nextSideTheme = {
+      ...controlColors[side],
+      [key]: value
+    };
+
+    if (side === 'left' && key === 'panelBg') {
+      nextSideTheme.inputBg = value;
+    }
+
+    controlColors = {
+      ...controlColors,
+      [side]: nextSideTheme
+    };
+
+    persistControlColors(controlColors);
+  }
+
+  onMount(() => {
+    const stored = loadStoredControlColors();
+    if (stored) {
+      controlColors = stored;
+    }
+  });
+
   const DEFAULT_HISTORY_TRIGGERS = {
     text: ['position', 'size', 'bgColor', 'textColor'],
     cleantext: ['position', 'size', 'bgColor', 'textColor'],
@@ -634,6 +722,7 @@
       {blocks}
       {savedList}
       {focusedBlockId}
+      colors={controlColors.left}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -646,7 +735,13 @@
       on:moveDown={moveFocusedBlockDown}
     />
     <div class="right-controls">
-      <RightControls {savedList} {load} {deleteSave}/>
+      <RightControls
+        {savedList}
+        {load}
+        {deleteSave}
+        {controlColors}
+        on:updateColors={handleControlColorChange}
+      />
     </div>
   </div>
 
