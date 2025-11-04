@@ -17,9 +17,11 @@
   
 
   let scale = 1;
-  let baseScale = 1; 
+  let baseScale = 1;
   let lastDistance = null;
   let isMobile = false;
+  let lastFitWidth = null;
+  let hasFittedCanvas = false;
 
 
 
@@ -94,6 +96,9 @@
 
     scale = baseScale;
     inner.style.transformOrigin = "top left";
+
+    lastFitWidth = window.innerWidth;
+    hasFittedCanvas = true;
   }
 
   export function refitCanvas() {
@@ -103,11 +108,21 @@
   }
 
   function checkIsMobile() {
-    isMobile = window.innerWidth <= 1024;
-    if (isMobile) {
-      fitCanvasToScreen();
+    const width = window.innerWidth;
+    const newIsMobile = width <= 1024;
+    const widthChanged =
+      lastFitWidth === null || Math.abs(width - lastFitWidth) > 1;
+
+    isMobile = newIsMobile;
+
+    if (newIsMobile) {
+      if (!hasFittedCanvas || widthChanged) {
+        fitCanvasToScreen();
+      }
     } else {
       scale = 1; // reset scale on desktop
+      hasFittedCanvas = false;
+      lastFitWidth = null;
     }
   }
 
