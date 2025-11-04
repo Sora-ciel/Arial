@@ -2,17 +2,54 @@
   export let savedList = [];
   export let load;
   export let deleteSave;
+  export let controlColors = {};
+
+  import { createEventDispatcher, onMount, onDestroy } from "svelte";
+  import AdvancedParameters1 from "./AdvancedParameters1.svelte";
+
+  const dispatch = createEventDispatcher();
 
   let pc = true; // default until detected
   let detailsEl; // reference to <details>
+  let resizeHandler;
+
+  const defaultColors = {
+    panelBg: "#222222",
+    textColor: "#ffffff",
+    buttonBg: "#222222",
+    buttonText: "#ffffff",
+    borderColor: "#444444"
+  };
+
+  $: rightTheme = {
+    ...defaultColors,
+    ...((controlColors && controlColors.right) || {})
+  };
+
+  $: rightCssVars = Object.entries({
+    "--right-panel-bg": rightTheme.panelBg,
+    "--right-text-color": rightTheme.textColor,
+    "--right-button-bg": rightTheme.buttonBg,
+    "--right-button-text": rightTheme.buttonText,
+    "--right-border-color": rightTheme.borderColor
+  })
+    .map(([name, value]) => `${name}: ${value}`)
+    .join("; ");
 
   // Detect PC vs mobile
-  import { onMount } from "svelte";
   onMount(() => {
-    pc = window.innerWidth > 1024;
-    window.addEventListener("resize", () => {
+    const evaluate = () => {
       pc = window.innerWidth > 1024;
-    });
+    };
+    evaluate();
+    resizeHandler = () => evaluate();
+    window.addEventListener("resize", resizeHandler);
+  });
+
+  onDestroy(() => {
+    if (resizeHandler) {
+      window.removeEventListener("resize", resizeHandler);
+    }
   });
 
   function handleSelect(name) {
@@ -21,6 +58,10 @@
     if (!pc && detailsEl) {
       detailsEl.open = false;
     }
+  }
+
+  function handleColorChange(event) {
+    dispatch("updateColors", event.detail);
   }
 </script>
 
@@ -42,9 +83,10 @@
     display: block;
     cursor: pointer;
     padding: 6px 12px;
-    background: #222;
-    color: #fff;
-    border-radius: 4px;
+    background: var(--right-button-bg, #222222);
+    color: var(--right-button-text, #ffffff);
+    border-radius: 6px;
+    border: 1px solid var(--right-border-color, #444444);
     font-weight: bold;
     transition: background 0.2s ease;
   }
@@ -65,12 +107,13 @@
     right: 0;
     bottom: 0;
     width: 200px;
-    background: #222;
-    border-left: 1px solid #444;
+    background: var(--right-panel-bg, #222222);
+    border-left: 1px solid var(--right-border-color, #444444);
     padding: 16px;
     overflow-y: auto;
     z-index: 999;
     box-shadow: -2px 0 10px rgba(0,0,0,0.4);
+    color: var(--right-text-color, #ffffff);
   }
 
   /* Optional: make it more mobile-friendly */
@@ -85,12 +128,12 @@
     .dropdown-content {
     display: none;
     position: fixed;
-    top: 71px; 
+    top: 71px;
     right: 0;
     bottom: 0;
     width: 200px;
-    background: #222;
-    border-left: 1px solid #444;
+    background: var(--right-panel-bg, #222222);
+    border-left: 1px solid var(--right-border-color, #444444);
     padding: 10px;
     overflow-y: auto;
     z-index: 999;
@@ -98,9 +141,47 @@
   }
 
 }
+
+  .dropdown-content h4 {
+    margin: 0 0 10px;
+  }
+
+  .dropdown-content ul {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .dropdown-content li {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+  }
+
+  .dropdown-content button {
+    flex: 1 1 auto;
+    padding: 6px 10px;
+    background: var(--right-button-bg, #333333);
+    color: var(--right-button-text, #ffffff);
+    border: 1px solid var(--right-border-color, #444444);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .dropdown-content li button:last-child {
+    flex: 0 0 auto;
+    padding: 6px 8px;
+  }
+
+  .dropdown-content hr {
+    border: none;
+    border-top: 1px solid var(--right-border-color, #444444);
+    margin: 14px 0;
+  }
 </style>
 
-<div class="right-controls">
+<div class="right-controls" style={rightCssVars}>
   <details bind:this={detailsEl}>
     <summary>⚙️ Parameters</summary>
 
@@ -114,6 +195,8 @@
           </li>
         {/each}
       </ul>
+      <hr />
+      <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
     </div>
   </details>
 </div>

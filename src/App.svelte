@@ -5,6 +5,104 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
 
+  const CONTROL_COLOR_DEFAULTS = {
+    left: {
+      panelBg: '#111111b0',
+      textColor: '#ffffff',
+      buttonBg: '#333333',
+      buttonText: '#ffffff',
+      borderColor: '#444444',
+      inputBg: '#1d1d1d'
+    },
+    right: {
+      panelBg: '#222222',
+      textColor: '#ffffff',
+      buttonBg: '#222222',
+      buttonText: '#ffffff',
+      borderColor: '#444444'
+    },
+    canvas: {
+      outerBg: '#000000',
+      innerBg: '#000000'
+    }
+  };
+
+  const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
+
+  function normalizeControlColors(raw = {}) {
+    const left = {
+      ...CONTROL_COLOR_DEFAULTS.left,
+      ...(raw.left || {})
+    };
+
+    const right = {
+      ...CONTROL_COLOR_DEFAULTS.right,
+      ...(raw.right || {})
+    };
+
+    const canvas = {
+      ...CONTROL_COLOR_DEFAULTS.canvas,
+      ...(raw.canvas || {})
+    };
+
+    return { left, right, canvas };
+  }
+
+  function loadStoredControlColors() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serialized = localStorage.getItem(CONTROL_COLOR_STORAGE_KEY);
+      if (!serialized) return null;
+      const parsed = JSON.parse(serialized);
+      return normalizeControlColors(parsed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistControlColors(colors) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        CONTROL_COLOR_STORAGE_KEY,
+        JSON.stringify(colors)
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  let controlColors = normalizeControlColors();
+
+  function handleControlColorChange(event) {
+    const { section, side, key, value } = event.detail || {};
+    const target = section || side;
+    if (!target || !key) return;
+
+    const nextSectionTheme = {
+      ...controlColors[target],
+      [key]: value
+    };
+
+    if (target === 'left' && key === 'panelBg') {
+      nextSectionTheme.inputBg = value;
+    }
+
+    controlColors = {
+      ...controlColors,
+      [target]: nextSectionTheme
+    };
+
+    persistControlColors(controlColors);
+  }
+
+  onMount(() => {
+    const stored = loadStoredControlColors();
+    if (stored) {
+      controlColors = stored;
+    }
+  });
+
   const DEFAULT_HISTORY_TRIGGERS = {
     text: ['position', 'size', 'bgColor', 'textColor'],
     cleantext: ['position', 'size', 'bgColor', 'textColor'],
@@ -110,6 +208,9 @@
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
+  $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
+  $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
+  $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > 1024;
 
   // --- Undo/Redo history ---
@@ -595,8 +696,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #111;
-  border-bottom: 1px solid #333;
+  background: var(--controls-bg, #111);
+  border-bottom: 1px solid var(--controls-border, #333);
 }
 
 .modes {
@@ -627,13 +728,14 @@
 
 
 <div class="app">
-  <div class="controls" bind:this={controlsRef}>
+  <div class="controls" bind:this={controlsRef} style={controlsStyle}>
     <LeftControls
       bind:currentSaveName
       {mode}
       {blocks}
       {savedList}
       {focusedBlockId}
+      colors={controlColors.left}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -646,7 +748,13 @@
       on:moveDown={moveFocusedBlockDown}
     />
     <div class="right-controls">
-      <RightControls {savedList} {load} {deleteSave}/>
+      <RightControls
+        {savedList}
+        {load}
+        {deleteSave}
+        {controlColors}
+        on:updateColors={handleControlColorChange}
+      />
     </div>
   </div>
 
@@ -658,6 +766,7 @@
         {groupedBlocks}
         {focusedBlockId}
         bind:canvasRef
+        canvasColors={canvasTheme}
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
         on:focusToggle={handleFocusToggle}
