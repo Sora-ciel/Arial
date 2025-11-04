@@ -10,6 +10,7 @@
   export let onTouchMove;
   export let onTouchEnd;
   export let focusedBlockId;
+  export let canvasColors = {};
 
   let width = 0;
 
@@ -46,6 +47,7 @@
     {blocks}
     {focusedBlockId}
     bind:canvasRef
+    {canvasColors}
     on:touchstart={onTouchStart}
     on:touchmove={onTouchMove}
     on:touchend={onTouchEnd}
@@ -58,6 +60,7 @@
       {blocks}
       {focusedBlockId}
       bind:canvasRef
+      {canvasColors}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}

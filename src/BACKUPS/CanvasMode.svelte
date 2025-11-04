@@ -13,6 +13,7 @@
 
   export let canvasRef;
   export let focusedBlockId;
+  export let canvasColors = {};
 
   
 
@@ -105,6 +106,15 @@
     }
   }
 
+  const defaultCanvasColors = {
+    outerBg: '#000000',
+    innerBg: '#000000'
+  };
+
+  $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+  $: innerScale = isMobile ? scale : 1;
+
   onMount(() => {
     checkIsMobile();
     window.addEventListener("resize", checkIsMobile);
@@ -122,7 +132,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgb(0, 0, 0);
+  background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
 }
 
@@ -133,7 +143,7 @@
   height: 900px;
   transform-origin: top left;
   transition: transform 0.05s linear;
-  background: #000;
+  background: var(--canvas-inner-bg, #000000);
 }
 
 
@@ -147,7 +157,7 @@
   left: 0;
   right: 0;
   bottom: 0;
-  background: #141414;
+  background: var(--canvas-outer-bg, #141414);
   overflow: auto;
   }
 }
@@ -161,13 +171,15 @@
   class="canvas"
   class:simple-note={mode === 'simple'}
   bind:this={canvasRef}
+  style={canvasCssVars}
   on:touchstart={onTouchStart}
   on:touchmove={onTouchMove}
   on:touchend={onTouchEnd}
 >
     <div
       class="canvas-inner"
-      style="transform: scale({isMobile ? scale : 1})"
+      style:transform={`scale(${innerScale})`}
+      style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
     >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}

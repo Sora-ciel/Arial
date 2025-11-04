@@ -20,10 +20,15 @@
       buttonBg: '#222222',
       buttonText: '#ffffff',
       borderColor: '#444444'
+    },
+    canvas: {
+      outerBg: '#000000',
+      innerBg: '#000000'
     }
   };
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
+  const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
 
   function normalizeControlColors(raw = {}) {
     const left = {
@@ -36,7 +41,12 @@
       ...(raw.right || {})
     };
 
-    return { left, right };
+    const canvas = {
+      ...CONTROL_COLOR_DEFAULTS.canvas,
+      ...(raw.canvas || {})
+    };
+
+    return { left, right, canvas };
   }
 
   function loadStoredControlColors() {
@@ -48,6 +58,28 @@
       return normalizeControlColors(parsed);
     } catch (error) {
       return null;
+    }
+  }
+
+  function loadStoredLastSaveName() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistLastSaveName(name) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      if (name) {
+        localStorage.setItem(LAST_SAVE_STORAGE_KEY, name);
+      } else {
+        localStorage.removeItem(LAST_SAVE_STORAGE_KEY);
+      }
+    } catch (error) {
+      /* ignore persistence failures */
     }
   }
 
@@ -66,21 +98,22 @@
   let controlColors = normalizeControlColors();
 
   function handleControlColorChange(event) {
-    const { side, key, value } = event.detail || {};
-    if (!side || !key) return;
+    const { section, side, key, value } = event.detail || {};
+    const target = section || side;
+    if (!target || !key) return;
 
-    const nextSideTheme = {
-      ...controlColors[side],
+    const nextSectionTheme = {
+      ...controlColors[target],
       [key]: value
     };
 
-    if (side === 'left' && key === 'panelBg') {
-      nextSideTheme.inputBg = value;
+    if (target === 'left' && key === 'panelBg') {
+      nextSectionTheme.inputBg = value;
     }
 
     controlColors = {
       ...controlColors,
-      [side]: nextSideTheme
+      [target]: nextSectionTheme
     };
 
     persistControlColors(controlColors);
@@ -198,6 +231,9 @@
   let currentSaveName = "default";
   let savedList = [];
   let fileInputRef;
+  $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
+  $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
+  $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > 1024;
 
   // --- Undo/Redo history ---
@@ -232,6 +268,7 @@
 
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
     if (!currentSaveName) return;
+    persistLastSaveName(currentSaveName);
     const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
     await saveBlocks(currentSaveName, {
       blocks: blocksToPersist,
@@ -422,6 +459,7 @@
     focusedBlockId = null;
     await tick();
     currentSaveName = name;
+    persistLastSaveName(name);
     const loaded = await loadBlocks(name);
     const loadedBlocks = Array.isArray(loaded)
       ? loaded
@@ -450,6 +488,10 @@
       focusedBlockId = null;
     }
     savedList = await listSavedBlocks();
+
+    if (loadStoredLastSaveName() === name) {
+      persistLastSaveName(currentSaveName === name ? "" : currentSaveName);
+    }
 
     history = [];
     historyIndex = -1;
@@ -603,6 +645,13 @@
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
+    const storedLastSave = loadStoredLastSaveName();
+    if (storedLastSave && savedList.includes(storedLastSave)) {
+      currentSaveName = storedLastSave;
+    } else if (!currentSaveName && savedList.length) {
+      currentSaveName = savedList[0];
+    }
+
     const initialData = await loadBlocks(currentSaveName);
     const initialBlocks = Array.isArray(initialData)
       ? initialData
@@ -621,6 +670,7 @@
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
+    persistLastSaveName(currentSaveName);
   });
 
   onDestroy(() => {
@@ -683,8 +733,8 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
-  background: #111;
-  border-bottom: 1px solid #333;
+  background: var(--controls-bg, #111);
+  border-bottom: 1px solid var(--controls-border, #333);
 }
 
 .modes {
@@ -715,7 +765,7 @@
 
 
 <div class="app">
-  <div class="controls" bind:this={controlsRef}>
+  <div class="controls" bind:this={controlsRef} style={controlsStyle}>
     <LeftControls
       bind:currentSaveName
       {mode}
@@ -753,6 +803,7 @@
         {groupedBlocks}
         {focusedBlockId}
         bind:canvasRef
+        canvasColors={canvasTheme}
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
         on:focusToggle={handleFocusToggle}
