@@ -2,60 +2,21 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
+  import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
-
-  const CONTROL_COLOR_DEFAULTS = {
-    left: {
-      panelBg: '#111111b0',
-      textColor: '#ffffff',
-      buttonBg: '#333333',
-      buttonText: '#ffffff',
-      borderColor: '#444444',
-      inputBg: '#1d1d1d'
-    },
-    right: {
-      panelBg: '#222222',
-      textColor: '#ffffff',
-      buttonBg: '#222222',
-      buttonText: '#ffffff',
-      borderColor: '#444444'
-    },
-    canvas: {
-      outerBg: '#000000',
-      innerBg: '#000000'
-    }
-  };
-
-  const BLOCK_THEME_DEFAULTS = {
-    borderColor: 'rgba(255, 255, 255, 0.22)',
-    borderWidth: '1px',
-    borderRadius: '14px',
-    shadow:
-      '0 18px 45px rgba(0, 0, 0, 0.5), 0 0 22px rgba(88, 160, 255, 0.08)',
-    focusOutline: 'rgba(110, 168, 255, 0.85)',
-    focusShadow:
-      '0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5)',
-    headerBg: 'var(--bg)',
-    headerText: 'var(--text)',
-    headerFont: "'Inter', system-ui, sans-serif",
-    headerLetterSpacing: '0.06em',
-    headerTransform: 'uppercase',
-    bodyFont: "'Inter', system-ui, sans-serif",
-    accentColor: '#ff5f5f',
-    accentText: '#ffffff',
-    controlRadius: '8px',
-    mediaButtonBg: 'rgba(255, 255, 255, 0.08)',
-    mediaButtonText: '#ffffff'
-  };
+  import {
+    CONTROL_COLOR_DEFAULTS,
+    BLOCK_THEME_DEFAULTS,
+    CUSTOM_THEME_ID,
+    DEFAULT_PREVIEW_BG,
+    normalizeBlockTheme,
+    normalizeControlColors
+  } from './utils/themeDefaults.js';
 
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
-  const CUSTOM_THEME_ID = 'custom';
-
-  function normalizeBlockTheme(raw = {}) {
-    return { ...BLOCK_THEME_DEFAULTS, ...(raw || {}) };
-  }
+  const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
 
   function toCssVarName(key) {
     return key
@@ -165,23 +126,24 @@
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
 
-  function normalizeControlColors(raw = {}) {
-    const left = {
-      ...CONTROL_COLOR_DEFAULTS.left,
-      ...(raw.left || {})
-    };
-
-    const right = {
-      ...CONTROL_COLOR_DEFAULTS.right,
-      ...(raw.right || {})
-    };
-
-    const canvas = {
-      ...CONTROL_COLOR_DEFAULTS.canvas,
-      ...(raw.canvas || {})
-    };
-
-    return { left, right, canvas };
+  function loadStoredCustomThemes() {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+      const serialized = localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY);
+      if (!serialized) return [];
+      const parsed = JSON.parse(serialized);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .filter(theme => theme && theme.id && theme.name)
+        .map(theme => ({
+          ...theme,
+          controlColors: normalizeControlColors(theme.controlColors),
+          blockTheme: normalizeBlockTheme(theme.blockTheme),
+          isCustom: true
+        }));
+    } catch (error) {
+      return [];
+    }
   }
 
   function loadStoredControlColors() {
@@ -262,9 +224,52 @@
     }
   }
 
+  function persistCustomThemes(themes) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      const serializable = themes.map(({
+        id,
+        name,
+        description,
+        controlColors,
+        blockTheme,
+        previewBg,
+        createdAt
+      }) => ({
+        id,
+        name,
+        description,
+        controlColors,
+        blockTheme,
+        previewBg,
+        createdAt
+      }));
+      localStorage.setItem(
+        CUSTOM_THEMES_STORAGE_KEY,
+        JSON.stringify(serializable)
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  function slugify(value = '') {
+    return value
+      .toLowerCase()
+      .trim()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 48);
+  }
+
   let controlColors = normalizeControlColors();
   let blockTheme = normalizeBlockTheme();
   let selectedThemeId = 'default-dark';
+  let customThemes = [];
+  let currentThemePreviewBg = DEFAULT_PREVIEW_BG;
+  let showAdvancedCssPage = false;
+
+  $: availableThemes = [...STYLE_PRESETS, ...customThemes];
 
   function applyThemePreset(preset, { persistSelection = true } = {}) {
     if (!preset) return;
@@ -274,6 +279,7 @@
     controlColors = nextControlColors;
     blockTheme = nextBlockTheme;
     selectedThemeId = preset.id;
+    currentThemePreviewBg = preset.previewBg ?? DEFAULT_PREVIEW_BG;
 
     if (persistSelection) {
       persistControlColors(nextControlColors);
@@ -305,10 +311,85 @@
     persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
   }
 
+  function handleBlockThemeChange(event) {
+    const { key, value } = event.detail || {};
+    if (!key) return;
+
+    blockTheme = {
+      ...blockTheme,
+      [key]: value
+    };
+
+    selectedThemeId = CUSTOM_THEME_ID;
+    persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
+  }
+
+  function handlePreviewBgChange(event) {
+    const { value } = event.detail || {};
+    if (typeof value !== 'string') return;
+
+    currentThemePreviewBg = value || DEFAULT_PREVIEW_BG;
+    selectedThemeId = CUSTOM_THEME_ID;
+  }
+
+  function handleAdvancedThemeSave(event) {
+    const {
+      name,
+      description,
+      controlColors: themeControlColors,
+      blockTheme: themeBlock,
+      previewBg
+    } = event.detail || {};
+
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) return;
+
+    const normalizedColors = normalizeControlColors(
+      themeControlColors || controlColors
+    );
+    const normalizedBlock = normalizeBlockTheme(themeBlock || blockTheme);
+    const safePreviewBg =
+      typeof previewBg === 'string' && previewBg
+        ? previewBg
+        : currentThemePreviewBg || DEFAULT_PREVIEW_BG;
+
+    const baseId = slugify(trimmedName) || 'custom-theme';
+    const existingIds = new Set(availableThemes.map(theme => theme.id));
+    let uniqueId = baseId;
+    let counter = 1;
+    while (existingIds.has(uniqueId)) {
+      uniqueId = `${baseId}-${counter}`;
+      counter += 1;
+    }
+
+    const newTheme = {
+      id: uniqueId,
+      name: trimmedName,
+      description: description?.trim() || 'Custom theme',
+      controlColors: normalizedColors,
+      blockTheme: normalizedBlock,
+      previewBg: safePreviewBg,
+      createdAt: Date.now(),
+      isCustom: true
+    };
+
+    customThemes = [...customThemes, newTheme];
+    persistCustomThemes(customThemes);
+
+    applyThemePreset(newTheme);
+
+    showAdvancedCssPage = false;
+  }
+
   onMount(() => {
-    const stored = loadStoredControlColors();
-    if (stored) {
-      controlColors = stored;
+    const storedCustomThemes = loadStoredCustomThemes();
+    if (storedCustomThemes.length) {
+      customThemes = storedCustomThemes;
+    }
+
+    const storedControlColors = loadStoredControlColors();
+    if (storedControlColors) {
+      controlColors = storedControlColors;
     }
 
     const storedTheme = loadStoredBlockTheme();
@@ -319,11 +400,25 @@
       selectedThemeId = 'default-dark';
     }
 
+    const combinedThemes = [...STYLE_PRESETS, ...storedCustomThemes];
     if (selectedThemeId !== CUSTOM_THEME_ID) {
-      const preset = STYLE_PRESETS.find(theme => theme.id === selectedThemeId);
+      const preset = combinedThemes.find(theme => theme.id === selectedThemeId);
       if (preset) {
         applyThemePreset(preset, { persistSelection: false });
+      } else if (STYLE_PRESETS.length) {
+        applyThemePreset(STYLE_PRESETS[0], { persistSelection: false });
+        selectedThemeId = STYLE_PRESETS[0].id;
       }
+    }
+
+    const activeTheme =
+      combinedThemes.find(theme => theme.id === selectedThemeId) || null;
+    if (activeTheme) {
+      currentThemePreviewBg = activeTheme.previewBg ?? DEFAULT_PREVIEW_BG;
+    } else if (controlColors?.canvas?.innerBg) {
+      currentThemePreviewBg = controlColors.canvas.innerBg;
+    } else {
+      currentThemePreviewBg = DEFAULT_PREVIEW_BG;
     }
   });
 
@@ -336,10 +431,12 @@
     if (!themeId) return;
     if (themeId === CUSTOM_THEME_ID) {
       selectedThemeId = CUSTOM_THEME_ID;
+      currentThemePreviewBg =
+        controlColors?.canvas?.innerBg ?? DEFAULT_PREVIEW_BG;
       persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
       return;
     }
-    const preset = STYLE_PRESETS.find(theme => theme.id === themeId);
+    const preset = availableThemes.find(theme => theme.id === themeId);
     if (!preset) return;
     applyThemePreset(preset);
   }
@@ -1033,10 +1130,11 @@
         {load}
         {deleteSave}
         {controlColors}
-        themes={STYLE_PRESETS}
+        themes={availableThemes}
         {selectedThemeId}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
+        on:openAdvancedCss={() => (showAdvancedCssPage = true)}
       />
     </div>
   </div>
@@ -1057,4 +1155,17 @@
     {/key}
   </div>
 </div>
+
+{#if showAdvancedCssPage}
+  <AdvancedCssPage
+    {controlColors}
+    {blockTheme}
+    previewBg={currentThemePreviewBg}
+    on:close={() => (showAdvancedCssPage = false)}
+    on:updateControlColor={handleControlColorChange}
+    on:updateBlockTheme={handleBlockThemeChange}
+    on:updatePreviewBg={handlePreviewBgChange}
+    on:saveTheme={handleAdvancedThemeSave}
+  />
+{/if}
 
