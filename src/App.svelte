@@ -446,6 +446,24 @@
     }
   }
 
+  async function save() {
+    const trimmedName = currentSaveName.trim();
+    if (!trimmedName) {
+      return;
+    }
+
+    if (trimmedName !== currentSaveName) {
+      currentSaveName = trimmedName;
+    }
+
+    if (hasUnsnapshottedChanges) {
+      await pushHistory(blocks, modeOrders);
+    } else {
+      await persistAutosave(blocks, modeOrders);
+      hasUnsnapshottedChanges = false;
+    }
+  }
+
   async function clear() {
     blocks = [];
     focusedBlockId = null;
