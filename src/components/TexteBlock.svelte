@@ -176,24 +176,24 @@
 <style>
   .wrapper {
     position: absolute;
-    border: 1px solid #ccc;
-    background: white;
-    box-shadow: 0 0 2px 1px var(--text),
-                0 0 6px 2px var(--text);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    border-radius: var(--block-border-radius, 12px);
+    background: var(--block-surface, var(--bg));
+    box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
     outline: 2px solid transparent;
-    transition: box-shadow 0.15s ease, outline 0.15s ease;
+    transition: box-shadow 0.15s ease, outline 0.15s ease, transform 0.2s ease;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    font-family: var(--block-body-font, inherit);
   }
   .wrapper.focused {
-    outline: 2px solid rgba(110, 168, 255, 0.85);
-    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-                0 0 12px rgba(110, 168, 255, 0.5);
+    outline: 2px solid var(--block-focus-outline, rgba(110, 168, 255, 0.85));
+    box-shadow: var(--block-focus-shadow, 0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5));
   }
   .header {
-    background: #000;
-    padding: 4px;
+    background: var(--block-header-bg, var(--bg));
+    padding: 4px 8px;
     cursor: move;
     user-select: none;
     font-size: 0.8rem;
@@ -201,6 +201,10 @@
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+    color: var(--block-header-text, var(--text));
+    font-family: var(--block-header-font, var(--block-body-font, inherit));
+    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    text-transform: var(--block-header-transform, uppercase);
   }
   .header-controls {
     display: flex;
@@ -210,22 +214,29 @@
   input[type="color"] {
     width: 28px;
     height: 22px;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     padding: 0;
     cursor: pointer;
+    border-radius: var(--block-control-radius, 6px);
+    background: transparent;
   }
   button.delete-btn {
-    background: red;
-    color: white;
+    background: var(--block-accent-color, #ff5f5f);
+    color: var(--block-accent-text, #ffffff);
     border: none;
     cursor: pointer;
-    padding: 2px 6px;
-    font-weight: bold;
-    border-radius: 3px;
+    padding: 2px 8px;
+    font-weight: 600;
+    border-radius: var(--block-control-radius, 6px);
+    transition: transform 0.15s ease, filter 0.2s ease;
+  }
+  button.delete-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.1);
   }
   .text-container {
     flex: 1;
-    background-color: var(--bg);
+    background-color: var(--block-surface, var(--bg));
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -238,6 +249,7 @@
     color: var(--text);
     font-size: 1.08rem;
     font-weight: 300;
+    font-family: var(--block-body-font, inherit);
     resize: none;
     outline: none;
     padding: 8px;
