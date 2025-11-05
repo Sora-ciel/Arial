@@ -97,16 +97,18 @@
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
   display: grid;
-  grid-template-columns: 1fr;   /* single column */
+  grid-template-columns: 1fr;
   gap: 1rem;
   justify-content: center;
-  padding: 0;
+  padding: clamp(12px, 2vw, 24px);
   overflow-y: auto;
+  overflow-x: hidden;
   width: 100%;
-  max-width: 1920px;
+  max-width: 1200px;
   margin: 0 auto;
   flex: 1 1 100%;
-  min-width: 0;                 /* allow shrinking inside flex parents */
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .canvas {
@@ -217,26 +219,14 @@ li {
 /* ========== PC (desktop) ========== */
 @media (min-width: 1024px) {
   .simple-wrapper {
-    display: flex;          /* horizontal layout per row */
-    flex-wrap: wrap;        /* allow multiple rows */
-    gap: 0rem;
-    justify-content: flex-start;
-    max-width: 1920px;
-    margin: 0 auto;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    justify-content: stretch;
+    max-width: 1400px;
   }
 
   .canvas {
-    display: flex;
-    flex: 1 1 48%;          /* roughly half width per block */
-    min-width: 300px;       /* optional for responsiveness */
-    margin-bottom: 0rem;
-    background: var(--canvas-outer-bg, #00000041);
-    border-radius: 8px;
-    padding: 5px;
-    box-sizing: border-box;
+    margin-bottom: 0;
   }
-
-
 }
 
 .container img {
