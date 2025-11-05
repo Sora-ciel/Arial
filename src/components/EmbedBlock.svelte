@@ -164,41 +164,44 @@
 <style>
   .player {
     position: absolute;
-    border: 1px solid var(--text);
-    border-radius: 8px;
-    box-shadow: 0 0 2px 1px var(--text),
-                0 0 6px 2px var(--text);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
+    border-radius: var(--block-border-radius, 12px);
+    box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background-color: var(--bg);
+    background-color: var(--block-surface, var(--bg));
     color: var(--text);
     outline: 2px solid transparent;
     transition: box-shadow 0.15s ease, outline 0.15s ease;
+    font-family: var(--block-body-font, inherit);
   }
   .player.focused {
-    outline: 2px solid rgba(110, 168, 255, 0.85);
-    box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
-                0 0 12px rgba(110, 168, 255, 0.5);
+    outline: 2px solid var(--block-focus-outline, rgba(110, 168, 255, 0.85));
+    box-shadow: var(--block-focus-shadow, 0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5));
   }
   .header {
-    padding: 6px;
-    background: var(--bg);
-    color: var(--text);
+    padding: 6px 10px;
+    background: var(--block-header-bg, var(--bg));
+    color: var(--block-header-text, var(--text));
     font-size: 0.85rem;
     cursor: move;
     display: flex;
     justify-content: space-between;
     align-items: center;
-
+    font-family: var(--block-header-font, var(--block-body-font, inherit));
+    letter-spacing: var(--block-header-letter-spacing, 0.08em);
+    text-transform: var(--block-header-transform, uppercase);
   }
   .header-controls {
     display: flex;
     gap: 4px;
   }
   .header input[type="color"] {
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     cursor: pointer;
+    border-radius: var(--block-control-radius, 6px);
+    background: transparent;
   }
   .content {
     flex: 1;
@@ -218,14 +221,21 @@
     z-index: 30;
   }
   .delete-btn {
-    background: var(--text);
-    border-color: var(--bg);
+    background: var(--block-accent-color, var(--text));
+    border-color: transparent;
     font-size: 1.1rem;
-    color: var(--bg);
+    color: var(--block-accent-text, var(--bg));
     cursor: pointer;
-    padding: 0px 6px;
-    border-radius: 3px;
+    padding: 0px 8px;
+    border-radius: var(--block-control-radius, 6px);
+    transition: transform 0.15s ease, filter 0.2s ease;
   }
+
+  .delete-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.08);
+  }
+
   .gear-btn {
     background: transparent;
     border: none;
@@ -233,12 +243,15 @@
     padding: 2px 6px;
     font-size: 1.4rem;
     line-height: 1;
-    color: var(--text);
+    color: var(--block-header-text, var(--text));
   }
+
   .settings-area {
     padding: 0.75em;
-    border-top: 1px solid var(--text);
+    border-top: 1px solid var(--block-border-color, var(--text));
     font-size: 0.9em;
+    background: rgba(0, 0, 0, 0.25);
+    color: var(--block-header-text, var(--text));
   }
 </style>
 
