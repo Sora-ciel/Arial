@@ -74,6 +74,17 @@
     }
   ];
 
+  const blockColorKeys = new Set([
+    'borderColor',
+    'focusOutline',
+    'headerBg',
+    'headerText',
+    'accentColor',
+    'accentText',
+    'mediaButtonBg',
+    'mediaButtonText'
+  ]);
+
   const blockFieldGroups = [
     {
       title: 'Block frame',
@@ -134,6 +145,65 @@
   $: previewStyle = Object.entries(workingBlockTheme || {})
     .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`)
     .join('; ');
+
+  const HEX_COLOR_REGEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+
+  function expandShortHex(value) {
+    if (!value || !/^#[0-9a-f]{3}$/i.test(value)) {
+      return value;
+    }
+    const [, digits] = value.match(/^#([0-9a-f]{3})$/i);
+    return `#${digits
+      .split('')
+      .map((char) => char + char)
+      .join('')}`;
+  }
+
+  function parseCssColor(value) {
+    if (!value || typeof value !== 'string') {
+      return { hex: null, editable: false };
+    }
+
+    const trimmed = value.trim();
+
+    if (HEX_COLOR_REGEX.test(trimmed)) {
+      return { hex: expandShortHex(trimmed).toLowerCase(), editable: true };
+    }
+
+    const rgbaMatch = trimmed.match(
+      /^rgba?\((\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(1|0|0?\.\d+))?\)$/i
+    );
+
+    if (rgbaMatch) {
+      const [, r, g, b, alpha = '1'] = rgbaMatch;
+      const alphaNum = Number(alpha);
+
+      if (Number(r) <= 255 && Number(g) <= 255 && Number(b) <= 255 && alphaNum === 1) {
+        const toHex = (component) => {
+          const hex = Number(component).toString(16).padStart(2, '0');
+          return hex;
+        };
+        return {
+          hex: `#${toHex(r)}${toHex(g)}${toHex(b)}`,
+          editable: true
+        };
+      }
+
+      return { hex: null, editable: false };
+    }
+
+    return { hex: null, editable: false };
+  }
+
+  function getBlockFieldValue(key) {
+    return workingBlockTheme[key] ?? BLOCK_THEME_DEFAULTS[key] ?? '';
+  }
+
+  function getBlockColorState(key) {
+    const value = getBlockFieldValue(key);
+    const parsed = parseCssColor(value);
+    return { ...parsed, value };
+  }
 
   function updateControlColor(section, key, value) {
     workingControlColors = {
@@ -312,6 +382,22 @@
     resize: vertical;
   }
 
+  .color-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .color-text-input {
+    flex: 1;
+  }
+
+  .color-helper {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 4px;
+  }
+
   .preview-card {
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -481,6 +567,41 @@
                   <textarea
                     on:input={(event) => updateBlockField(field.key, event.target.value)}
                   >{workingBlockTheme[field.key] ?? BLOCK_THEME_DEFAULTS[field.key] ?? ''}</textarea>
+                {:else if blockColorKeys.has(field.key)}
+                  {#key `${field.key}-${getBlockFieldValue(field.key)}`}
+                    {@const colorState = getBlockColorState(field.key)}
+                    {#if colorState.editable}
+                      <div class="color-input-row">
+                        <input
+                          type="color"
+                          value={colorState.hex}
+                          on:input={(event) => updateBlockField(field.key, event.target.value)}
+                        />
+                        <input
+                          class="color-text-input"
+                          type="text"
+                          value={colorState.value}
+                          on:input={(event) => updateBlockField(field.key, event.target.value)}
+                        />
+                      </div>
+                    {:else}
+                      <div class="color-input-row">
+                        <input
+                          type="color"
+                          disabled
+                          value="#ffffff"
+                          title="Color picker requires a solid hex or rgb value."
+                        />
+                        <input
+                          class="color-text-input"
+                          type="text"
+                          value={colorState.value}
+                          on:input={(event) => updateBlockField(field.key, event.target.value)}
+                        />
+                      </div>
+                      <span class="color-helper">Use the text field for gradients, vars or semi-transparent colors.</span>
+                    {/if}
+                  {/key}
                 {:else}
                   <input
                     type="text"
