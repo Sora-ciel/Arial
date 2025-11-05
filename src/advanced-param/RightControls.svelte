@@ -1,4 +1,4 @@
-<script> 
+<script>
   export let savedList = [];
   export let load;
   export let deleteSave;
@@ -15,13 +15,6 @@
   let pc = true; // default until detected
   let detailsEl; // reference to <details>
   let resizeHandler;
-  let activeTab = 'styles';
-
-  const tabs = [
-    { id: 'styles', label: 'Styles', icon: '🧩' },
-    { id: 'files', label: 'Saves', icon: '📂' },
-    { id: 'colors', label: 'Colors', icon: '🎛️' }
-  ];
 
   const defaultColors = {
     panelBg: "#222222",
@@ -87,8 +80,8 @@
 <style>
 
   /* Remove list bullets and extra padding/margin */
-.dropdown-content ul,
-.dropdown-content li {
+.controls-scroll ul,
+.controls-scroll li {
   list-style: none;
   margin: 0;
   padding: 0;
@@ -123,18 +116,25 @@
     top: 56px; /* same as controls height */
     right: 0;
     bottom: 0;
-    width: 200px;
+    width: 220px;
     background: var(--right-panel-bg, #222222);
     border-left: 1px solid var(--right-border-color, #444444);
-    padding: 16px;
-    overflow-y: auto;
     z-index: 999;
     box-shadow: -2px 0 10px rgba(0,0,0,0.4);
     color: var(--right-text-color, #ffffff);
   }
 
+  .controls-scroll {
+    height: 100%;
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+  }
+
   /* Optional: make it more mobile-friendly */
-@media (max-width: 1024px) {
+  @media (max-width: 1024px) {
   .right-controls {
     position: fixed;
     top: 29px;
@@ -148,30 +148,34 @@
     top: 71px;
     right: 0;
     bottom: 0;
-    width: 200px;
+    width: min(280px, 80vw);
     background: var(--right-panel-bg, #222222);
     border-left: 1px solid var(--right-border-color, #444444);
-    padding: 10px;
+    padding: 0;
     overflow-y: auto;
     z-index: 999;
     box-shadow: -2px 0 10px rgba(0,0,0,0.4);
   }
 
+    .controls-scroll {
+      padding: 12px;
+    }
+
 }
 
-  .dropdown-content ul {
+  .controls-scroll ul {
     display: flex;
     flex-direction: column;
     gap: 6px;
   }
 
-  .dropdown-content li {
+  .controls-scroll li {
     display: flex;
     gap: 6px;
     align-items: center;
   }
 
-  .dropdown-content li button {
+  .controls-scroll li button {
     flex: 1 1 auto;
     padding: 6px 10px;
     background: var(--right-button-bg, #333333);
@@ -182,36 +186,9 @@
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
 
-  .dropdown-content li button:last-child {
+  .controls-scroll li button:last-child {
     flex: 0 0 auto;
     padding: 6px 8px;
-  }
-
-  .tab-bar {
-    display: flex;
-    gap: 6px;
-    margin-bottom: 14px;
-  }
-
-  .tab-bar button {
-    flex: 1 1 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    border-radius: 999px;
-    background: var(--right-button-bg, #333333);
-    color: var(--right-button-text, #ffffff);
-    border: 1px solid var(--right-border-color, #444444);
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
-  }
-
-  .tab-bar button.active {
-    background: var(--right-button-text, #ffffff);
-    color: var(--right-panel-bg, #222222);
-    border-color: var(--right-button-text, #ffffff);
   }
 
   .tab-section {
@@ -235,24 +212,11 @@
 </style>
 
 <div class="right-controls" style={rightCssVars}>
-  <details bind:this={detailsEl}>
+  <details bind:this={detailsEl} open>
     <summary>⚙️ Parameters</summary>
 
     <div class="dropdown-content">
-      <div class="tab-bar">
-        {#each tabs as tab}
-          <button
-            class:active={activeTab === tab.id}
-            type="button"
-            on:click={() => (activeTab = tab.id)}
-          >
-            <span aria-hidden="true">{tab.icon}</span>
-            <span>{tab.label}</span>
-          </button>
-        {/each}
-      </div>
-
-      {#if activeTab === 'files'}
+      <div class="controls-scroll">
         <div class="tab-section">
           <h4>📂 Saved Files</h4>
           {#if savedList.length}
@@ -268,12 +232,7 @@
             <p class="empty-state">No saved scenes yet.</p>
           {/if}
         </div>
-      {:else if activeTab === 'colors'}
-        <div class="tab-section">
-          <h4>🎨 Fine-tune colors</h4>
-          <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
-        </div>
-      {:else}
+
         <div class="tab-section">
           <h4>🧩 Style Presets</h4>
           <StylePresetPage
@@ -282,7 +241,12 @@
             on:selectTheme={handleThemeSelect}
           />
         </div>
-      {/if}
+
+        <div class="tab-section">
+          <h4>🎨 Fine-tune colors</h4>
+          <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
+        </div>
+      </div>
     </div>
   </details>
 </div>
