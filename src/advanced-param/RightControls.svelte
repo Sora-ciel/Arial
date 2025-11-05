@@ -3,15 +3,25 @@
   export let load;
   export let deleteSave;
   export let controlColors = {};
+  export let themes = [];
+  export let selectedThemeId = 'default-dark';
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
+  import StylePresetPage from "./StylePresetPage.svelte";
 
   const dispatch = createEventDispatcher();
 
   let pc = true; // default until detected
   let detailsEl; // reference to <details>
   let resizeHandler;
+  let activeTab = 'styles';
+
+  const tabs = [
+    { id: 'styles', label: 'Styles', icon: '🧩' },
+    { id: 'files', label: 'Saves', icon: '📂' },
+    { id: 'colors', label: 'Colors', icon: '🎛️' }
+  ];
 
   const defaultColors = {
     panelBg: "#222222",
@@ -62,6 +72,13 @@
 
   function handleColorChange(event) {
     dispatch("updateColors", event.detail);
+  }
+
+  function handleThemeSelect(event) {
+    dispatch("selectTheme", event.detail);
+    if (!pc && detailsEl) {
+      detailsEl.open = false;
+    }
   }
 </script>
 
@@ -142,10 +159,6 @@
 
 }
 
-  .dropdown-content h4 {
-    margin: 0 0 10px;
-  }
-
   .dropdown-content ul {
     display: flex;
     flex-direction: column;
@@ -158,7 +171,7 @@
     align-items: center;
   }
 
-  .dropdown-content button {
+  .dropdown-content li button {
     flex: 1 1 auto;
     padding: 6px 10px;
     background: var(--right-button-bg, #333333);
@@ -174,10 +187,50 @@
     padding: 6px 8px;
   }
 
-  .dropdown-content hr {
-    border: none;
-    border-top: 1px solid var(--right-border-color, #444444);
-    margin: 14px 0;
+  .tab-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 14px;
+  }
+
+  .tab-bar button {
+    flex: 1 1 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    border-radius: 999px;
+    background: var(--right-button-bg, #333333);
+    color: var(--right-button-text, #ffffff);
+    border: 1px solid var(--right-border-color, #444444);
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .tab-bar button.active {
+    background: var(--right-button-text, #ffffff);
+    color: var(--right-panel-bg, #222222);
+    border-color: var(--right-button-text, #ffffff);
+  }
+
+  .tab-section {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .tab-section h4 {
+    margin: 0;
+    font-size: 0.85rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    opacity: 0.85;
+  }
+
+  .empty-state {
+    font-size: 0.8rem;
+    opacity: 0.65;
   }
 </style>
 
@@ -186,17 +239,50 @@
     <summary>⚙️ Parameters</summary>
 
     <div class="dropdown-content">
-      <h4>📂 Saved Files</h4>
-      <ul>
-        {#each savedList as name}
-          <li>
-            <button on:click={() => handleSelect(name)}>{name}</button>
-            <button on:click={() => deleteSave(name)}>🗑</button>
-          </li>
+      <div class="tab-bar">
+        {#each tabs as tab}
+          <button
+            class:active={activeTab === tab.id}
+            type="button"
+            on:click={() => (activeTab = tab.id)}
+          >
+            <span aria-hidden="true">{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
         {/each}
-      </ul>
-      <hr />
-      <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
+      </div>
+
+      {#if activeTab === 'files'}
+        <div class="tab-section">
+          <h4>📂 Saved Files</h4>
+          {#if savedList.length}
+            <ul>
+              {#each savedList as name}
+                <li>
+                  <button on:click={() => handleSelect(name)}>{name}</button>
+                  <button on:click={() => deleteSave(name)}>🗑</button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="empty-state">No saved scenes yet.</p>
+          {/if}
+        </div>
+      {:else if activeTab === 'colors'}
+        <div class="tab-section">
+          <h4>🎨 Fine-tune colors</h4>
+          <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
+        </div>
+      {:else}
+        <div class="tab-section">
+          <h4>🧩 Style Presets</h4>
+          <StylePresetPage
+            {themes}
+            {selectedThemeId}
+            on:selectTheme={handleThemeSelect}
+          />
+        </div>
+      {/if}
     </div>
   </details>
 </div>
