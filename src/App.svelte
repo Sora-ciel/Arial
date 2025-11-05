@@ -4,96 +4,24 @@
   import LeftControls from './advanced-param/LeftControls.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
-
-  const CONTROL_COLOR_DEFAULTS = {
-    left: {
-      panelBg: '#111111b0',
-      textColor: '#ffffff',
-      buttonBg: '#333333',
-      buttonText: '#ffffff',
-      borderColor: '#444444',
-      inputBg: '#1d1d1d'
-    },
-    right: {
-      panelBg: '#222222',
-      textColor: '#ffffff',
-      buttonBg: '#222222',
-      buttonText: '#ffffff',
-      borderColor: '#444444'
-    },
-    canvas: {
-      outerBg: '#000000',
-      innerBg: '#000000'
-    }
-  };
-
-  const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
-  const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
-
-  function normalizeControlColors(raw = {}) {
-    const left = {
-      ...CONTROL_COLOR_DEFAULTS.left,
-      ...(raw.left || {})
-    };
-
-    const right = {
-      ...CONTROL_COLOR_DEFAULTS.right,
-      ...(raw.right || {})
-    };
-
-    const canvas = {
-      ...CONTROL_COLOR_DEFAULTS.canvas,
-      ...(raw.canvas || {})
-    };
-
-    return { left, right, canvas };
-  }
-
-  function loadStoredControlColors() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      const serialized = localStorage.getItem(CONTROL_COLOR_STORAGE_KEY);
-      if (!serialized) return null;
-      const parsed = JSON.parse(serialized);
-      return normalizeControlColors(parsed);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function loadStoredLastSaveName() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function persistLastSaveName(name) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      if (name) {
-        localStorage.setItem(LAST_SAVE_STORAGE_KEY, name);
-      } else {
-        localStorage.removeItem(LAST_SAVE_STORAGE_KEY);
-      }
-    } catch (error) {
-      /* ignore persistence failures */
-    }
-  }
-
-  function persistControlColors(colors) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(
-        CONTROL_COLOR_STORAGE_KEY,
-        JSON.stringify(colors)
-      );
-    } catch (error) {
-      /* ignore persistence failures */
-    }
-  }
+  import {
+    CONTROL_COLOR_DEFAULTS,
+    loadStoredControlColors,
+    loadStoredLastSaveName,
+    normalizeControlColors,
+    persistControlColors,
+    persistLastSaveName
+  } from './utils/preferences.js';
+  import {
+    DEFAULT_HISTORY_TRIGGERS,
+    applyHistoryTriggers
+  } from './utils/historyTriggers.js';
+  import {
+    KNOWN_MODES,
+    ensureModeOrders,
+    cloneModeOrders
+  } from './utils/modeOrders.js';
+  import { cloneState, serializeState } from './utils/stateSnapshots.js';
 
   let controlColors = normalizeControlColors();
 
@@ -125,73 +53,6 @@
       controlColors = stored;
     }
   });
-
-  const DEFAULT_HISTORY_TRIGGERS = {
-    text: ['position', 'size', 'bgColor', 'textColor'],
-    cleantext: ['position', 'size', 'bgColor', 'textColor'],
-    image: ['position', 'size', 'bgColor', 'textColor', 'src'],
-    music: ['position', 'size', 'bgColor', 'textColor', 'trackUrl', 'title', 'content'],
-    embed: ['position', 'size', 'bgColor', 'textColor', 'content'],
-    __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
-  };
-
-  const KNOWN_MODES = ["default", "simple"];
-
-  function applyHistoryTriggers(block) {
-    const triggers =
-      block.historyTriggers ??
-      DEFAULT_HISTORY_TRIGGERS[block.type] ??
-      DEFAULT_HISTORY_TRIGGERS.__default;
-    return { ...block, historyTriggers: triggers };
-  }
-
-  function ensureModeOrders(allBlocks, incomingOrders = {}) {
-    const idsInBlockOrder = allBlocks.map(block => block.id);
-    const validIds = new Set(idsInBlockOrder);
-    const modeNames = new Set([
-      ...KNOWN_MODES,
-      ...Object.keys(incomingOrders || {})
-    ]);
-
-    const normalized = {};
-    for (const name of modeNames) {
-      const existing = Array.isArray(incomingOrders?.[name])
-        ? incomingOrders[name].filter(id => validIds.has(id))
-        : [];
-      const missing = idsInBlockOrder.filter(id => !existing.includes(id));
-      normalized[name] = [...existing, ...missing];
-    }
-
-    return normalized;
-  }
-
-  function cloneModeOrders(orders) {
-    const clone = {};
-    for (const [modeName, order] of Object.entries(orders || {})) {
-      clone[modeName] = [...order];
-    }
-    return clone;
-  }
-
-  function cloneState(blockList, orders, { bumpVersion = true } = {}) {
-    const normalizedOrders = ensureModeOrders(blockList, orders);
-    const blocksClone = blockList.map(block => ({
-      ...block,
-      _version: bumpVersion ? (block._version || 0) + 1 : block._version ?? 0,
-      position: { ...block.position },
-      size: { ...block.size }
-    }));
-
-    return {
-      blocks: blocksClone,
-      modeOrders: cloneModeOrders(normalizedOrders)
-    };
-  }
-
-  function serializeState(blockList, orders, { bumpVersion = false } = {}) {
-    const snapshot = cloneState(blockList, orders, { bumpVersion });
-    return JSON.stringify(snapshot);
-  }
 
   let controlsRef;
   let canvasRef;
@@ -234,7 +95,7 @@
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
-  let Pc = window.innerWidth > 1024;
+  let Pc = typeof window !== 'undefined' ? window.innerWidth > 1024 : true;
 
   // --- Undo/Redo history ---
   let history = [];
