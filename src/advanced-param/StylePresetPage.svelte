@@ -69,6 +69,12 @@
     letter-spacing: 0.04em;
   }
 
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
   .badge {
     padding: 2px 8px;
     border-radius: 999px;
@@ -76,6 +82,16 @@
     color: var(--right-panel-bg, #222222);
     font-size: 0.7rem;
     text-transform: uppercase;
+  }
+
+  .tag {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    color: var(--right-button-text, #ffffff);
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
   }
 
   .card-preview {
@@ -143,9 +159,14 @@
     >
       <div class="card-header">
         <span>{theme.name}</span>
-        {#if selectedThemeId === theme.id}
-          <span class="badge">Active</span>
-        {/if}
+        <div class="header-meta">
+          {#if theme.isCustom}
+            <span class="tag">Custom</span>
+          {/if}
+          {#if selectedThemeId === theme.id}
+            <span class="badge">Active</span>
+          {/if}
+        </div>
       </div>
 
       <div class="card-preview">
