@@ -73,6 +73,13 @@
       detailsEl.open = false;
     }
   }
+
+  function openAdvancedCssPage() {
+    dispatch("openAdvancedCss");
+    if (!pc && detailsEl) {
+      detailsEl.open = false;
+    }
+  }
 </script>
 
 
@@ -191,6 +198,26 @@
     padding: 6px 8px;
   }
 
+  .create-theme-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    background: var(--right-button-bg, #333333);
+    color: var(--right-button-text, #ffffff);
+    border: 1px solid var(--right-border-color, #444444);
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    margin-bottom: 10px;
+  }
+
+  .create-theme-btn:hover {
+    background: var(--right-button-text, #ffffff);
+    color: var(--right-panel-bg, #222222);
+  }
+
   .tab-section {
     display: flex;
     flex-direction: column;
@@ -235,6 +262,9 @@
 
         <div class="tab-section">
           <h4>🧩 Style Presets</h4>
+          <button class="create-theme-btn" type="button" on:click={openAdvancedCssPage}>
+            ✨ Create custom theme
+          </button>
           <StylePresetPage
             {themes}
             {selectedThemeId}
