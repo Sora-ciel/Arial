@@ -4,6 +4,7 @@
   export let blocks = [];
   export let focusedBlockId = null;
   export let canvasColors = {};
+  export let canvasRef;
   const dispatch = createEventDispatcher();
 
   const defaultCanvasColors = {
@@ -104,6 +105,8 @@
   width: 100%;
   max-width: 1920px;
   margin: 0 auto;
+  flex: 1 1 100%;
+  min-width: 0;                 /* allow shrinking inside flex parents */
 }
 
 .canvas {
@@ -259,7 +262,7 @@ li {
 
 
 
-<div class="simple-wrapper" style={canvasCssVars}>
+<div class="simple-wrapper" bind:this={canvasRef} style={canvasCssVars}>
   {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
     <div class="canvas">
       <div
