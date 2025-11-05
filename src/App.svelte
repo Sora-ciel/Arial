@@ -27,6 +27,141 @@
     }
   };
 
+  const BLOCK_THEME_DEFAULTS = {
+    borderColor: 'rgba(255, 255, 255, 0.22)',
+    borderWidth: '1px',
+    borderRadius: '14px',
+    shadow:
+      '0 18px 45px rgba(0, 0, 0, 0.5), 0 0 22px rgba(88, 160, 255, 0.08)',
+    focusOutline: 'rgba(110, 168, 255, 0.85)',
+    focusShadow:
+      '0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5)',
+    headerBg: 'var(--bg)',
+    headerText: 'var(--text)',
+    headerFont: "'Inter', system-ui, sans-serif",
+    headerLetterSpacing: '0.06em',
+    headerTransform: 'uppercase',
+    bodyFont: "'Inter', system-ui, sans-serif",
+    accentColor: '#ff5f5f',
+    accentText: '#ffffff',
+    controlRadius: '8px',
+    mediaButtonBg: 'rgba(255, 255, 255, 0.08)',
+    mediaButtonText: '#ffffff'
+  };
+
+  const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
+  const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
+  const CUSTOM_THEME_ID = 'custom';
+
+  function normalizeBlockTheme(raw = {}) {
+    return { ...BLOCK_THEME_DEFAULTS, ...(raw || {}) };
+  }
+
+  function toCssVarName(key) {
+    return key
+      .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+      .replace(/_/g, '-')
+      .toLowerCase();
+  }
+
+  const STYLE_PRESETS = [
+    {
+      id: 'default-dark',
+      name: 'Default Dark',
+      description: 'Original midnight look with subtle neon glow.',
+      controlColors: CONTROL_COLOR_DEFAULTS,
+      blockTheme: normalizeBlockTheme({}),
+      previewBg: 'rgba(16, 16, 20, 0.82)'
+    },
+    {
+      id: 'aurora-glass',
+      name: 'Aurora Glass',
+      description: 'Frosted glass blocks with cyan lighting and cool controls.',
+      controlColors: {
+        left: {
+          panelBg: '#06131fdd',
+          textColor: '#e9fbff',
+          buttonBg: '#0f2743',
+          buttonText: '#7be0ff',
+          borderColor: '#1a3a5f',
+          inputBg: '#081a2f'
+        },
+        right: {
+          panelBg: '#0a1727f0',
+          textColor: '#e9fbff',
+          buttonBg: '#10213a',
+          buttonText: '#7be0ff',
+          borderColor: '#1f3554'
+        },
+        canvas: {
+          outerBg: '#05080d',
+          innerBg: '#050b14'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: 'rgba(96, 210, 255, 0.35)',
+        borderRadius: '18px',
+        shadow:
+          '0 30px 60px rgba(18, 56, 92, 0.65), 0 0 28px rgba(96, 210, 255, 0.32)',
+        headerBg: 'linear-gradient(135deg, rgba(8, 32, 58, 0.95), rgba(14, 52, 82, 0.9))',
+        headerText: '#7be0ff',
+        headerFont: "'Chakra Petch', 'Segoe UI', sans-serif",
+        headerLetterSpacing: '0.12em',
+        bodyFont: "'Source Sans 3', 'Inter', sans-serif",
+        accentColor: '#7be0ff',
+        accentText: '#051320',
+        mediaButtonBg: 'rgba(123, 224, 255, 0.18)',
+        mediaButtonText: '#7be0ff'
+      }),
+      previewBg: 'rgba(8, 24, 38, 0.82)'
+    },
+    {
+      id: 'paper-notebook',
+      name: 'Paper Notebook',
+      description: 'Warm stationery palette with serif typography and soft shadows.',
+      controlColors: {
+        left: {
+          panelBg: '#f6f0e8',
+          textColor: '#4a3725',
+          buttonBg: '#e4d6c8',
+          buttonText: '#4a3725',
+          borderColor: '#cdb9a6',
+          inputBg: '#fff9f2'
+        },
+        right: {
+          panelBg: '#fefbf7',
+          textColor: '#4a3725',
+          buttonBg: '#ead9c8',
+          buttonText: '#4a3725',
+          borderColor: '#d8c7b6'
+        },
+        canvas: {
+          outerBg: '#ece3d9',
+          innerBg: '#f9f4ed'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: '#d3c2b4',
+        borderWidth: '2px',
+        borderRadius: '16px',
+        shadow: '0 18px 40px rgba(116, 94, 72, 0.28)',
+        focusOutline: '#b5835a',
+        focusShadow: '0 0 0 2px rgba(181, 131, 90, 0.35), 0 0 14px rgba(181, 131, 90, 0.45)',
+        headerBg: 'linear-gradient(120deg, #f9f2e8, #f0e2d2)',
+        headerText: '#4a3725',
+        headerFont: "'Cormorant Garamond', 'Georgia', serif",
+        headerLetterSpacing: '0.02em',
+        headerTransform: 'none',
+        bodyFont: "'EB Garamond', 'Georgia', serif",
+        accentColor: '#b05d3e',
+        accentText: '#fff8f3',
+        mediaButtonBg: '#e8d6c7',
+        mediaButtonText: '#4a3725'
+      }),
+      previewBg: '#f8efe3'
+    }
+  ];
+
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
 
@@ -56,6 +191,22 @@
       if (!serialized) return null;
       const parsed = JSON.parse(serialized);
       return normalizeControlColors(parsed);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function loadStoredBlockTheme() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serializedTheme = localStorage.getItem(BLOCK_THEME_STORAGE_KEY);
+      const storedId =
+        localStorage.getItem(BLOCK_THEME_ID_STORAGE_KEY) || CUSTOM_THEME_ID;
+      if (!serializedTheme) {
+        return { theme: null, id: storedId };
+      }
+      const parsed = JSON.parse(serializedTheme);
+      return { theme: normalizeBlockTheme(parsed), id: storedId };
     } catch (error) {
       return null;
     }
@@ -95,7 +246,40 @@
     }
   }
 
+  function persistBlockTheme(theme, id = selectedThemeId) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        BLOCK_THEME_STORAGE_KEY,
+        JSON.stringify(theme)
+      );
+      localStorage.setItem(
+        BLOCK_THEME_ID_STORAGE_KEY,
+        id || CUSTOM_THEME_ID
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
   let controlColors = normalizeControlColors();
+  let blockTheme = normalizeBlockTheme();
+  let selectedThemeId = 'default-dark';
+
+  function applyThemePreset(preset, { persistSelection = true } = {}) {
+    if (!preset) return;
+    const nextControlColors = normalizeControlColors(preset.controlColors);
+    const nextBlockTheme = normalizeBlockTheme(preset.blockTheme);
+
+    controlColors = nextControlColors;
+    blockTheme = nextBlockTheme;
+    selectedThemeId = preset.id;
+
+    if (persistSelection) {
+      persistControlColors(nextControlColors);
+      persistBlockTheme(nextBlockTheme, preset.id);
+    }
+  }
 
   function handleControlColorChange(event) {
     const { section, side, key, value } = event.detail || {};
@@ -116,7 +300,9 @@
       [target]: nextSectionTheme
     };
 
+    selectedThemeId = CUSTOM_THEME_ID;
     persistControlColors(controlColors);
+    persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
   }
 
   onMount(() => {
@@ -124,7 +310,39 @@
     if (stored) {
       controlColors = stored;
     }
+
+    const storedTheme = loadStoredBlockTheme();
+    if (storedTheme?.theme) {
+      blockTheme = storedTheme.theme;
+      selectedThemeId = storedTheme.id ?? CUSTOM_THEME_ID;
+    } else {
+      selectedThemeId = 'default-dark';
+    }
+
+    if (selectedThemeId !== CUSTOM_THEME_ID) {
+      const preset = STYLE_PRESETS.find(theme => theme.id === selectedThemeId);
+      if (preset) {
+        applyThemePreset(preset, { persistSelection: false });
+      }
+    }
   });
+
+  $: blockThemeCssVars = Object.entries(blockTheme || {})
+    .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`)
+    .join('; ');
+
+  function handleThemeSelect(event) {
+    const themeId = event.detail?.id;
+    if (!themeId) return;
+    if (themeId === CUSTOM_THEME_ID) {
+      selectedThemeId = CUSTOM_THEME_ID;
+      persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
+      return;
+    }
+    const preset = STYLE_PRESETS.find(theme => theme.id === themeId);
+    if (!preset) return;
+    applyThemePreset(preset);
+  }
 
   const DEFAULT_HISTORY_TRIGGERS = {
     text: ['position', 'size', 'bgColor', 'textColor'],
@@ -789,7 +1007,7 @@
 
 
 
-<div class="app">
+<div class="app" style={blockThemeCssVars}>
   <div class="controls" bind:this={controlsRef} style={controlsStyle}>
     <LeftControls
       bind:currentSaveName
@@ -815,7 +1033,10 @@
         {load}
         {deleteSave}
         {controlColors}
+        themes={STYLE_PRESETS}
+        {selectedThemeId}
         on:updateColors={handleControlColorChange}
+        on:selectTheme={handleThemeSelect}
       />
     </div>
   </div>
