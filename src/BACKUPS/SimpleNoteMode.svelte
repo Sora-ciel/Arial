@@ -236,15 +236,13 @@ li {
     box-sizing: border-box;
   }
 
-
-}
-
-.container img {
-  width: auto;
-  height: 100%;
-  max-height: 500px;
-  object-fit: contain;
-  border-radius: 14px;
+  .container img {
+    width: auto;
+    height: 100%;
+    max-height: 500px;
+    object-fit: contain;
+    border-radius: 14px;
+  }
 }
 
 
