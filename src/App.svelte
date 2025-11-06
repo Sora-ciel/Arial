@@ -262,6 +262,63 @@
       .slice(0, 48);
   }
 
+  function normalizeThemePayload(detail = {}) {
+    const {
+      name,
+      description,
+      controlColors: themeControlColors,
+      blockTheme: themeBlock,
+      previewBg
+    } = detail;
+
+    const trimmedName = (name || '').trim();
+    if (!trimmedName) {
+      return null;
+    }
+
+    const normalizedColors = normalizeControlColors(themeControlColors || controlColors);
+    const normalizedBlock = normalizeBlockTheme(themeBlock || blockTheme);
+    const safePreviewBg =
+      typeof previewBg === 'string' && previewBg
+        ? previewBg
+        : currentThemePreviewBg || DEFAULT_PREVIEW_BG;
+
+    return {
+      name: trimmedName,
+      description: (description || '').trim() || 'Custom theme',
+      controlColors: normalizedColors,
+      blockTheme: normalizedBlock,
+      previewBg: safePreviewBg
+    };
+  }
+
+  function createCustomThemePayload(payload, { baseId } = {}) {
+    if (!payload) {
+      return null;
+    }
+
+    const existingIds = new Set([...STYLE_PRESETS, ...customThemes].map(theme => theme.id));
+    const slug = baseId || slugify(payload.name) || 'custom-theme';
+    let uniqueId = slug;
+    let counter = 1;
+
+    while (existingIds.has(uniqueId)) {
+      uniqueId = `${slug}-${counter}`;
+      counter += 1;
+    }
+
+    return {
+      id: uniqueId,
+      name: payload.name,
+      description: payload.description,
+      controlColors: payload.controlColors,
+      blockTheme: payload.blockTheme,
+      previewBg: payload.previewBg,
+      createdAt: Date.now(),
+      isCustom: true
+    };
+  }
+
   let controlColors = normalizeControlColors();
   let blockTheme = normalizeBlockTheme();
   let selectedThemeId = 'default-dark';
@@ -333,51 +390,86 @@
   }
 
   function handleAdvancedThemeSave(event) {
-    const {
-      name,
-      description,
-      controlColors: themeControlColors,
-      blockTheme: themeBlock,
-      previewBg
-    } = event.detail || {};
+    const payload = normalizeThemePayload(event.detail || {});
+    if (!payload) return;
 
-    const trimmedName = (name || '').trim();
-    if (!trimmedName) return;
-
-    const normalizedColors = normalizeControlColors(
-      themeControlColors || controlColors
-    );
-    const normalizedBlock = normalizeBlockTheme(themeBlock || blockTheme);
-    const safePreviewBg =
-      typeof previewBg === 'string' && previewBg
-        ? previewBg
-        : currentThemePreviewBg || DEFAULT_PREVIEW_BG;
-
-    const baseId = slugify(trimmedName) || 'custom-theme';
-    const existingIds = new Set(availableThemes.map(theme => theme.id));
-    let uniqueId = baseId;
-    let counter = 1;
-    while (existingIds.has(uniqueId)) {
-      uniqueId = `${baseId}-${counter}`;
-      counter += 1;
-    }
-
-    const newTheme = {
-      id: uniqueId,
-      name: trimmedName,
-      description: description?.trim() || 'Custom theme',
-      controlColors: normalizedColors,
-      blockTheme: normalizedBlock,
-      previewBg: safePreviewBg,
-      createdAt: Date.now(),
-      isCustom: true
-    };
+    const newTheme = createCustomThemePayload(payload);
+    if (!newTheme) return;
 
     customThemes = [...customThemes, newTheme];
     persistCustomThemes(customThemes);
 
     applyThemePreset(newTheme);
 
+    showAdvancedCssPage = false;
+  }
+
+  function handleAdvancedThemeUpdate(event) {
+    const detail = event.detail || {};
+    const { id } = detail;
+    if (!id) return;
+
+    const index = customThemes.findIndex(theme => theme.id === id);
+    if (index === -1) return;
+
+    const payload = normalizeThemePayload(detail);
+    if (!payload) return;
+
+    const existing = customThemes[index];
+    const updatedTheme = {
+      ...existing,
+      ...payload
+    };
+
+    customThemes = [
+      ...customThemes.slice(0, index),
+      updatedTheme,
+      ...customThemes.slice(index + 1)
+    ];
+    persistCustomThemes(customThemes);
+
+    applyThemePreset(updatedTheme);
+    showAdvancedCssPage = false;
+  }
+
+  function handleAdvancedThemeDelete(event) {
+    const id = event.detail?.id;
+    if (!id) return;
+
+    const existing = customThemes.find(theme => theme.id === id);
+    if (!existing) return;
+
+    customThemes = customThemes.filter(theme => theme.id !== id);
+    persistCustomThemes(customThemes);
+
+    if (selectedThemeId === id) {
+      const fallback = customThemes[customThemes.length - 1] || STYLE_PRESETS[0] || null;
+      if (fallback) {
+        applyThemePreset(fallback);
+      } else {
+        controlColors = normalizeControlColors();
+        blockTheme = normalizeBlockTheme();
+        selectedThemeId = CUSTOM_THEME_ID;
+        currentThemePreviewBg = DEFAULT_PREVIEW_BG;
+        persistControlColors(controlColors);
+        persistBlockTheme(blockTheme, CUSTOM_THEME_ID);
+      }
+    }
+
+    showAdvancedCssPage = false;
+  }
+
+  function handleAdvancedThemeDuplicate(event) {
+    const payload = normalizeThemePayload(event.detail || {});
+    if (!payload) return;
+
+    const newTheme = createCustomThemePayload(payload);
+    if (!newTheme) return;
+
+    customThemes = [...customThemes, newTheme];
+    persistCustomThemes(customThemes);
+
+    applyThemePreset(newTheme);
     showAdvancedCssPage = false;
   }
 
@@ -1161,11 +1253,16 @@
     {controlColors}
     {blockTheme}
     previewBg={currentThemePreviewBg}
+    themes={availableThemes}
+    {selectedThemeId}
     on:close={() => (showAdvancedCssPage = false)}
     on:updateControlColor={handleControlColorChange}
     on:updateBlockTheme={handleBlockThemeChange}
     on:updatePreviewBg={handlePreviewBgChange}
     on:saveTheme={handleAdvancedThemeSave}
+    on:updateTheme={handleAdvancedThemeUpdate}
+    on:deleteTheme={handleAdvancedThemeDelete}
+    on:duplicateTheme={handleAdvancedThemeDuplicate}
   />
 {/if}
 

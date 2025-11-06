@@ -13,6 +13,8 @@
   export let controlColors = CONTROL_COLOR_DEFAULTS;
   export let blockTheme = BLOCK_THEME_DEFAULTS;
   export let previewBg = DEFAULT_PREVIEW_BG;
+  export let themes = [];
+  export let selectedThemeId = '';
 
   let workingControlColors = normalizeControlColors(controlColors);
   let workingBlockTheme = normalizeBlockTheme(blockTheme);
@@ -20,10 +22,21 @@
   let themeName = '';
   let themeDescription = '';
   let error = '';
+  let editingThemeId = null;
+  let editingExisting = false;
 
   let lastControlColorsRef = controlColors;
   let lastBlockThemeRef = blockTheme;
   let lastPreviewBg = previewBg;
+
+  $: themeList = Array.isArray(themes) ? themes.filter(Boolean) : [];
+  $: customThemeOptions = themeList.filter((theme) => theme?.isCustom);
+  $: primaryActionLabel = editingExisting ? 'Save changes' : 'Save theme';
+
+  $: if (editingThemeId && !customThemeOptions.some((theme) => theme.id === editingThemeId)) {
+    editingThemeId = null;
+    editingExisting = false;
+  }
 
   $: if (controlColors && controlColors !== lastControlColorsRef) {
     workingControlColors = normalizeControlColors(controlColors);
@@ -38,6 +51,83 @@
   $: if (previewBg !== lastPreviewBg && typeof previewBg === 'string') {
     localPreviewBg = previewBg || DEFAULT_PREVIEW_BG;
     lastPreviewBg = previewBg;
+  }
+
+  function resetFromCurrentTheme() {
+    workingControlColors = normalizeControlColors(controlColors);
+    workingBlockTheme = normalizeBlockTheme(blockTheme);
+    localPreviewBg = previewBg || DEFAULT_PREVIEW_BG;
+  }
+
+  function startNewTheme() {
+    resetFromCurrentTheme();
+    themeName = '';
+    themeDescription = '';
+    editingThemeId = null;
+    editingExisting = false;
+    error = '';
+  }
+
+  function loadThemeForEditing(theme) {
+    if (!theme) {
+      return;
+    }
+
+    workingControlColors = normalizeControlColors(
+      theme.controlColors || CONTROL_COLOR_DEFAULTS
+    );
+    workingBlockTheme = normalizeBlockTheme(theme.blockTheme || BLOCK_THEME_DEFAULTS);
+    localPreviewBg = theme.previewBg || DEFAULT_PREVIEW_BG;
+    themeName = theme.name || '';
+    themeDescription = theme.description || '';
+    editingThemeId = theme.id || null;
+    editingExisting = Boolean(theme?.isCustom && theme?.id);
+    error = '';
+  }
+
+  function handleSelectThemeForEditing(theme) {
+    loadThemeForEditing(theme);
+  }
+
+  function handleDeleteActiveTheme() {
+    if (!editingThemeId) {
+      return;
+    }
+    dispatch('deleteTheme', { id: editingThemeId });
+  }
+
+  function handleDuplicateCurrentTheme() {
+    const baseName = (themeName || '').trim() || 'Custom theme';
+    dispatch('duplicateTheme', {
+      sourceId: editingThemeId,
+      name: `${baseName} Copy`,
+      description: themeDescription.trim(),
+      controlColors: workingControlColors,
+      blockTheme: workingBlockTheme,
+      previewBg: localPreviewBg
+    });
+  }
+
+  function handleDuplicateTheme(theme) {
+    if (!theme) {
+      return;
+    }
+    const baseName = (theme.name || '').trim() || 'Custom theme';
+    dispatch('duplicateTheme', {
+      sourceId: theme.id || null,
+      name: `${baseName} Copy`,
+      description: theme.description || '',
+      controlColors: theme.controlColors,
+      blockTheme: theme.blockTheme,
+      previewBg: theme.previewBg
+    });
+  }
+
+  function handleDeleteTheme(theme) {
+    if (!theme?.id) {
+      return;
+    }
+    dispatch('deleteTheme', { id: theme.id });
   }
 
   const controlFieldMap = [
@@ -341,13 +431,19 @@
     }
 
     error = '';
-    dispatch('saveTheme', {
+    const payload = {
       name: trimmedName,
       description: themeDescription.trim(),
       controlColors: workingControlColors,
       blockTheme: workingBlockTheme,
       previewBg: localPreviewBg
-    });
+    };
+
+    if (editingExisting && editingThemeId) {
+      dispatch('updateTheme', { id: editingThemeId, ...payload });
+    } else {
+      dispatch('saveTheme', payload);
+    }
   }
 
   function handleClose() {
@@ -362,23 +458,24 @@
     background: rgba(4, 6, 12, 0.86);
     display: flex;
     justify-content: center;
-    align-items: flex-start;
-    padding: min(6vh, 64px) 24px 24px;
+    align-items: center;
+    padding: clamp(16px, 4vh, 48px) 32px;
     z-index: 1200;
-    overflow-y: auto;
   }
 
   .panel {
-    width: min(1100px, 100%);
+    width: min(1320px, 100%);
+    max-height: calc(100vh - clamp(32px, 8vh, 96px));
     background: rgba(18, 20, 28, 0.96);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 32px 120px rgba(0, 0, 0, 0.55);
     display: flex;
     flex-direction: column;
-    gap: 24px;
-    padding: 28px;
+    gap: 28px;
+    padding: 32px;
     color: #f5f7ff;
+    overflow: auto;
   }
 
   .panel-header {
@@ -410,7 +507,7 @@
 
   .content-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr 0.9fr;
+    grid-template-columns: 0.9fr 1fr 1fr 0.95fr;
     gap: 24px;
   }
 
@@ -422,6 +519,82 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
+  }
+
+  .theme-library {
+    gap: 20px;
+  }
+
+  .theme-library-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .theme-library-actions .ghost-btn {
+    padding: 8px 16px;
+  }
+
+  .theme-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 420px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+
+  .theme-list-item {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+
+  .theme-list-item.active {
+    border-color: rgba(91, 139, 255, 0.9);
+    background: rgba(91, 139, 255, 0.12);
+  }
+
+  .theme-list-content {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .theme-list-content strong {
+    font-size: 0.92rem;
+    letter-spacing: 0.02em;
+  }
+
+  .theme-list-content span {
+    font-size: 0.78rem;
+    opacity: 0.75;
+  }
+
+  .theme-list-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .theme-list-actions button {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: inherit;
+    border-radius: 999px;
+    padding: 6px 14px;
+    font-size: 0.75rem;
+    cursor: pointer;
+  }
+
+  .empty-note {
+    font-size: 0.8rem;
+    opacity: 0.7;
   }
 
   .section-card h3 {
@@ -598,6 +771,8 @@
     gap: 12px;
     margin-top: 8px;
     grid-column: 1 / -1;
+    flex-wrap: wrap;
+    align-items: center;
   }
 
   .primary-btn {
@@ -620,21 +795,44 @@
     cursor: pointer;
   }
 
+  .danger-btn {
+    background: rgba(255, 107, 107, 0.12);
+    border: 1px solid rgba(255, 107, 107, 0.4);
+    color: #ff9b9b;
+    border-radius: 999px;
+    padding: 10px 18px;
+    cursor: pointer;
+  }
+
   .error {
     margin-top: 4px;
     font-size: 0.8rem;
     color: #ff9b9b;
   }
 
-  @media (max-width: 980px) {
+  @media (max-width: 1280px) {
+    .content-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .theme-library {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 880px) {
     .content-grid {
       grid-template-columns: 1fr;
+    }
+
+    .theme-list {
+      max-height: none;
     }
   }
 
   @media (max-width: 640px) {
     .panel {
-      padding: 20px 16px;
+      padding: 24px 16px;
     }
   }
 </style>
@@ -650,7 +848,50 @@
     </div>
 
     <div class="content-grid">
-      <div class="section-card">
+      <div class="section-card theme-library">
+        <h3>Theme library</h3>
+        <p>Manage your saved themes or load one to continue editing.</p>
+
+        <div class="theme-library-actions">
+          <button class="ghost-btn" type="button" on:click={startNewTheme}>
+            Start new theme
+          </button>
+          <button class="ghost-btn" type="button" on:click={resetFromCurrentTheme}>
+            Sync with current view
+          </button>
+        </div>
+
+        <div class="theme-list">
+          {#if customThemeOptions.length}
+            {#each customThemeOptions as theme (theme.id)}
+              <div
+                class="theme-list-item"
+                class:active={editingThemeId === theme.id || (!editingThemeId && selectedThemeId === theme.id)}
+              >
+                <div class="theme-list-content">
+                  <strong>{theme.name}</strong>
+                  <span>{theme.description}</span>
+                </div>
+                <div class="theme-list-actions">
+                  <button type="button" on:click={() => handleSelectThemeForEditing(theme)}>
+                    Edit
+                  </button>
+                  <button type="button" on:click={() => handleDuplicateTheme(theme)}>
+                    Duplicate
+                  </button>
+                  <button type="button" on:click={() => handleDeleteTheme(theme)}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+            {/each}
+          {:else}
+            <span class="empty-note">No custom themes yet. Save one to start a library.</span>
+          {/if}
+        </div>
+      </div>
+
+      <div class="section-card controls-card">
         <h3>Control colors</h3>
         <p>Pick colors for each surface of the UI. The changes apply live so you can preview immediately.</p>
 
@@ -673,7 +914,7 @@
         {/each}
       </div>
 
-      <div class="section-card">
+      <div class="section-card block-card">
         <h3>Block styling</h3>
         <p>Fine tune typography, shadows and accents for the blocks rendered on the canvas.</p>
 
@@ -697,8 +938,7 @@
                           type="color"
                           value={colorState.hex}
                           on:input={(event) =>
-                            handleBlockColorChange(field.key, event.target.value, colorState.alpha)
-                          }
+                            handleBlockColorChange(field.key, event.target.value, colorState.alpha)}
                         />
                         <input
                           class="color-text-input"
@@ -815,7 +1055,6 @@
         </div>
       </div>
     </div>
-
     <form class="theme-meta" on:submit|preventDefault={handleSaveTheme}>
       <label>
         <span>Theme name</span>
@@ -839,8 +1078,24 @@
       </label>
 
       <div class="meta-actions">
+        <button
+          class="ghost-btn"
+          type="button"
+          on:click={handleDuplicateCurrentTheme}
+        >
+          Duplicate as new
+        </button>
+        {#if editingExisting}
+          <button
+            class="danger-btn"
+            type="button"
+            on:click={handleDeleteActiveTheme}
+          >
+            Delete theme
+          </button>
+        {/if}
         <button class="ghost-btn" type="button" on:click={handleClose}>Cancel</button>
-        <button class="primary-btn" type="submit">Save theme</button>
+        <button class="primary-btn" type="submit">{primaryActionLabel}</button>
       </div>
     </form>
   </div>
