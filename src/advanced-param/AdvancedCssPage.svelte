@@ -74,6 +74,17 @@
     }
   ];
 
+  const blockColorKeys = new Set([
+    'borderColor',
+    'focusOutline',
+    'headerBg',
+    'headerText',
+    'accentColor',
+    'accentText',
+    'mediaButtonBg',
+    'mediaButtonText'
+  ]);
+
   const blockFieldGroups = [
     {
       title: 'Block frame',
@@ -134,6 +145,169 @@
   $: previewStyle = Object.entries(workingBlockTheme || {})
     .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`)
     .join('; ');
+
+  const HEX_COLOR_REGEX = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i;
+  const HEX_ALPHA_REGEX = /^#([0-9a-f]{4}|[0-9a-f]{8})$/i;
+
+  function expandShortHex(value) {
+    if (!value || !/^#[0-9a-f]{3}$/i.test(value)) {
+      return value;
+    }
+    const [, digits] = value.match(/^#([0-9a-f]{3})$/i);
+    return `#${digits
+      .split('')
+      .map((char) => char + char)
+      .join('')}`;
+  }
+
+  function expandShortHexWithAlpha(value) {
+    if (!value || !/^#[0-9a-f]{4}$/i.test(value)) {
+      return value;
+    }
+    const [, digits] = value.match(/^#([0-9a-f]{4})$/i);
+    return `#${digits
+      .split('')
+      .map((char) => char + char)
+      .join('')}`;
+  }
+
+  function hexToRgb(hex) {
+    const expanded = expandShortHex(hex);
+    const match = expanded && expanded.match(/^#([0-9a-f]{6})$/i);
+    if (!match) {
+      return { r: 0, g: 0, b: 0 };
+    }
+    const [, digits] = match;
+    const r = parseInt(digits.slice(0, 2), 16);
+    const g = parseInt(digits.slice(2, 4), 16);
+    const b = parseInt(digits.slice(4, 6), 16);
+    return { r, g, b };
+  }
+
+  function clampAlpha(alpha) {
+    if (Number.isNaN(alpha)) {
+      return 1;
+    }
+    return Math.min(1, Math.max(0, alpha));
+  }
+
+  function formatColorValue(hex, alpha = 1) {
+    if (!hex) {
+      return '';
+    }
+
+    const expanded = expandShortHex(hex)?.toLowerCase();
+    const normalizedAlpha = clampAlpha(alpha);
+
+    if (!expanded || !/^#([0-9a-f]{6})$/i.test(expanded)) {
+      return hex;
+    }
+
+    if (normalizedAlpha >= 0.999) {
+      return expanded;
+    }
+
+    const { r, g, b } = hexToRgb(expanded);
+    const roundedAlpha = Math.round(normalizedAlpha * 100) / 100;
+    return `rgba(${r}, ${g}, ${b}, ${roundedAlpha})`;
+  }
+
+  function parseCssColor(value) {
+    const fallback = { hex: null, alpha: 1, editable: false };
+
+    if (!value || typeof value !== 'string') {
+      return fallback;
+    }
+
+    const trimmed = value.trim();
+
+    if (HEX_ALPHA_REGEX.test(trimmed)) {
+      const expanded = expandShortHexWithAlpha(trimmed).toLowerCase();
+      const match = expanded.match(/^#([0-9a-f]{8})$/i);
+      if (!match) {
+        return fallback;
+      }
+      const [, digits] = match;
+      const rgbHex = `#${digits.slice(0, 6)}`;
+      const alphaHex = digits.slice(6, 8);
+      const alpha = clampAlpha(parseInt(alphaHex, 16) / 255);
+      return { hex: rgbHex, alpha, editable: true };
+    }
+
+    if (HEX_COLOR_REGEX.test(trimmed)) {
+      return { hex: expandShortHex(trimmed).toLowerCase(), alpha: 1, editable: true };
+    }
+
+    const rgbaMatch = trimmed.match(
+      /^rgba?\((\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})(?:\s*,\s*(1|0|0?\.\d+))?\)$/i
+    );
+
+    if (rgbaMatch) {
+      const [, r, g, b, alphaValue = '1'] = rgbaMatch;
+      const numericR = Number(r);
+      const numericG = Number(g);
+      const numericB = Number(b);
+      const alphaNum = clampAlpha(Number(alphaValue));
+
+      if (numericR <= 255 && numericG <= 255 && numericB <= 255) {
+        const toHex = (component) => Number(component).toString(16).padStart(2, '0');
+        return {
+          hex: `#${toHex(numericR)}${toHex(numericG)}${toHex(numericB)}`,
+          alpha: alphaNum,
+          editable: true
+        };
+      }
+
+      return fallback;
+    }
+
+    return fallback;
+  }
+
+  function getBlockFieldValue(key) {
+    return workingBlockTheme[key] ?? BLOCK_THEME_DEFAULTS[key] ?? '';
+  }
+
+  function getBlockColorState(key) {
+    const value = getBlockFieldValue(key);
+    const parsed = parseCssColor(value);
+    return { ...parsed, value };
+  }
+
+  function handleBlockColorChange(key, hex, alpha = 1) {
+    if (!hex) {
+      return;
+    }
+    const formatted = formatColorValue(hex, alpha);
+    updateBlockField(key, formatted);
+  }
+
+  function handleBlockOpacityChange(key, alpha) {
+    const state = getBlockColorState(key);
+    if (!state.hex) {
+      return;
+    }
+    const formatted = formatColorValue(state.hex, alpha);
+    updateBlockField(key, formatted);
+  }
+
+  $: previewColorState = parseCssColor(localPreviewBg);
+
+  function handlePreviewColorChange(hex) {
+    if (!hex) {
+      return;
+    }
+    const formatted = formatColorValue(hex, previewColorState.alpha ?? 1);
+    handlePreviewChange(formatted);
+  }
+
+  function handlePreviewOpacityChange(alpha) {
+    if (!previewColorState.hex) {
+      return;
+    }
+    const formatted = formatColorValue(previewColorState.hex, alpha);
+    handlePreviewChange(formatted);
+  }
 
   function updateControlColor(section, key, value) {
     workingControlColors = {
@@ -312,6 +486,39 @@
     resize: vertical;
   }
 
+  .color-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+
+  .color-text-input {
+    flex: 1;
+  }
+
+  .opacity-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    opacity: 0.7;
+  }
+
+  .opacity-row input[type='range'] {
+    flex: 1;
+  }
+
+  .opacity-value {
+    min-width: 36px;
+    text-align: right;
+  }
+
+  .color-helper {
+    font-size: 0.75rem;
+    opacity: 0.6;
+    margin-top: 4px;
+  }
+
   .preview-card {
     border-radius: 16px;
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -481,6 +688,60 @@
                   <textarea
                     on:input={(event) => updateBlockField(field.key, event.target.value)}
                   >{workingBlockTheme[field.key] ?? BLOCK_THEME_DEFAULTS[field.key] ?? ''}</textarea>
+                {:else if blockColorKeys.has(field.key)}
+                  {#key `${field.key}-${getBlockFieldValue(field.key)}`}
+                    {@const colorState = getBlockColorState(field.key)}
+                    {#if colorState.editable}
+                      <div class="color-input-row">
+                        <input
+                          type="color"
+                          value={colorState.hex}
+                          on:input={(event) =>
+                            handleBlockColorChange(field.key, event.target.value, colorState.alpha)
+                          }
+                        />
+                        <input
+                          class="color-text-input"
+                          type="text"
+                          value={colorState.value}
+                          on:input={(event) => updateBlockField(field.key, event.target.value)}
+                        />
+                      </div>
+                      <div class="opacity-row">
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          step="1"
+                          value={Math.round((colorState.alpha ?? 1) * 100)}
+                          aria-label={`${field.label} opacity`}
+                          on:input={(event) =>
+                            handleBlockOpacityChange(
+                              field.key,
+                              Number(event.target.value) / 100
+                            )
+                          }
+                        />
+                        <span class="opacity-value">{Math.round((colorState.alpha ?? 1) * 100)}%</span>
+                      </div>
+                    {:else}
+                      <div class="color-input-row">
+                        <input
+                          type="color"
+                          disabled
+                          value="#ffffff"
+                          title="Color picker requires a solid hex or rgb value."
+                        />
+                        <input
+                          class="color-text-input"
+                          type="text"
+                          value={colorState.value}
+                          on:input={(event) => updateBlockField(field.key, event.target.value)}
+                        />
+                      </div>
+                      <span class="color-helper">Use the text field for gradients or CSS variables.</span>
+                    {/if}
+                  {/key}
                 {:else}
                   <input
                     type="text"
@@ -512,16 +773,45 @@
 
         <div class="preview-input">
           <span>Preview background</span>
-          <input
-            type="color"
-            value={localPreviewBg}
-            on:input={(event) => handlePreviewChange(event.target.value)}
-          />
-          <input
-            type="text"
-            value={localPreviewBg}
-            on:input={(event) => handlePreviewChange(event.target.value)}
-          />
+          {#if previewColorState.editable}
+            <input
+              type="color"
+              value={previewColorState.hex}
+              on:input={(event) => handlePreviewColorChange(event.target.value)}
+            />
+            <input
+              type="text"
+              value={localPreviewBg}
+              on:input={(event) => handlePreviewChange(event.target.value)}
+            />
+            <div class="opacity-row">
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={Math.round((previewColorState.alpha ?? 1) * 100)}
+                aria-label="Preview background opacity"
+                on:input={(event) =>
+                  handlePreviewOpacityChange(Number(event.target.value) / 100)
+                }
+              />
+              <span class="opacity-value">{Math.round((previewColorState.alpha ?? 1) * 100)}%</span>
+            </div>
+          {:else}
+            <input
+              type="color"
+              disabled
+              value="#ffffff"
+              title="Color picker requires a solid color or rgba value."
+            />
+            <input
+              type="text"
+              value={localPreviewBg}
+              on:input={(event) => handlePreviewChange(event.target.value)}
+            />
+            <span class="color-helper">Use the text field for gradients or CSS variables.</span>
+          {/if}
         </div>
       </div>
     </div>
