@@ -459,13 +459,13 @@
     display: flex;
     justify-content: center;
     align-items: center;
-    padding: clamp(16px, 4vh, 48px) 32px;
+    padding: clamp(12px, 3vh, 36px) clamp(16px, 4vw, 48px);
     z-index: 1200;
   }
 
   .panel {
-    width: min(1320px, 100%);
-    max-height: calc(100vh - clamp(32px, 8vh, 96px));
+    width: min(1420px, 100%);
+    max-height: calc(100vh - clamp(24px, 6vh, 72px));
     background: rgba(18, 20, 28, 0.96);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.08);
@@ -473,7 +473,7 @@
     display: flex;
     flex-direction: column;
     gap: 28px;
-    padding: 32px;
+    padding: clamp(24px, 3vw, 40px);
     color: #f5f7ff;
     overflow: auto;
   }
