@@ -123,7 +123,7 @@
     top: 56px; /* same as controls height */
     right: 0;
     bottom: 0;
-    width: 220px;
+    width: 260px;
     background: var(--right-panel-bg, #222222);
     border-left: 1px solid var(--right-border-color, #444444);
     z-index: 999;
@@ -138,6 +138,8 @@
     display: flex;
     flex-direction: column;
     gap: 18px;
+    box-sizing: border-box;
+    padding-bottom: 32px;
   }
 
   /* Optional: make it more mobile-friendly */
@@ -155,7 +157,7 @@
     top: 71px;
     right: 0;
     bottom: 0;
-    width: min(280px, 80vw);
+    width: min(320px, 85vw);
     background: var(--right-panel-bg, #222222);
     border-left: 1px solid var(--right-border-color, #444444);
     padding: 0;
