@@ -458,24 +458,26 @@
     background: rgba(4, 6, 12, 0.86);
     display: flex;
     justify-content: center;
-    align-items: center;
-    padding: clamp(16px, 4vh, 48px) 32px;
+    align-items: stretch;
+    padding: 0;
     z-index: 1200;
   }
 
   .panel {
-    width: min(1320px, 100%);
-    max-height: calc(100vh - clamp(32px, 8vh, 96px));
+    width: 100vw;
+    max-width: none;
+    height: 100vh;
+    max-height: none;
     background: rgba(18, 20, 28, 0.96);
-    border-radius: 18px;
+    border-radius: 0;
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: 0 32px 120px rgba(0, 0, 0, 0.55);
     display: flex;
     flex-direction: column;
     gap: 28px;
-    padding: 32px;
+    padding: clamp(24px, 3vw, 48px);
     color: #f5f7ff;
-    overflow: auto;
+    box-sizing: border-box;
   }
 
   .panel-header {
@@ -483,6 +485,14 @@
     justify-content: space-between;
     align-items: center;
     gap: 16px;
+  }
+
+  .panel-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+    min-height: 0;
   }
 
   .panel-header h2 {
@@ -509,6 +519,8 @@
     display: grid;
     grid-template-columns: 0.9fr 1fr 1fr 0.95fr;
     gap: 24px;
+    flex: 1;
+    min-height: 0;
   }
 
   .section-card {
@@ -763,6 +775,7 @@
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 18px;
+    flex-shrink: 0;
   }
 
   .meta-actions {
@@ -847,8 +860,9 @@
       <button class="close-btn" type="button" on:click={handleClose}>Close</button>
     </div>
 
-    <div class="content-grid">
-      <div class="section-card theme-library">
+    <div class="panel-body">
+      <div class="content-grid">
+        <div class="section-card theme-library">
         <h3>Theme library</h3>
         <p>Manage your saved themes or load one to continue editing.</p>
 
@@ -1054,49 +1068,50 @@
           {/if}
         </div>
       </div>
-    </div>
-    <form class="theme-meta" on:submit|preventDefault={handleSaveTheme}>
-      <label>
-        <span>Theme name</span>
-        <input
-          type="text"
-          placeholder="e.g. Midnight Neon"
-          bind:value={themeName}
-        />
-        {#if error}
-          <span class="error">{error}</span>
-        {/if}
-      </label>
-
-      <label>
-        <span>Description (optional)</span>
-        <input
-          type="text"
-          placeholder="Short description of the vibe"
-          bind:value={themeDescription}
-        />
-      </label>
-
-      <div class="meta-actions">
-        <button
-          class="ghost-btn"
-          type="button"
-          on:click={handleDuplicateCurrentTheme}
-        >
-          Duplicate as new
-        </button>
-        {#if editingExisting}
-          <button
-            class="danger-btn"
-            type="button"
-            on:click={handleDeleteActiveTheme}
-          >
-            Delete theme
-          </button>
-        {/if}
-        <button class="ghost-btn" type="button" on:click={handleClose}>Cancel</button>
-        <button class="primary-btn" type="submit">{primaryActionLabel}</button>
       </div>
-    </form>
+      <form class="theme-meta" on:submit|preventDefault={handleSaveTheme}>
+        <label>
+          <span>Theme name</span>
+          <input
+            type="text"
+            placeholder="e.g. Midnight Neon"
+            bind:value={themeName}
+          />
+          {#if error}
+            <span class="error">{error}</span>
+          {/if}
+        </label>
+
+        <label>
+          <span>Description (optional)</span>
+          <input
+            type="text"
+            placeholder="Short description of the vibe"
+            bind:value={themeDescription}
+          />
+        </label>
+
+        <div class="meta-actions">
+          <button
+            class="ghost-btn"
+            type="button"
+            on:click={handleDuplicateCurrentTheme}
+          >
+            Duplicate as new
+          </button>
+          {#if editingExisting}
+            <button
+              class="danger-btn"
+              type="button"
+              on:click={handleDeleteActiveTheme}
+            >
+              Delete theme
+            </button>
+          {/if}
+          <button class="ghost-btn" type="button" on:click={handleClose}>Cancel</button>
+          <button class="primary-btn" type="submit">{primaryActionLabel}</button>
+        </div>
+      </form>
+    </div>
   </div>
 </div>
