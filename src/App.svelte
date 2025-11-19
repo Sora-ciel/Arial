@@ -17,6 +17,8 @@
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
+  const mediaCache = new Map();
+  const mediaVersions = new Map();
 
   function toCssVarName(key) {
     return key
@@ -597,7 +599,45 @@
 
   function serializeState(blockList, orders, { bumpVersion = false } = {}) {
     const snapshot = cloneState(blockList, orders, { bumpVersion });
-    return JSON.stringify(snapshot);
+    const lightweightBlocks = snapshot.blocks.map(block => {
+      if (block.src) {
+        rememberMedia([block]);
+        const version = mediaVersions.get(block.id) || 0;
+        const { src, ...rest } = block;
+        return { ...rest, hasMedia: true, mediaVersion: version };
+      }
+
+      return block;
+    });
+
+    return JSON.stringify({
+      ...snapshot,
+      blocks: lightweightBlocks
+    });
+  }
+
+  function rehydrateSnapshotBlocks(snapshotBlocks = []) {
+    return snapshotBlocks.map(block => {
+      const hydratedSrc = block.hasMedia ? mediaCache.get(block.id) : block.src;
+      return {
+        ...block,
+        ...(hydratedSrc ? { src: hydratedSrc } : {}),
+        position: { ...block.position },
+        size: { ...block.size }
+      };
+    });
+  }
+
+  function rememberMedia(blocksToCache = []) {
+    for (const block of blocksToCache) {
+      if (block?.src) {
+        const existing = mediaCache.get(block.id);
+        if (existing !== block.src) {
+          mediaCache.set(block.id, block.src);
+          mediaVersions.set(block.id, (mediaVersions.get(block.id) || 0) + 1);
+        }
+      }
+    }
   }
 
   let controlsRef;
@@ -686,7 +726,10 @@
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
     const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
-    const snapshot = JSON.stringify(stateSnapshot);
+    rememberMedia(stateSnapshot.blocks);
+    const snapshot = serializeState(stateSnapshot.blocks, stateSnapshot.modeOrders, {
+      bumpVersion: false
+    });
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = stateSnapshot.blocks;
@@ -718,11 +761,9 @@
     if (historyIndex > 0) {
       historyIndex--;
       const snapshotState = JSON.parse(history[historyIndex]) || {};
-      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
+      const snapshotBlocks = rehydrateSnapshotBlocks(snapshotState.blocks).map(b => ({
         ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
+        _version: (b._version || 0) + 1
       }));
       const snapshotOrders = ensureModeOrders(
         snapshotBlocks,
@@ -739,11 +780,9 @@
     if (historyIndex < history.length - 1) {
       historyIndex++;
       const snapshotState = JSON.parse(history[historyIndex]) || {};
-      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
+      const snapshotBlocks = rehydrateSnapshotBlocks(snapshotState.blocks).map(b => ({
         ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
+        _version: (b._version || 0) + 1
       }));
       const snapshotOrders = ensureModeOrders(
         snapshotBlocks,
@@ -837,6 +876,8 @@
       historyTriggers
     };
 
+    rememberMedia([updatedBlock]);
+
     const newBlocks = blocks.map((block, index) =>
       index === idx ? updatedBlock : block
     );
@@ -898,6 +939,7 @@
       ...applyHistoryTriggers(b),
       _version: 0
     }));
+    rememberMedia(blocks);
     modeOrders = ensureModeOrders(blocks, loadedOrders);
 
     history = [];
@@ -961,18 +1003,19 @@
             : Array.isArray(imported.blocks)
             ? imported.blocks
             : [];
-          const importedOrders = Array.isArray(imported)
-            ? {}
-            : imported.modeOrders;
-          blocks = importedBlocks.map(b => ({
-            ...applyHistoryTriggers(b),
-            _version: 0
-          }));
-          modeOrders = ensureModeOrders(blocks, importedOrders);
-          focusedBlockId = null;
-          history = [];
-          historyIndex = -1;
-          await pushHistory(blocks, modeOrders);
+            const importedOrders = Array.isArray(imported)
+              ? {}
+              : imported.modeOrders;
+            blocks = importedBlocks.map(b => ({
+              ...applyHistoryTriggers(b),
+              _version: 0
+            }));
+            rememberMedia(blocks);
+            modeOrders = ensureModeOrders(blocks, importedOrders);
+            focusedBlockId = null;
+            history = [];
+            historyIndex = -1;
+            await pushHistory(blocks, modeOrders);
           alert("Imported successfully!");
         } else alert("Invalid file structure!");
       } catch {
