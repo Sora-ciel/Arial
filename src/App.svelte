@@ -542,7 +542,8 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple"];
+  const KNOWN_MODES = ["default", "simple", "single"];
+  const MODE_SEQUENCE = ["default", "simple", "single"];
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -758,6 +759,12 @@
 
   // --- Block operations ---
   function addBlock(type = "text") {
+    if (mode === "single") {
+      if (blocks.some(block => block.type === "text" || block.type === "cleantext")) {
+        return;
+      }
+      type = "cleantext";
+    }
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
@@ -1064,6 +1071,22 @@
   const moveFocusedBlockUp = () => moveFocusedBlock(-1);
   const moveFocusedBlockDown = () => moveFocusedBlock(1);
 
+  function setMode(nextMode) {
+    mode = nextMode;
+    if (
+      mode === "single" &&
+      !blocks.some(block => block.type === "text" || block.type === "cleantext")
+    ) {
+      addBlock("cleantext");
+    }
+  }
+
+  function toggleMode() {
+    const currentIndex = MODE_SEQUENCE.indexOf(mode);
+    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODE_SEQUENCE.length;
+    setMode(MODE_SEQUENCE[nextIndex]);
+  }
+
   $: if (
     focusedBlockId &&
     !blocks.some(block => block.id === focusedBlockId)
@@ -1210,7 +1233,7 @@
       on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
-      on:toggleMode={() => mode = mode === "default" ? "simple" : "default"}
+      on:toggleMode={toggleMode}
       on:undo={undo}
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
@@ -1265,4 +1288,3 @@
     on:duplicateTheme={handleAdvancedThemeDuplicate}
   />
 {/if}
-
