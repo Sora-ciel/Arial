@@ -2,6 +2,7 @@
   import { onMount, createEventDispatcher } from 'svelte';
   import DefaultCanvasMode from './CanvasMode.svelte';
   import SimpleNoteMode from './SimpleNoteMode.svelte';
+  import SingleNoteMode from './SingleNoteMode.svelte';
 
   export let mode; // 'default' or 'simple'
   export let blocks;
@@ -55,7 +56,7 @@
     on:delete={deleteBlockHandler}
     on:focusToggle={focusToggleHandler}
   />
-{:else}
+{:else if mode === 'simple'}
     <SimpleNoteMode
       {blocks}
       {focusedBlockId}
@@ -69,4 +70,17 @@
       on:focusToggle={focusToggleHandler}
     />
 
+{:else}
+    <SingleNoteMode
+      {blocks}
+      {focusedBlockId}
+      bind:canvasRef
+      {canvasColors}
+      on:touchstart={onTouchStart}
+      on:touchmove={onTouchMove}
+      on:touchend={onTouchEnd}
+      on:update={updateBlockHandler}
+      on:delete={deleteBlockHandler}
+      on:focusToggle={focusToggleHandler}
+    />
 {/if}
