@@ -2,6 +2,7 @@
   import { createEventDispatcher, onMount } from "svelte";
 
   export let mode;
+  export let modeLabels = {};
   export let currentSaveName;
   export let focusedBlockId = null;
   export let colors = {};
@@ -13,6 +14,15 @@
   let showMobileMenu = false;
   let menuRef;
   let toggleRef;
+  let modeMenuRef;
+  let modeButtonRef;
+  let showModeLadder = false;
+  const modeOptions = [
+    { id: "default", label: "Canvas Mode" },
+    { id: "simple", label: "Simple Note Mode" },
+    { id: "single", label: "Single Note Mode" },
+    { id: "habit", label: "Habit Tracker Mode" }
+  ];
 
   const defaultColors = {
     panelBg: "#111111b0",
@@ -68,8 +78,13 @@
     fileInputRef.click();
   }
 
-  function toggleMode() {
-    dispatch("toggleMode");
+  function toggleModeMenu() {
+    showModeLadder = !showModeLadder;
+  }
+
+  function selectMode(nextMode) {
+    dispatch("setMode", nextMode);
+    showModeLadder = false;
     if (compactUI) showMobileMenu = false;
   }
 
@@ -98,6 +113,14 @@
       !toggleRef.contains(event.target)
     ) {
       showMobileMenu = false;
+    }
+
+    if (
+      showModeLadder &&
+      !modeMenuRef?.contains(event.target) &&
+      !modeButtonRef?.contains(event.target)
+    ) {
+      showModeLadder = false;
     }
   }
 
@@ -136,6 +159,39 @@ onMount(() => {
     border-radius: 6px;
     border: 1px solid var(--left-border-color, #444444);
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .mode-switcher {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .mode-ladder {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 200px;
+    background: var(--left-panel-bg, #111111);
+    border: 1px solid var(--left-border-color, #333333);
+    border-radius: 10px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 1002;
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .mode-ladder button {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+  }
+
+  .mode-ladder button.active {
+    background: rgba(127, 211, 255, 0.2);
+    border-color: rgba(127, 211, 255, 0.5);
   }
 
   .left-controls button {
@@ -213,13 +269,30 @@ onMount(() => {
     class="left-controls {showMobileMenu ? 'show' : ''}"
     bind:this={menuRef}
   >
-    <button on:click={toggleMode}>
-      📝 {mode === "default"
-        ? "Simple Note Mode"
-        : mode === "simple"
-        ? "Single Note Mode"
-        : "Canvas Mode"}
-    </button>
+    <div class="mode-switcher">
+      <button
+        bind:this={modeButtonRef}
+        on:click={toggleModeMenu}
+        aria-haspopup="listbox"
+        aria-expanded={showModeLadder}
+      >
+        📝 {modeLabels?.[mode] ?? mode}
+      </button>
+      {#if showModeLadder}
+        <div class="mode-ladder" bind:this={modeMenuRef} role="listbox">
+          {#each modeOptions as option}
+            <button
+              class:active={option.id === mode}
+              on:click={() => selectMode(option.id)}
+              role="option"
+              aria-selected={option.id === mode}
+            >
+              {option.label}
+            </button>
+          {/each}
+        </div>
+      {/if}
+    </div>
     <button on:click={() => addBlock("text")}>+ Text</button>
     <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
     <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
