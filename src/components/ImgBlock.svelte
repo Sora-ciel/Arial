@@ -11,6 +11,7 @@
 
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
+  const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
   
 
   let position = { ...initialPosition };
@@ -45,6 +46,12 @@
     ensureFocus();
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (file.type.startsWith('video/') && file.size > MAX_VIDEO_BYTES) {
+      alert('Video files must be 100MB or smaller to render.');
+      e.target.value = '';
+      return;
+    }
 
     const reader = new FileReader();
     reader.onload = () => {
