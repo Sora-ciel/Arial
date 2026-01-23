@@ -14,7 +14,8 @@
   };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
 
   $: noteBlock =
     blocks.find(block => block.type === 'text' || block.type === 'cleantext') ||
@@ -69,33 +70,75 @@
     const textarea = document.querySelector('.single-note textarea');
     autoResize(textarea);
   });
+
+  function getReadableTextColor(color) {
+    if (!color) return '#f5f5f5';
+    const parsed = parseColor(color);
+    if (!parsed) return '#f5f5f5';
+    const [r, g, b] = parsed;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? '#121212' : '#f5f5f5';
+  }
+
+  function parseColor(color) {
+    const trimmed = color.trim();
+    if (trimmed.startsWith('#')) {
+      const hex = trimmed.slice(1);
+      if (hex.length === 3) {
+        return [
+          parseInt(hex[0] + hex[0], 16),
+          parseInt(hex[1] + hex[1], 16),
+          parseInt(hex[2] + hex[2], 16)
+        ];
+      }
+      if (hex.length === 6) {
+        return [
+          parseInt(hex.slice(0, 2), 16),
+          parseInt(hex.slice(2, 4), 16),
+          parseInt(hex.slice(4, 6), 16)
+        ];
+      }
+    }
+    const rgbMatch = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (rgbMatch) {
+      return [
+        Number(rgbMatch[1]),
+        Number(rgbMatch[2]),
+        Number(rgbMatch[3])
+      ];
+    }
+    return null;
+  }
 </script>
 
 <style>
   .single-note {
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 20px;
     width: 100%;
-    max-width: 1080px;
+    max-width: 1200px;
     margin: 0 auto;
-    padding: clamp(12px, 2vw, 24px);
+    padding: clamp(20px, 4vw, 40px);
     box-sizing: border-box;
     background: var(--canvas-outer-bg, #000000);
-    color: #ffffff;
+    color: var(--mode-text-color, #ffffff);
     min-height: 100%;
+    justify-content: center;
+    align-items: center;
   }
 
   .note-shell {
-    background: var(--bg-color);
-    color: var(--text-color);
-    border-radius: 24px;
-    border: 2px solid var(--text-color);
-    padding: 16px;
+    background: var(--canvas-inner-bg, #000000);
+    color: var(--mode-text-color, #ffffff);
+    border-radius: 20px;
+    border: 1px solid transparent;
+    padding: 20px;
     display: flex;
     flex-direction: column;
     gap: 16px;
-    box-shadow: 0 18px 30px rgba(0, 0, 0, 0.35);
+    width: min(720px, 100%);
+    box-shadow: none;
   }
 
   .note-meta {
@@ -111,55 +154,34 @@
     gap: 12px;
     font-size: 0.9rem;
     letter-spacing: 0.02em;
+    color: inherit;
   }
 
   .note-stats span {
-    background: rgba(0, 0, 0, 0.25);
-    padding: 6px 10px;
-    border-radius: 999px;
-  }
-
-  .note-colors {
-    display: flex;
-    gap: 12px;
-    flex-wrap: wrap;
-  }
-
-  .note-colors label {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 0.85rem;
-  }
-
-  .note-colors input[type='color'] {
-    width: 40px;
-    height: 28px;
-    border: none;
-    border-radius: 6px;
     background: transparent;
-    cursor: pointer;
+    padding: 0;
+    border-radius: 0;
   }
+
 
   textarea {
     width: 100%;
     min-height: 240px;
     border: none;
-    border-radius: 18px;
+    border-radius: 16px;
     resize: vertical;
     padding: 16px;
     background: transparent;
-    color: var(--text-color);
+    color: var(--mode-text-color, #ffffff);
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;
     line-height: 1.6;
     box-sizing: border-box;
+    text-align: center;
   }
 
   textarea:focus {
     outline: none;
-    color: var(--bg-color);
-    background: var(--text-color);
   }
 
   .note-footer {
@@ -170,7 +192,7 @@
   .note-footer button {
     background: transparent;
     border: none;
-    color: var(--text-color);
+    color: var(--mode-text-color, #ffffff);
     font-size: 1.1rem;
     cursor: pointer;
   }
@@ -178,9 +200,11 @@
   .note-warning {
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.7);
-    background: rgba(0, 0, 0, 0.35);
-    padding: 10px 12px;
-    border-radius: 12px;
+    background: transparent;
+    padding: 0;
+    border-radius: 0;
+    max-width: 720px;
+    text-align: center;
   }
 
   .empty-state {
@@ -189,6 +213,7 @@
     padding: 24px;
     text-align: center;
     color: rgba(255, 255, 255, 0.8);
+    max-width: 720px;
   }
 </style>
 
@@ -196,32 +221,11 @@
   {#if noteBlock}
     <div
       class="note-shell"
-      style="--bg-color: {noteBlock.bgColor}; --text-color: {noteBlock.textColor};"
     >
       <div class="note-meta">
         <div class="note-stats">
           <span>Words: {wordCount}</span>
           <span>Characters: {characterCount}</span>
-        </div>
-        <div class="note-colors">
-          <label>
-            Background
-            <input
-              type="color"
-              value={noteBlock.bgColor}
-              on:input={(event) =>
-                updateBlock(noteBlock.id, { bgColor: event.target.value })}
-            />
-          </label>
-          <label>
-            Text
-            <input
-              type="color"
-              value={noteBlock.textColor}
-              on:input={(event) =>
-                updateBlock(noteBlock.id, { textColor: event.target.value })}
-            />
-          </label>
         </div>
       </div>
 
