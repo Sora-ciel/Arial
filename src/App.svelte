@@ -545,8 +545,13 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single"];
-  const MODE_SEQUENCE = ["default", "simple", "single"];
+  const KNOWN_MODES = ["default", "simple", "single", "habit"];
+  const MODE_LABELS = {
+    default: "Canvas Mode",
+    simple: "Simple Note Mode",
+    single: "Single Note Mode",
+    habit: "Habit Tracker Mode"
+  };
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -1075,19 +1080,16 @@
   const moveFocusedBlockDown = () => moveFocusedBlock(1);
 
   function setMode(nextMode) {
+    if (!KNOWN_MODES.includes(nextMode)) return;
+    if (nextMode === mode) return;
     mode = nextMode;
+
     if (
       mode === "single" &&
       !blocks.some(block => block.type === "text" || block.type === "cleantext")
     ) {
       addBlock("cleantext");
     }
-  }
-
-  function toggleMode() {
-    const currentIndex = MODE_SEQUENCE.indexOf(mode);
-    const nextIndex = currentIndex === -1 ? 0 : (currentIndex + 1) % MODE_SEQUENCE.length;
-    setMode(MODE_SEQUENCE[nextIndex]);
   }
 
   $: if (
@@ -1227,6 +1229,7 @@
     <LeftControls
       bind:currentSaveName
       {mode}
+      modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
       {focusedBlockId}
@@ -1236,7 +1239,7 @@
       on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
-      on:toggleMode={toggleMode}
+      on:setMode={(e) => setMode(e.detail)}
       on:undo={undo}
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
@@ -1264,6 +1267,7 @@
         blocks={modeOrderedBlocks}
         {groupedBlocks}
         {focusedBlockId}
+        modeLabels={MODE_LABELS}
         bind:canvasRef
         canvasColors={canvasTheme}
         on:update={updateBlockHandler}
