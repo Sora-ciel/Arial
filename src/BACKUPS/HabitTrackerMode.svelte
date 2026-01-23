@@ -1,23 +1,92 @@
 <script>
-  export let modeUsage = {};
-  export let modeDurations = {};
+  import { onMount } from "svelte";
+
   export let modeLabels = {};
-  export let modeOrder = [];
   export let activeMode = "default";
 
-  const formatDuration = totalMs => {
-    const totalSeconds = Math.max(0, Math.floor(totalMs / 1000));
-    const hours = Math.floor(totalSeconds / 3600);
-    const minutes = Math.floor((totalSeconds % 3600) / 60);
-    const seconds = totalSeconds % 60;
-    if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    }
-    if (minutes > 0) {
-      return `${minutes}m ${seconds}s`;
-    }
-    return `${seconds}s`;
+  const STORAGE_KEY = "habitTrackerData";
+  const DAYS_VISIBLE = 14;
+
+  let habits = [];
+  let newHabitName = "";
+
+  const today = new Date();
+
+  const formatDateKey = date =>
+    date.toISOString().slice(0, 10);
+
+  const formatDayLabel = date =>
+    date.toLocaleDateString(undefined, {
+      weekday: "short"
+    });
+
+  const formatDayNumber = date =>
+    date.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric"
+    });
+
+  const buildDays = () =>
+    Array.from({ length: DAYS_VISIBLE }, (_, index) => {
+      const date = new Date(today);
+      date.setDate(today.getDate() + index);
+      return {
+        key: formatDateKey(date),
+        label: formatDayLabel(date),
+        number: formatDayNumber(date)
+      };
+    });
+
+  let days = buildDays();
+
+  const saveHabits = updatedHabits => {
+    habits = updatedHabits;
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
   };
+
+  const addHabit = () => {
+    const trimmed = newHabitName.trim();
+    if (!trimmed) return;
+    const next = [
+      ...habits,
+      { id: crypto.randomUUID(), name: trimmed, log: {} }
+    ];
+    newHabitName = "";
+    saveHabits(next);
+  };
+
+  const deleteHabit = habitId => {
+    saveHabits(habits.filter(habit => habit.id !== habitId));
+  };
+
+  const toggleDay = (habitId, dayKey) => {
+    const updated = habits.map(habit => {
+      if (habit.id !== habitId) return habit;
+      const current = habit.log?.[dayKey] || "none";
+      const next =
+        current === "none" ? "done" : current === "done" ? "missed" : "none";
+      return {
+        ...habit,
+        log: { ...habit.log, [dayKey]: next }
+      };
+    });
+    saveHabits(updated);
+  };
+
+  onMount(() => {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed)) {
+          habits = parsed;
+        }
+      } catch {
+        habits = [];
+      }
+    }
+    days = buildDays();
+  });
 </script>
 
 <style>
@@ -49,67 +118,163 @@
     opacity: 0.8;
   }
 
+  .habit-form {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .habit-form input {
+    flex: 1 1 240px;
+    min-width: 200px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(10, 16, 26, 0.7);
+    color: inherit;
+  }
+
+  .habit-form button {
+    padding: 10px 16px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(18, 28, 44, 0.8);
+    color: inherit;
+    cursor: pointer;
+  }
+
   .habit-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
     gap: 16px;
   }
 
-  .habit-card {
+  .habit-row {
     border-radius: 16px;
     padding: 16px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     background: rgba(12, 18, 30, 0.6);
+    display: grid;
+    grid-template-columns: minmax(160px, 220px) 1fr auto;
+    gap: 16px;
+    align-items: center;
+  }
+
+  .habit-name {
     display: flex;
     flex-direction: column;
-    gap: 10px;
+    gap: 4px;
   }
 
-  .habit-card.active {
-    border-color: rgba(127, 211, 255, 0.7);
-    box-shadow: 0 0 0 1px rgba(127, 211, 255, 0.35), 0 12px 30px rgba(0, 0, 0, 0.35);
+  .habit-name strong {
+    font-size: 1.05rem;
   }
 
-  .habit-card h3 {
-    margin: 0;
-    font-size: 1.1rem;
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(70px, 1fr));
+    gap: 8px;
   }
 
-  .habit-stat {
+  .calendar-header {
+    font-size: 0.8rem;
+    opacity: 0.75;
+    text-align: center;
+  }
+
+  .day-button {
+    border-radius: 10px;
+    padding: 8px 6px;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    background: rgba(10, 14, 22, 0.6);
+    color: inherit;
     display: flex;
-    justify-content: space-between;
-    font-size: 0.95rem;
-    opacity: 0.9;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    cursor: pointer;
   }
 
-  .habit-stat span:last-child {
+  .day-button.done {
+    background: rgba(80, 200, 140, 0.25);
+    border-color: rgba(80, 200, 140, 0.6);
+  }
+
+  .day-button.missed {
+    background: rgba(230, 90, 90, 0.25);
+    border-color: rgba(230, 90, 90, 0.6);
+  }
+
+  .day-status {
+    font-size: 1.1rem;
     font-weight: 600;
+  }
+
+  .habit-actions button {
+    border-radius: 10px;
+    padding: 8px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(24, 32, 50, 0.7);
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .empty-state {
+    opacity: 0.7;
+    padding: 16px;
+    border-radius: 12px;
+    border: 1px dashed rgba(255, 255, 255, 0.2);
   }
 </style>
 
 <section class="habit-tracker">
   <div class="habit-header">
-    <h2>Mode Habit Tracker</h2>
-    <p>Keep an eye on how long you spend in each workspace mode.</p>
+    <h2>{modeLabels?.[activeMode] ?? "Habit Tracker"}</h2>
+    <p>Create a habit, then check or cross each day starting from today.</p>
   </div>
 
-  <div class="habit-grid">
-    {#each modeOrder as modeName}
-      <div class="habit-card {activeMode === modeName ? 'active' : ''}">
-        <h3>{modeLabels?.[modeName] ?? modeName}</h3>
-        <div class="habit-stat">
-          <span>Time spent</span>
-          <span>{formatDuration(modeDurations?.[modeName] ?? 0)}</span>
-        </div>
-        <div class="habit-stat">
-          <span>Entries</span>
-          <span>{modeUsage?.[modeName]?.switches ?? 0}</span>
-        </div>
-        <div class="habit-stat">
-          <span>Status</span>
-          <span>{activeMode === modeName ? "Active" : "Paused"}</span>
-        </div>
-      </div>
-    {/each}
+  <div class="habit-form">
+    <input
+      type="text"
+      placeholder="Add a new habit (e.g. Drink water)"
+      bind:value={newHabitName}
+      on:keydown={(event) => event.key === "Enter" && addHabit()}
+    />
+    <button on:click={addHabit}>Add habit</button>
   </div>
+
+  {#if habits.length === 0}
+    <div class="empty-state">No habits yet. Add one to start tracking.</div>
+  {:else}
+    <div class="habit-grid">
+      {#each habits as habit}
+        <div class="habit-row">
+          <div class="habit-name">
+            <strong>{habit.name}</strong>
+            <span>Tap a day to mark ✓ or ✕.</span>
+          </div>
+          <div class="calendar">
+            {#each days as day}
+              <button
+                class="day-button {habit.log?.[day.key] ?? 'none'}"
+                on:click={() => toggleDay(habit.id, day.key)}
+              >
+                <span class="calendar-header">{day.label}</span>
+                <span>{day.number}</span>
+                <span class="day-status">
+                  {habit.log?.[day.key] === "done"
+                    ? "✓"
+                    : habit.log?.[day.key] === "missed"
+                    ? "✕"
+                    : "•"}
+                </span>
+              </button>
+            {/each}
+          </div>
+          <div class="habit-actions">
+            <button on:click={() => deleteHabit(habit.id)}>Delete</button>
+          </div>
+        </div>
+      {/each}
+    </div>
+  {/if}
 </section>

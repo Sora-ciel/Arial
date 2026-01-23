@@ -13,10 +13,7 @@
   export let onTouchEnd;
   export let focusedBlockId;
   export let canvasColors = {};
-  export let modeUsage = {};
-  export let modeDurations = {};
   export let modeLabels = {};
-  export let modeOrder = [];
 
   let width = 0;
 
@@ -77,13 +74,7 @@
 
 {:else}
   {#if mode === 'habit'}
-    <HabitTrackerMode
-      {modeUsage}
-      {modeDurations}
-      {modeLabels}
-      {modeOrder}
-      activeMode={mode}
-    />
+    <HabitTrackerMode {modeLabels} activeMode={mode} />
   {:else}
     <SingleNoteMode
       {blocks}
