@@ -36,7 +36,10 @@
     .join("; ");
 
 
+  $: isSingleNoteMode = mode === "single";
+
   function addBlock(type) {
+    if (isSingleNoteMode && type !== "text" && type !== "cleantext") return;
     dispatch("addBlock", type);
     if (compactUI) showMobileMenu = true;
   }
@@ -211,13 +214,17 @@ onMount(() => {
     bind:this={menuRef}
   >
     <button on:click={toggleMode}>
-      📝 {mode === "default" ? "Simple Note Mode" : "Canvas Mode"}
+      📝 {mode === "default"
+        ? "Simple Note Mode"
+        : mode === "simple"
+        ? "Single Note Mode"
+        : "Canvas Mode"}
     </button>
     <button on:click={() => addBlock("text")}>+ Text</button>
     <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
-    <button on:click={() => addBlock("image")}>+ Image</button>
-    <button on:click={() => addBlock("music")}>+ Music</button>
-    <button on:click={() => addBlock("embed")}>+ Embed</button>
+    <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
+    <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
+    <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
     <button
       on:click={moveUp}
       disabled={!focusedBlockId}
