@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -53,12 +53,6 @@
     }
   }
 
-  function autoResize(textarea) {
-    if (!textarea) return;
-    textarea.style.height = 'auto';
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }
-
   function focusScroll(el) {
     if (!el) return;
     if (window.innerWidth <= 1024) {
@@ -66,10 +60,6 @@
     }
   }
 
-  onMount(() => {
-    const textarea = document.querySelector('.single-note textarea');
-    autoResize(textarea);
-  });
 
   function getReadableTextColor(color) {
     if (!color) return '#f5f5f5';
@@ -117,7 +107,7 @@
     flex-direction: column;
     gap: 20px;
     width: 100%;
-    max-width: 1200px;
+    max-width: 12000px;
     margin: 0 auto;
     padding: clamp(20px, 4vw, 40px);
     box-sizing: border-box;
@@ -137,7 +127,7 @@
     display: flex;
     flex-direction: column;
     gap: 16px;
-    width: min(720px, 100%);
+    width: 100%;
     box-shadow: none;
   }
 
@@ -147,6 +137,7 @@
     gap: 16px;
     align-items: center;
     justify-content: space-between;
+    width: 100%;
   }
 
   .note-stats {
@@ -166,7 +157,8 @@
 
   textarea {
     width: 100%;
-    min-height: 240px;
+    min-height: 60vh;
+    max-height: 70vh;
     border: none;
     border-radius: 16px;
     resize: vertical;
@@ -178,6 +170,7 @@
     line-height: 1.6;
     box-sizing: border-box;
     text-align: center;
+    overflow-y: auto;
   }
 
   textarea:focus {
@@ -219,23 +212,21 @@
 
 <div class="single-note" bind:this={canvasRef} style={canvasCssVars}>
   {#if noteBlock}
+    <div class="note-meta">
+      <div class="note-stats">
+        <span>Words: {wordCount}</span>
+        <span>Characters: {characterCount}</span>
+      </div>
+    </div>
     <div
       class="note-shell"
     >
-      <div class="note-meta">
-        <div class="note-stats">
-          <span>Words: {wordCount}</span>
-          <span>Characters: {characterCount}</span>
-        </div>
-      </div>
-
       <textarea
         class="note-textarea"
         spellcheck="false"
         rows="1"
         value={noteContent}
         on:input={(event) => {
-          autoResize(event.target);
           updateBlock(noteBlock.id, { content: event.target.value }, { pushToHistory: false, changedKeys: ['content'] });
         }}
         on:focus={(event) => {
