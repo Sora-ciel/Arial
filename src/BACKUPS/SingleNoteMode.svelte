@@ -105,45 +105,28 @@
   .single-note {
     display: flex;
     flex-direction: column;
-    gap: 20px;
     width: 100%;
-    max-width: 12000px;
-    margin: 0 auto;
-    padding: clamp(20px, 4vw, 40px);
-    box-sizing: border-box;
-    background: var(--canvas-outer-bg, #000000);
-    color: var(--mode-text-color, #ffffff);
-    min-height: 100%;
-    justify-content: center;
-    align-items: center;
-  }
-
-  .note-shell {
+    height: 100%;
     background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);
-    border-radius: 20px;
-    border: 1px solid transparent;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
-    width: 100%;
-    box-shadow: none;
+    box-sizing: border-box;
   }
 
   .note-meta {
     display: flex;
     flex-wrap: wrap;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
     justify-content: space-between;
     width: 100%;
+    padding: 8px 12px;
+    box-sizing: border-box;
   }
 
   .note-stats {
     display: flex;
     gap: 12px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     letter-spacing: 0.02em;
     color: inherit;
   }
@@ -154,22 +137,19 @@
     border-radius: 0;
   }
 
-
   textarea {
     width: 100%;
-    min-height: 60vh;
-    max-height: 70vh;
+    flex: 1 1 auto;
     border: none;
-    border-radius: 16px;
-    resize: vertical;
-    padding: 16px;
-    background: transparent;
+    resize: none;
+    padding: 12px;
+    background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;
     line-height: 1.6;
     box-sizing: border-box;
-    text-align: center;
+    text-align: left;
     overflow-y: auto;
   }
 
@@ -180,6 +160,7 @@
   .note-footer {
     display: flex;
     justify-content: flex-end;
+    padding: 6px 12px 10px;
   }
 
   .note-footer button {
@@ -194,19 +175,18 @@
     font-size: 0.85rem;
     color: rgba(255, 255, 255, 0.7);
     background: transparent;
-    padding: 0;
+    padding: 8px 12px 16px;
     border-radius: 0;
-    max-width: 720px;
-    text-align: center;
+    text-align: left;
   }
 
   .empty-state {
     border: 1px dashed rgba(255, 255, 255, 0.4);
-    border-radius: 16px;
-    padding: 24px;
-    text-align: center;
+    border-radius: 12px;
+    padding: 16px;
+    margin: 12px;
+    text-align: left;
     color: rgba(255, 255, 255, 0.8);
-    max-width: 720px;
   }
 </style>
 
@@ -218,29 +198,25 @@
         <span>Characters: {characterCount}</span>
       </div>
     </div>
-    <div
-      class="note-shell"
-    >
-      <textarea
-        class="note-textarea"
-        spellcheck="false"
-        rows="1"
-        value={noteContent}
-        on:input={(event) => {
-          updateBlock(noteBlock.id, { content: event.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-        }}
-        on:focus={(event) => {
-          focusScroll(event.target);
-          ensureFocus(noteBlock.id);
-        }}
-        placeholder="Write your note here..."
-      ></textarea>
+    <textarea
+      class="note-textarea"
+      spellcheck="false"
+      rows="1"
+      value={noteContent}
+      on:input={(event) => {
+        updateBlock(noteBlock.id, { content: event.target.value }, { pushToHistory: false, changedKeys: ['content'] });
+      }}
+      on:focus={(event) => {
+        focusScroll(event.target);
+        ensureFocus(noteBlock.id);
+      }}
+      placeholder="Write your note here..."
+    ></textarea>
 
-      <div class="note-footer">
-        <button on:click={() => deleteBlock(noteBlock.id)} aria-label="Delete note">
-          ×
-        </button>
-      </div>
+    <div class="note-footer">
+      <button on:click={() => deleteBlock(noteBlock.id)} aria-label="Delete note">
+        ×
+      </button>
     </div>
 
     {#if hasHiddenBlocks}
