@@ -545,8 +545,36 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single"];
-  const MODE_SEQUENCE = ["default", "simple", "single"];
+  const KNOWN_MODES = ["default", "simple", "single", "habit"];
+  const MODE_SEQUENCE = ["default", "simple", "single", "habit"];
+  const MODE_LABELS = {
+    default: "Canvas Mode",
+    simple: "Simple Note Mode",
+    single: "Single Note Mode",
+    habit: "Habit Tracker Mode"
+  };
+
+  function createModeUsage() {
+    return Object.fromEntries(
+      KNOWN_MODES.map(name => [name, { durationMs: 0, switches: 0, lastEntered: null }])
+    );
+  }
+
+  function recordModeEntry(usage, modeName, time) {
+    const entry = usage?.[modeName] ?? {
+      durationMs: 0,
+      switches: 0,
+      lastEntered: null
+    };
+    return {
+      ...usage,
+      [modeName]: {
+        ...entry,
+        switches: entry.switches + 1,
+        lastEntered: time
+      }
+    };
+  }
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -610,6 +638,10 @@
   let observedControlsEl;
 
   let mode = "default";
+  let modeUsage = createModeUsage();
+  let modeStartTime = Date.now();
+  let modeClock = Date.now();
+  modeUsage = recordModeEntry(modeUsage, mode, modeStartTime);
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -647,10 +679,20 @@
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > 1024;
 
+  $: modeDurations = Object.fromEntries(
+    KNOWN_MODES.map(name => {
+      const entry = modeUsage?.[name] ?? { durationMs: 0 };
+      const liveDuration =
+        name === mode ? Math.max(0, modeClock - modeStartTime) : 0;
+      return [name, entry.durationMs + liveDuration];
+    })
+  );
+
   // --- Undo/Redo history ---
   let history = [];
   let historyIndex = -1;
   let hasUnsnapshottedChanges = false;
+  let modeClockInterval;
 
   async function ensureCurrentHistorySnapshot() {
     if (!blocks.length && history.length) return;
@@ -1075,7 +1117,25 @@
   const moveFocusedBlockDown = () => moveFocusedBlock(1);
 
   function setMode(nextMode) {
+    if (!KNOWN_MODES.includes(nextMode)) return;
+    if (nextMode === mode) return;
+    const now = Date.now();
+    const previousEntry = modeUsage?.[mode] ?? {
+      durationMs: 0,
+      switches: 0,
+      lastEntered: null
+    };
+    modeUsage = {
+      ...modeUsage,
+      [mode]: {
+        ...previousEntry,
+        durationMs: previousEntry.durationMs + Math.max(0, now - modeStartTime)
+      }
+    };
     mode = nextMode;
+    modeStartTime = now;
+    modeUsage = recordModeEntry(modeUsage, mode, now);
+
     if (
       mode === "single" &&
       !blocks.some(block => block.type === "text" || block.type === "cleantext")
@@ -1101,6 +1161,12 @@
     Pc = window.innerWidth > 1024;
     window.addEventListener("resize", handleWindowResize);
     adjustCanvasPadding();
+    modeClock = Date.now();
+    modeStartTime = modeClock;
+    modeUsage = recordModeEntry(createModeUsage(), mode, modeStartTime);
+    modeClockInterval = window.setInterval(() => {
+      modeClock = Date.now();
+    }, 1000);
 
     savedList = await listSavedBlocks();
     const storedLastSave = loadStoredLastSaveName();
@@ -1135,6 +1201,9 @@
     window.removeEventListener("resize", handleWindowResize);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
+    if (modeClockInterval) {
+      clearInterval(modeClockInterval);
+    }
   });
 
   $: if (controlsRef) {
@@ -1227,6 +1296,7 @@
     <LeftControls
       bind:currentSaveName
       {mode}
+      modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
       {focusedBlockId}
@@ -1236,7 +1306,7 @@
       on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
-      on:toggleMode={toggleMode}
+      on:setMode={(e) => setMode(e.detail)}
       on:undo={undo}
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
@@ -1264,6 +1334,10 @@
         blocks={modeOrderedBlocks}
         {groupedBlocks}
         {focusedBlockId}
+        modeUsage={modeUsage}
+        modeDurations={modeDurations}
+        modeLabels={MODE_LABELS}
+        modeOrder={KNOWN_MODES}
         bind:canvasRef
         canvasColors={canvasTheme}
         on:update={updateBlockHandler}
