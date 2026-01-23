@@ -13,8 +13,10 @@
   const dispatch = createEventDispatcher();
 
   let pc = true; // default until detected
-  let detailsEl; // reference to <details>
+  let isOpen = true;
+  let hasMounted = false;
   let resizeHandler;
+  const RIGHT_CONTROLS_OPEN_KEY = "rightControlsOpen";
 
   const defaultColors = {
     panelBg: "#222222",
@@ -39,14 +41,43 @@
     .map(([name, value]) => `${name}: ${value}`)
     .join("; ");
 
+  function loadStoredOpenState() {
+    if (typeof localStorage === "undefined") return null;
+    try {
+      const stored = localStorage.getItem(RIGHT_CONTROLS_OPEN_KEY);
+      if (stored === null) return null;
+      return JSON.parse(stored);
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistOpenState(open) {
+    if (typeof localStorage === "undefined") return;
+    try {
+      localStorage.setItem(RIGHT_CONTROLS_OPEN_KEY, JSON.stringify(open));
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  $: if (hasMounted) {
+    persistOpenState(isOpen);
+  }
+
   // Detect PC vs mobile
   onMount(() => {
+    const storedOpenState = loadStoredOpenState();
+    if (typeof storedOpenState === "boolean") {
+      isOpen = storedOpenState;
+    }
     const evaluate = () => {
       pc = window.innerWidth > 1024;
     };
     evaluate();
     resizeHandler = () => evaluate();
     window.addEventListener("resize", resizeHandler);
+    hasMounted = true;
   });
 
   onDestroy(() => {
@@ -58,8 +89,8 @@
   function handleSelect(name) {
     load(name);
     // Auto-close dropdown only on mobile
-    if (!pc && detailsEl) {
-      detailsEl.open = false;
+    if (!pc) {
+      isOpen = false;
     }
   }
 
@@ -69,15 +100,15 @@
 
   function handleThemeSelect(event) {
     dispatch("selectTheme", event.detail);
-    if (!pc && detailsEl) {
-      detailsEl.open = false;
+    if (!pc) {
+      isOpen = false;
     }
   }
 
   function openAdvancedCssPage() {
     dispatch("openAdvancedCss");
-    if (!pc && detailsEl) {
-      detailsEl.open = false;
+    if (!pc) {
+      isOpen = false;
     }
   }
 </script>
@@ -241,7 +272,7 @@
 </style>
 
 <div class="right-controls" style={rightCssVars}>
-  <details bind:this={detailsEl} open>
+  <details bind:open={isOpen}>
     <summary>⚙️ Parameters</summary>
 
     <div class="dropdown-content">
