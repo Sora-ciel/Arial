@@ -13,8 +13,7 @@
   };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
   function deleteBlock(id) {
     dispatch('delete', { id });
@@ -87,45 +86,6 @@
     const textareas = document.querySelectorAll("textarea");
     textareas.forEach(autoResize);
   });
-
-  function getReadableTextColor(color) {
-    if (!color) return '#f5f5f5';
-    const parsed = parseColor(color);
-    if (!parsed) return '#f5f5f5';
-    const [r, g, b] = parsed;
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.6 ? '#121212' : '#f5f5f5';
-  }
-
-  function parseColor(color) {
-    const trimmed = color.trim();
-    if (trimmed.startsWith('#')) {
-      const hex = trimmed.slice(1);
-      if (hex.length === 3) {
-        return [
-          parseInt(hex[0] + hex[0], 16),
-          parseInt(hex[1] + hex[1], 16),
-          parseInt(hex[2] + hex[2], 16)
-        ];
-      }
-      if (hex.length === 6) {
-        return [
-          parseInt(hex.slice(0, 2), 16),
-          parseInt(hex.slice(2, 4), 16),
-          parseInt(hex.slice(4, 6), 16)
-        ];
-      }
-    }
-    const rgbMatch = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-    if (rgbMatch) {
-      return [
-        Number(rgbMatch[1]),
-        Number(rgbMatch[2]),
-        Number(rgbMatch[3])
-      ];
-    }
-    return null;
-  }
 </script>
 
 
@@ -136,11 +96,10 @@
 <style>
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   justify-content: center;
-  gap: 1.5rem;
   padding: clamp(12px, 2vw, 24px);
   overflow-y: auto;
   overflow-x: hidden;
@@ -150,53 +109,61 @@
   flex: 1 1 100%;
   min-width: 0;
   box-sizing: border-box;
-  min-height: 100%;
-  background: var(--canvas-outer-bg, #000000);
 }
 
 .canvas {
-  background: transparent;
-  padding: 0;
+  background: var(--canvas-outer-bg, #00000041);
+  border-radius: 8px;
+  padding: 5px;
   margin-bottom: 0;
-  width: min(720px, 100%);
+  width: 100%;
   box-sizing: border-box;
 }
 
 .container {
-  background: var(--canvas-inner-bg, #000000);
-  color: var(--mode-text-color, #ffffff);
-  padding: 12px 16px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 4px;
   width: 100%;
   box-sizing: border-box;
-  border-radius: 16px;
+  border-radius: 20px;
   overflow: hidden;
-  border: 1px solid transparent;
+  border: 2px solid var(--text-color);
+  box-shadow: 0 0 2px 1px var(--text-color),
+              0 0 6px 2px var(--text-color);
   display: flex;
   flex-direction: column;
   align-items: center;
-  outline: none;
-  transition: none;
+  outline: 2px solid transparent;
+  transition: box-shadow 0.15s ease, outline 0.15s ease;
+}
+
+.container.focused {
+  outline: 2px solid rgba(110, 168, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
+              0 0 12px rgba(110, 168, 255, 0.5);
 }
 
 textarea {
   width: 100%;
   min-height: 50px;
   border: none;
-  border-radius: 12px;
+  border-radius: 20px;
   resize: none;
   margin: 0;
-  padding: 10px 6px;
+  padding: 10px;
   background: transparent;
-  color: var(--mode-text-color, #ffffff);
+  color: var(--text-color);
   font-family: Arial, Helvetica, sans-serif;
-  font-size: 1rem;
-  font-weight: 500;
+  font-size: 1em;
+  font-weight: bold;
   box-sizing: border-box;
-  text-align: center;
 }
 
 textarea:focus {
+  color: var(--bg-color);
   outline: none;
+  background: var(--text-color);
 }
 
 .container img {
@@ -226,7 +193,7 @@ li {
 .edit-button,
 .delete-button {
   background: transparent;
-  color: var(--mode-text-color, #ffffff);
+  color: var(--text-color);
   border: none;
   cursor: pointer;
   font-size: 1.1rem;
@@ -252,7 +219,8 @@ li {
 /* ========== PC (desktop) ========== */
 @media (min-width: 1024px) {
   .simple-wrapper {
-    justify-content: center;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    justify-content: stretch;
     max-width: 1400px;
   }
 
@@ -289,6 +257,8 @@ li {
     <div class="canvas">
       <div
         class="container"
+        class:focused={block.id === focusedBlockId}
+        style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
         on:click={(event) => handleBlockClick(event, block.id)}
         role="button"
         tabindex="0"
