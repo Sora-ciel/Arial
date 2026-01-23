@@ -31,7 +31,10 @@
       name: 'Default Dark',
       description: 'Original midnight look with subtle neon glow.',
       controlColors: CONTROL_COLOR_DEFAULTS,
-      blockTheme: normalizeBlockTheme({}),
+      blockTheme: normalizeBlockTheme({
+        focusOutline: 'transparent',
+        focusShadow: 'none'
+      }),
       previewBg: 'rgba(16, 16, 20, 0.82)'
     },
     {
