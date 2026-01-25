@@ -245,7 +245,7 @@
   .task-section {
     border-radius: 16px;
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.16));
-    background: var(--block-surface, rgba(0, 0, 0, 0.3));
+    background: var(--block-surface);
     padding: 14px;
     display: flex;
     flex-direction: column;
