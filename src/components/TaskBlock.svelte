@@ -29,7 +29,6 @@
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
   const todoTasks = () => tasks.filter(task => !task.done);
-  const doneTasks = () => tasks.filter(task => task.done);
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
     const detail = {
@@ -211,15 +210,8 @@
     addTask();
   }
 
-  function handleTitleInput(event) {
-    title = event.target.value;
-    sendUpdate(['title'], { pushToHistory: false });
-  }
+  $: title = initialTitle || 'Task List';
 
-  function handleTitleBlur(event) {
-    title = event.target.value;
-    sendUpdate(['title'], { pushToHistory: true });
-  }
 </script>
 
 <style>
@@ -292,16 +284,6 @@
     box-sizing: border-box;
   }
 
-  .title-input {
-    width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    border-radius: 8px;
-    background: rgba(0, 0, 0, 0.2);
-    color: var(--text);
-    padding: 6px 8px;
-    font-size: 0.95rem;
-  }
-
   .task-input {
     display: flex;
     gap: 6px;
@@ -323,32 +305,6 @@
     color: var(--text);
     padding: 6px 10px;
     cursor: pointer;
-  }
-
-  .columns {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 8px;
-    flex: 1 1 auto;
-    overflow: hidden;
-  }
-
-  .section {
-    border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(0, 0, 0, 0.25);
-    padding: 6px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-    overflow: hidden;
-  }
-
-  .section h4 {
-    margin: 0;
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
   }
 
   .task-list {
@@ -419,7 +375,7 @@
     on:touchstart={onDragStart}
     role="presentation"
   >
-    <div class="header-title">task</div>
+    <div class="header-title">{title || 'Task List'}</div>
     <div class="header-controls" on:mousedown|stopPropagation role="presentation">
       <label title="Background Color">
         <input
@@ -442,14 +398,6 @@
   </div>
 
   <div class="content">
-    <input
-      class="title-input"
-      type="text"
-      value={title}
-      on:input={handleTitleInput}
-      on:blur={handleTitleBlur}
-      data-focus-guard
-    />
     <div class="task-input">
       <input
         type="text"
@@ -460,58 +408,28 @@
       />
       <button on:click={addTask} data-focus-guard>Add</button>
     </div>
-    <div class="columns">
-      <section class="section">
-        <h4>To Do</h4>
-        <ul class="task-list">
-          {#each todoTasks() as task}
-            <li class="task-item">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={task.done}
-                  on:change={() => toggleTask(task.id)}
-                  data-focus-guard
-                />
-                <span>{task.text}</span>
-              </label>
-              <button
-                aria-label="Delete task"
-                on:click={() => deleteTask(task.id)}
-                data-focus-guard
-              >
-                ×
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-      <section class="section">
-        <h4>Done</h4>
-        <ul class="task-list">
-          {#each doneTasks() as task}
-            <li class="task-item">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={task.done}
-                  on:change={() => toggleTask(task.id)}
-                  data-focus-guard
-                />
-                <span>{task.text}</span>
-              </label>
-              <button
-                aria-label="Delete task"
-                on:click={() => deleteTask(task.id)}
-                data-focus-guard
-              >
-                ×
-              </button>
-            </li>
-          {/each}
-        </ul>
-      </section>
-    </div>
+    <ul class="task-list">
+      {#each todoTasks() as task}
+        <li class="task-item">
+          <label>
+            <input
+              type="checkbox"
+              checked={task.done}
+              on:change={() => toggleTask(task.id)}
+              data-focus-guard
+            />
+            <span>{task.text}</span>
+          </label>
+          <button
+            aria-label="Delete task"
+            on:click={() => deleteTask(task.id)}
+            data-focus-guard
+          >
+            ×
+          </button>
+        </li>
+      {/each}
+    </ul>
   </div>
 
   <div
