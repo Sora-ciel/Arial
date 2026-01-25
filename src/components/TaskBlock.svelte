@@ -237,23 +237,21 @@
 
   .header {
     background: var(--block-header-bg, var(--bg));
+    height: 30px;
     padding: 4px 8px;
     cursor: move;
     user-select: none;
     font-size: 0.8rem;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
     color: var(--block-header-text, var(--text));
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
     font-family: var(--block-header-font, var(--block-body-font, inherit));
-    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    letter-spacing: var(--block-header-letter-spacing, 0.08em);
     text-transform: var(--block-header-transform, uppercase);
   }
 
-  .header-title {
-    font-weight: 600;
-  }
 
   .header-controls {
     display: flex;
@@ -261,21 +259,26 @@
     align-items: center;
   }
 
-  .header-controls input[type='color'] {
-    width: 22px;
+  .header-controls  input[type="color"] {
+    width: 28px;
     height: 22px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
     padding: 0;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: transparent;
+    cursor: pointer;
     border-radius: var(--block-control-radius, 6px);
+    background: transparent;
   }
 
-  .delete-btn {
-    border: none;
-    background: transparent;
-    color: var(--text);
-    font-size: 1rem;
+
+  button.delete-btn {
+    background: var(--block-accent-color, var(--text));
+    border-color: transparent;
+    font-size: 1.1rem;
+    color: var(--block-accent-text, var(--bg));
     cursor: pointer;
+    padding: 0px 8px;
+    border-radius: var(--block-control-radius, 6px);
+    transition: transform 0.15s ease, filter 0.2s ease;
   }
 
   .content {
@@ -295,17 +298,21 @@
 
   .task-input input {
     flex: 1 1 auto;
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--text);
     border-radius: 8px;
-    background: rgba(0, 0, 0, 0.2);
+    background: var(--bg);
     color: var(--text);
     padding: 6px 8px;
   }
 
+  .task-input input::placeholder{
+    color: var(--text);
+  }
+
   .task-input button {
-    border: 1px solid rgba(255, 255, 255, 0.2);
+    border: 1px solid var(--text);
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.12);
+    background: var(--bg);
     color: var(--text);
     padding: 6px 10px;
     cursor: pointer;
@@ -328,7 +335,8 @@
     gap: 6px;
     padding: 4px 6px;
     border-radius: 8px;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--bg);
+    border: 1px solid var(--text);
   }
 
   .task-item label {
@@ -342,7 +350,8 @@
   .task-item input[type='checkbox'] {
     width: 14px;
     height: 14px;
-    accent-color: var(--block-accent-color, #8bd3ff);
+    color: var(--text);
+    accent-color: var(--block-accent-color, var(--text));
   }
 
   .task-item button {
@@ -407,7 +416,7 @@
         type="text"
         bind:value={newTaskText}
         on:keydown={handleAddTaskKeydown}
-        placeholder="Add a task"
+        placeholder="add task"
         data-focus-guard
       />
       <button on:click={addTask} data-focus-guard>Add</button>
