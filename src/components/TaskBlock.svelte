@@ -221,6 +221,7 @@
     border-radius: var(--block-border-radius, 12px);
     background: var(--block-surface, var(--bg));
     box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
+    color: var(--text);
     outline: 2px solid transparent;
     transition: box-shadow 0.15s ease, outline 0.15s ease, transform 0.2s ease;
     overflow: hidden;
@@ -244,13 +245,14 @@
     align-items: center;
     justify-content: space-between;
     gap: 8px;
+    color: var(--block-header-text, var(--text));
+    font-family: var(--block-header-font, var(--block-body-font, inherit));
+    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    text-transform: var(--block-header-transform, uppercase);
   }
 
   .header-title {
     font-weight: 600;
-    letter-spacing: var(--block-header-letter-spacing, 0.06em);
-    text-transform: var(--block-header-transform, uppercase);
-    color: var(--block-header-text, var(--text));
   }
 
   .header-controls {
@@ -263,8 +265,9 @@
     width: 22px;
     height: 22px;
     padding: 0;
-    border: none;
+    border: 1px solid rgba(255, 255, 255, 0.15);
     background: transparent;
+    border-radius: var(--block-control-radius, 6px);
   }
 
   .delete-btn {
@@ -282,6 +285,7 @@
     padding: 8px;
     height: 100%;
     box-sizing: border-box;
+    color: var(--text);
   }
 
   .task-input {
