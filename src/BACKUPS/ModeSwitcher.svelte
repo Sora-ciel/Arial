@@ -74,7 +74,7 @@
 
 {:else}
   {#if mode === 'habit'}
-    <HabitTrackerMode {modeLabels} activeMode={mode} />
+    <HabitTrackerMode {modeLabels} activeMode={mode} {canvasColors} />
   {:else}
     <SingleNoteMode
       {blocks}
