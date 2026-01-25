@@ -139,8 +139,8 @@
 
 
 .canvas-inner {
-  width: 1800px;
-  height: 900px;
+  width: 1920px;
+  height: 1080px;
   transform-origin: top left;
   transition: transform 0.05s linear;
   background: var(--canvas-inner-bg, #000000);

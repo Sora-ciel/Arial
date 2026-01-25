@@ -4,6 +4,7 @@
   import SimpleNoteMode from './SimpleNoteMode.svelte';
   import SingleNoteMode from './SingleNoteMode.svelte';
   import HabitTrackerMode from './HabitTrackerMode.svelte';
+  import TaskMode from './TaskMode.svelte';
 
   export let mode; // 'default' or 'simple'
   export let blocks;
@@ -72,9 +73,18 @@
       on:focusToggle={focusToggleHandler}
     />
 
-{:else}
-  {#if mode === 'habit'}
+  {:else if mode === 'habit'}
     <HabitTrackerMode {modeLabels} activeMode={mode} {canvasColors} />
+  {:else if mode === 'task'}
+    <TaskMode
+      {blocks}
+      {focusedBlockId}
+      bind:canvasRef
+      {canvasColors}
+      on:update={updateBlockHandler}
+      on:delete={deleteBlockHandler}
+      on:focusToggle={focusToggleHandler}
+    />
   {:else}
     <SingleNoteMode
       {blocks}
@@ -88,5 +98,4 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
     />
-  {/if}
 {/if}

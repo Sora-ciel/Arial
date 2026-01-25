@@ -21,7 +21,8 @@
     { id: "default", label: "Canvas Mode" },
     { id: "simple", label: "Simple Note Mode" },
     { id: "single", label: "Single Note Mode" },
-    { id: "habit", label: "Habit Tracker Mode" }
+    { id: "habit", label: "Habit Tracker Mode" },
+    { id: "task", label: "Task Mode" }
   ];
 
   const defaultColors = {
@@ -47,6 +48,7 @@
 
 
   $: isSingleNoteMode = mode === "single";
+  $: isTaskMode = mode === "task";
 
   function addBlock(type) {
     if (isSingleNoteMode && type !== "text" && type !== "cleantext") return;
@@ -298,6 +300,9 @@ onMount(() => {
     <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
     <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
     <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
+    {#if isTaskMode}
+      <button on:click={() => addBlock("task")}>+ Task List</button>
+    {/if}
     <button
       on:click={moveUp}
       disabled={!focusedBlockId}
