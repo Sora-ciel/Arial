@@ -17,13 +17,31 @@
   $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
 
+  $: noteBlocks = blocks.filter(
+    block => block.type === 'text' || block.type === 'cleantext'
+  );
+  let selectedNoteId = null;
+  $: if (!selectedNoteId && noteBlocks.length) {
+    selectedNoteId = noteBlocks[0].id;
+  }
+  $: if (!noteBlocks.length) {
+    selectedNoteId = null;
+  }
+  $: if (
+    selectedNoteId &&
+    !noteBlocks.some(block => block.id === selectedNoteId)
+  ) {
+    selectedNoteId = noteBlocks[0]?.id ?? null;
+  }
   $: noteBlock =
-    blocks.find(block => block.type === 'text' || block.type === 'cleantext') ||
-    null;
+    noteBlocks.find(block => block.id === selectedNoteId) || null;
   $: noteContent = noteBlock?.content ?? '';
   $: wordCount = countWords(noteContent);
   $: characterCount = noteContent.length;
-  $: hasHiddenBlocks = blocks.length > 1;
+  $: hasHiddenBlocks = blocks.some(
+    block => block.type !== 'text' && block.type !== 'cleantext'
+  );
+  $: noteCount = noteBlocks.length;
 
   function countWords(text) {
     const trimmed = text.trim();
@@ -99,6 +117,16 @@
     }
     return null;
   }
+
+  function getNoteLabel(block, index) {
+    const content = (block?.content || '').trim();
+    const firstLine = content.split('\n')[0]?.trim();
+    if (firstLine) {
+      const trimmed = firstLine.length > 28 ? `${firstLine.slice(0, 28)}…` : firstLine;
+      return trimmed;
+    }
+    return `Note ${index + 1}`;
+  }
 </script>
 
 <style>
@@ -110,6 +138,34 @@
     background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);
     box-sizing: border-box;
+  }
+
+  .note-tabs {
+    display: flex;
+    gap: 8px;
+    padding: 10px 12px 0;
+    overflow-x: auto;
+  }
+
+  .note-tab {
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: transparent;
+    color: inherit;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+
+  .note-tab[aria-selected='true'] {
+    border-color: rgba(255, 255, 255, 0.8);
+    background: rgba(255, 255, 255, 0.12);
+  }
+
+  .note-tab:focus-visible {
+    outline: 2px solid rgba(255, 255, 255, 0.7);
+    outline-offset: 2px;
   }
 
   .note-meta {
@@ -192,6 +248,22 @@
 
 <div class="single-note" bind:this={canvasRef} style={canvasCssVars}>
   {#if noteBlock}
+    {#if noteCount > 1}
+      <div class="note-tabs" role="tablist" aria-label="Notes">
+        {#each noteBlocks as block, index (block.id)}
+          <button
+            class="note-tab"
+            role="tab"
+            aria-selected={block.id === selectedNoteId}
+            on:click={() => {
+              selectedNoteId = block.id;
+            }}
+          >
+            {getNoteLabel(block, index)}
+          </button>
+        {/each}
+      </div>
+    {/if}
     <div class="note-meta">
       <div class="note-stats">
         <span>Words: {wordCount}</span>
@@ -221,8 +293,8 @@
 
     {#if hasHiddenBlocks}
       <div class="note-warning">
-        This mode shows a single note. Other blocks are hidden until you return
-        to Canvas or Simple Note mode.
+        Only text notes appear here. Other block types remain hidden until you
+        return to Canvas or Simple Note mode.
       </div>
     {/if}
   {:else}
