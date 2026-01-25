@@ -58,7 +58,7 @@
           borderColor: '#1f3554'
         },
         canvas: {
-          outerBg: '#05080d',
+          outerBg: '#050b14',
           innerBg: '#050b14'
         }
       },
@@ -100,7 +100,7 @@
           borderColor: '#d8c7b6'
         },
         canvas: {
-          outerBg: '#ece3d9',
+          outerBg: '#f9f4ed',
           innerBg: '#f9f4ed'
         }
       },
