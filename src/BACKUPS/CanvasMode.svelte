@@ -6,6 +6,7 @@
   import Texteclean from '../components/TexteClean.svelte';
   import Music from '../components/MusicBlock.svelte';
   import Embed from '../components/EmbedBlock.svelte';
+  import TaskBlock from '../components/TaskBlock.svelte';
 
 
   export let mode;
@@ -139,8 +140,8 @@
 
 
 .canvas-inner {
-  width: 1920px;
-  height: 1080px;
+  width: 1800px;
+  height: 900px;
   transform-origin: top left;
   transition: transform 0.05s linear;
   background: var(--canvas-inner-bg, #000000);
@@ -244,6 +245,20 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            focused={block.id === focusedBlockId}
+            on:delete={deleteBlockHandler}
+            on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
+          />
+        {:else if block.type === 'task'}
+          <TaskBlock
+            id={block.id}
+            initialPosition={block.position}
+            initialSize={block.size}
+            initialBgColor={block.bgColor}
+            initialTextColor={block.textColor}
+            initialTasks={block.tasks}
+            initialTitle={block.title}
             focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
