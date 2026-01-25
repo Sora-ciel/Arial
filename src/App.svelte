@@ -542,15 +542,17 @@
     image: ['position', 'size', 'bgColor', 'textColor', 'src'],
     music: ['position', 'size', 'bgColor', 'textColor', 'trackUrl', 'title', 'content'],
     embed: ['position', 'size', 'bgColor', 'textColor', 'content'],
+    task: ['tasks', 'title'],
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single", "habit"];
+  const KNOWN_MODES = ["default", "simple", "single", "habit", "task"];
   const MODE_LABELS = {
     default: "Canvas Mode",
     simple: "Simple Note Mode",
     single: "Single Note Mode",
-    habit: "Habit Tracker Mode"
+    habit: "Habit Tracker Mode",
+    task: "Task Mode"
   };
 
   function applyHistoryTriggers(block) {
@@ -765,6 +767,20 @@
     }
   }
 
+  function handleUndoRedoShortcut(event) {
+    const key = event.key?.toLowerCase();
+    const hasCommand = event.ctrlKey || event.metaKey;
+    if (!hasCommand || key !== "z") return;
+
+    event.preventDefault();
+
+    if (event.shiftKey) {
+      redo();
+    } else {
+      undo();
+    }
+  }
+
   // --- Block operations ---
   function addBlock(type = "text") {
     if (mode === "single") {
@@ -778,6 +794,7 @@
       type,
       content: "",
       src: "",
+      ...(type === "task" ? { tasks: [], title: "Task List" } : {}),
       position: { x: 100, y: 100 },
       size: { width: 300, height: 200 },
       bgColor: "#000000",
@@ -1102,6 +1119,7 @@
   onMount(async () => {
     Pc = window.innerWidth > 1024;
     window.addEventListener("resize", handleWindowResize);
+    window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
 
     savedList = await listSavedBlocks();
@@ -1135,6 +1153,7 @@
 
   onDestroy(() => {
     window.removeEventListener("resize", handleWindowResize);
+    window.removeEventListener("keydown", handleUndoRedoShortcut);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
   });
