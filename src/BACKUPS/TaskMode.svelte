@@ -171,6 +171,7 @@
     background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);
     box-sizing: border-box;
+    font-family: var(--block-body-font, inherit);
   }
 
   .task-tabs {
@@ -181,19 +182,22 @@
   }
 
   .task-tab {
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: transparent;
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.25));
+    background: var(--block-surface, transparent);
+    color: var(--block-header-text, inherit);
     padding: 6px 12px;
     border-radius: 999px;
     font-size: 0.85rem;
     cursor: pointer;
     white-space: nowrap;
+    font-family: var(--block-header-font, var(--block-body-font, inherit));
+    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    text-transform: var(--block-header-transform, uppercase);
   }
 
   .task-tab[aria-selected='true'] {
-    border-color: rgba(255, 255, 255, 0.8);
-    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--block-border-color, rgba(255, 255, 255, 0.8));
+    background: var(--block-header-bg, rgba(255, 255, 255, 0.12));
   }
 
   .task-toolbar {
@@ -204,9 +208,9 @@
 
   .task-toolbar button {
     border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: transparent;
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.25));
+    background: var(--block-media-button-bg, rgba(255, 255, 255, 0.08));
+    color: var(--block-media-button-text, inherit);
     padding: 6px 12px;
     cursor: pointer;
   }
@@ -224,11 +228,12 @@
     width: 100%;
     padding: 10px 12px;
     border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: rgba(0, 0, 0, 0.25);
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.25));
+    background: var(--block-header-bg, rgba(0, 0, 0, 0.25));
+    color: var(--block-header-text, inherit);
     font-size: 1rem;
     box-sizing: border-box;
+    font-family: var(--block-body-font, inherit);
   }
 
   .task-columns {
@@ -239,19 +244,23 @@
 
   .task-section {
     border-radius: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(0, 0, 0, 0.3);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.16));
+    background: var(--block-surface, rgba(0, 0, 0, 0.3));
     padding: 14px;
     display: flex;
     flex-direction: column;
     gap: 12px;
     min-height: 200px;
+    box-shadow: var(--block-shadow, none);
   }
 
   .task-section h3 {
     margin: 0;
     font-size: 1rem;
     letter-spacing: 0.02em;
+    font-family: var(--block-header-font, var(--block-body-font, inherit));
+    color: var(--block-header-text, inherit);
+    text-transform: var(--block-header-transform, uppercase);
   }
 
   .task-input {
@@ -263,17 +272,18 @@
     flex: 1 1 auto;
     padding: 8px 10px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(0, 0, 0, 0.2);
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    background: var(--block-header-bg, rgba(0, 0, 0, 0.2));
+    color: var(--block-header-text, inherit);
+    font-family: var(--block-body-font, inherit);
   }
 
   .task-input button {
     padding: 8px 12px;
     border-radius: 10px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.12);
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    background: var(--block-media-button-bg, rgba(255, 255, 255, 0.12));
+    color: var(--block-media-button-text, inherit);
     cursor: pointer;
   }
 
@@ -293,7 +303,8 @@
     gap: 10px;
     padding: 6px 8px;
     border-radius: 10px;
-    background: rgba(255, 255, 255, 0.06);
+    background: var(--block-surface, rgba(255, 255, 255, 0.06));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, transparent);
   }
 
   .task-item label {
@@ -312,7 +323,7 @@
   .task-item button {
     border: none;
     background: transparent;
-    color: inherit;
+    color: var(--block-header-text, inherit);
     cursor: pointer;
     font-size: 1rem;
   }
