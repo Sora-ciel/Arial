@@ -3,6 +3,7 @@
 
   export let modeLabels = {};
   export let activeMode = "default";
+  export let canvasColors = {};
 
   const STORAGE_KEY = "habitTrackerData";
   const DAYS_VISIBLE = 14;
@@ -11,6 +12,15 @@
   let newHabitName = "";
 
   const today = new Date();
+
+  const defaultCanvasColors = {
+    outerBg: "#000000",
+    innerBg: "#000000"
+  };
+
+  $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
+  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
 
   const formatDateKey = date =>
     date.toISOString().slice(0, 10);
@@ -87,6 +97,45 @@
     }
     days = buildDays();
   });
+
+  function getReadableTextColor(color) {
+    if (!color) return "#f5f5f5";
+    const parsed = parseColor(color);
+    if (!parsed) return "#f5f5f5";
+    const [r, g, b] = parsed;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? "#121212" : "#f5f5f5";
+  }
+
+  function parseColor(color) {
+    const trimmed = color.trim();
+    if (trimmed.startsWith("#")) {
+      const hex = trimmed.slice(1);
+      if (hex.length === 3) {
+        return [
+          parseInt(hex[0] + hex[0], 16),
+          parseInt(hex[1] + hex[1], 16),
+          parseInt(hex[2] + hex[2], 16)
+        ];
+      }
+      if (hex.length === 6) {
+        return [
+          parseInt(hex.slice(0, 2), 16),
+          parseInt(hex.slice(2, 4), 16),
+          parseInt(hex.slice(4, 6), 16)
+        ];
+      }
+    }
+    const rgbMatch = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (rgbMatch) {
+      return [
+        Number(rgbMatch[1]),
+        Number(rgbMatch[2]),
+        Number(rgbMatch[3])
+      ];
+    }
+    return null;
+  }
 </script>
 
 <style>
@@ -100,6 +149,7 @@
     overflow-y: auto;
     background: var(--canvas-inner-bg, #0b0f19);
     color: var(--mode-text-color, #ffffff);
+    font-family: var(--block-body-font, inherit);
   }
 
   .habit-header {
@@ -111,6 +161,9 @@
   .habit-header h2 {
     font-size: 1.6rem;
     margin: 0;
+    font-family: var(--block-header-font, inherit);
+    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    text-transform: var(--block-header-transform, uppercase);
   }
 
   .habit-header p {
@@ -128,18 +181,18 @@
     flex: 1 1 240px;
     min-width: 200px;
     padding: 10px 12px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(10, 16, 26, 0.7);
-    color: inherit;
+    border-radius: var(--block-control-radius, 8px);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    background: var(--block-header-bg, rgba(10, 16, 26, 0.7));
+    color: var(--block-header-text, inherit);
   }
 
   .habit-form button {
     padding: 10px 16px;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(18, 28, 44, 0.8);
-    color: inherit;
+    border-radius: var(--block-control-radius, 8px);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    background: var(--block-media-button-bg, rgba(18, 28, 44, 0.8));
+    color: var(--block-media-button-text, inherit);
     cursor: pointer;
   }
 
@@ -149,10 +202,11 @@
   }
 
   .habit-row {
-    border-radius: 16px;
+    border-radius: var(--block-border-radius, 16px);
     padding: 16px;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    background: rgba(12, 18, 30, 0.6);
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.12));
+    background: var(--block-header-bg, rgba(12, 18, 30, 0.6));
+    box-shadow: var(--block-shadow, none);
     display: grid;
     grid-template-columns: minmax(160px, 220px) 1fr auto;
     gap: 16px;
@@ -182,11 +236,11 @@
   }
 
   .day-button {
-    border-radius: 10px;
+    border-radius: var(--block-control-radius, 10px);
     padding: 8px 6px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    background: rgba(10, 14, 22, 0.6);
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.15));
+    background: var(--block-media-button-bg, rgba(10, 14, 22, 0.6));
+    color: var(--block-media-button-text, inherit);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -195,13 +249,15 @@
   }
 
   .day-button.done {
-    background: rgba(80, 200, 140, 0.25);
-    border-color: rgba(80, 200, 140, 0.6);
+    background: var(--block-accent-color, rgba(80, 200, 140, 0.25));
+    border-color: var(--block-accent-color, rgba(80, 200, 140, 0.6));
+    color: var(--block-accent-text, #ffffff);
   }
 
   .day-button.missed {
-    background: rgba(230, 90, 90, 0.25);
-    border-color: rgba(230, 90, 90, 0.6);
+    background: transparent;
+    border-color: var(--block-focus-outline, rgba(230, 90, 90, 0.6));
+    color: var(--block-focus-outline, #ffffff);
   }
 
   .day-status {
@@ -210,11 +266,11 @@
   }
 
   .habit-actions button {
-    border-radius: 10px;
+    border-radius: var(--block-control-radius, 10px);
     padding: 8px 12px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(24, 32, 50, 0.7);
-    color: inherit;
+    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.18));
+    background: var(--block-media-button-bg, rgba(24, 32, 50, 0.7));
+    color: var(--block-media-button-text, inherit);
     cursor: pointer;
   }
 
@@ -222,11 +278,13 @@
     opacity: 0.7;
     padding: 16px;
     border-radius: 12px;
-    border: 1px dashed rgba(255, 255, 255, 0.2);
+    border-width: var(--block-border-width, 1px);
+    border-style: dashed;
+    border-color: var(--block-border-color, rgba(255, 255, 255, 0.2));
   }
 </style>
 
-<section class="habit-tracker">
+<section class="habit-tracker" style={canvasCssVars}>
   <div class="habit-header">
     <h2>{modeLabels?.[activeMode] ?? "Habit Tracker"}</h2>
     <p>Create a habit, then check or cross each day starting from today.</p>
