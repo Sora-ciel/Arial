@@ -5,6 +5,8 @@
   export let controlColors = {};
   export let themes = [];
   export let selectedThemeId = 'default-dark';
+  export let syncStatus = null;
+  export let firebaseUser = null;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -100,6 +102,27 @@
 
   function handleThemeSelect(event) {
     dispatch("selectTheme", event.detail);
+    if (!pc) {
+      isOpen = false;
+    }
+  }
+
+  function authGoogle() {
+    dispatch("authGoogle");
+    if (!pc) {
+      isOpen = false;
+    }
+  }
+
+  function signOutGoogle() {
+    dispatch("signOutGoogle");
+    if (!pc) {
+      isOpen = false;
+    }
+  }
+
+  function syncNow() {
+    dispatch("syncNow");
     if (!pc) {
       isOpen = false;
     }
@@ -270,6 +293,18 @@
     opacity: 0.65;
   }
 
+  .sync-status {
+    font-size: 0.78rem;
+    opacity: 0.82;
+    margin: 4px 0 0;
+  }
+
+  .auth-row {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
 
 </style>
 
@@ -292,6 +327,30 @@
             </ul>
           {:else}
             <p class="empty-state">No saved scenes yet.</p>
+          {/if}
+        </div>
+
+
+        <div class="tab-section">
+          <h4>☁️ Cloud Sync</h4>
+          <div class="auth-row">
+            <button class="create-theme-btn" type="button" on:click={authGoogle}>
+              🔐 Authenticate with Google
+            </button>
+            {#if firebaseUser}
+              <button class="create-theme-btn" type="button" on:click={signOutGoogle}>
+                🚪 Sign out
+              </button>
+            {/if}
+          </div>
+          <button class="create-theme-btn" type="button" on:click={syncNow}>
+            🔄 Sync all JSON to Firebase
+          </button>
+          {#if firebaseUser}
+            <p class="sync-status">Authenticated as: {firebaseUser.email || firebaseUser.uid}</p>
+          {/if}
+          {#if syncStatus}
+            <p class="sync-status">{syncStatus}</p>
           {/if}
         </div>
 
