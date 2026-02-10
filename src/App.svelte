@@ -6,12 +6,6 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
   import {
-    isFirebaseConfigured,
-    onAuthStateChange,
-    signInWithGoogle,
-    signOutUser
-  } from './firebaseClient.js';
-  import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
     CUSTOM_THEME_ID,
@@ -654,11 +648,6 @@
   })();
   let currentSaveName = "default";
   let savedList = [];
-  let firebaseEnabled = isFirebaseConfigured();
-  let authReady = !firebaseEnabled;
-  let authUser = null;
-  let authError = '';
-  let detachAuthListener = null;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -1120,24 +1109,6 @@
     }
   }
 
-  async function handleSignIn() {
-    authError = '';
-    try {
-      await signInWithGoogle();
-    } catch (error) {
-      authError = error?.message || 'Sign-in failed.';
-    }
-  }
-
-  async function handleSignOut() {
-    authError = '';
-    try {
-      await signOutUser();
-    } catch (error) {
-      authError = error?.message || 'Sign-out failed.';
-    }
-  }
-
   $: if (
     focusedBlockId &&
     !blocks.some(block => block.id === focusedBlockId)
@@ -1150,30 +1121,6 @@
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
-
-    if (firebaseEnabled) {
-      detachAuthListener = await onAuthStateChange(async user => {
-        authUser = user;
-        authReady = true;
-        savedList = await listSavedBlocks();
-        if (currentSaveName) {
-          const refreshed = await loadBlocks(currentSaveName);
-          const refreshedBlocks = Array.isArray(refreshed)
-            ? refreshed
-            : Array.isArray(refreshed?.blocks)
-            ? refreshed.blocks
-            : [];
-          const refreshedOrders = !Array.isArray(refreshed)
-            ? refreshed?.modeOrders
-            : {};
-          blocks = refreshedBlocks.map(b => ({
-            ...applyHistoryTriggers(b),
-            _version: 0
-          }));
-          modeOrders = ensureModeOrders(blocks, refreshedOrders);
-        }
-      });
-    }
 
     savedList = await listSavedBlocks();
     const storedLastSave = loadStoredLastSaveName();
@@ -1209,10 +1156,6 @@
     window.removeEventListener("keydown", handleUndoRedoShortcut);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
-    if (detachAuthListener) {
-      detachAuthListener();
-      detachAuthListener = null;
-    }
   });
 
   $: if (controlsRef) {
@@ -1329,12 +1272,6 @@
         {controlColors}
         themes={availableThemes}
         {selectedThemeId}
-        {firebaseEnabled}
-        {authReady}
-        {authUser}
-        {authError}
-        signIn={handleSignIn}
-        signOut={handleSignOut}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
