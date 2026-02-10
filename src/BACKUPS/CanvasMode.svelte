@@ -205,6 +205,8 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialSrc={block.src}
+            initialResolvedSrc={block.resolvedSrc}
+            initialAttachmentRequiresAuth={block.attachmentRequiresAuth}
             focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
