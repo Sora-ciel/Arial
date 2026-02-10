@@ -168,9 +168,13 @@ function requireUser() {
 }
 
 export async function loadRemoteFile(fileId) {
+  syncDebugLog.logInfo('sync.load.remoteFile', `Preparing remote file read: ${fileId}`);
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return null;
+  if (!ctx || !user) {
+    syncDebugLog.logInfo('sync.load.remoteFile', 'Remote file read skipped (not initialized or user missing).');
+    return null;
+  }
 
   const fileRef = ctx.dbSdk.ref(ctx.db, `${userRoot(user.uid)}/files/${fileId}`);
   syncDebugLog.logInfo('sync.load.remoteFile', `Reading remote file ${fileId}...`);
@@ -183,9 +187,13 @@ export async function loadRemoteFile(fileId) {
 }
 
 export async function loadRemoteIndex() {
+  syncDebugLog.logInfo('sync.list.remoteIndex', 'Preparing remote index read...');
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return null;
+  if (!ctx || !user) {
+    syncDebugLog.logInfo('sync.list.remoteIndex', 'Remote index read skipped (not initialized or user missing).');
+    return null;
+  }
 
   const indexRef = ctx.dbSdk.ref(ctx.db, `${userRoot(user.uid)}/index`);
   syncDebugLog.logInfo('sync.list.remoteIndex', 'Reading remote file index...');
@@ -195,9 +203,13 @@ export async function loadRemoteIndex() {
 }
 
 export async function saveRemoteFile(fileId, payload, metadata) {
+  syncDebugLog.logInfo('sync.save.remoteFile', `Preparing remote write for ${fileId}...`);
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return false;
+  if (!ctx || !user) {
+    syncDebugLog.logError('sync.save.remoteFile', 'Remote write aborted (not initialized or user missing).');
+    return false;
+  }
 
   const basePath = `${userRoot(user.uid)}`;
   const fileRef = ctx.dbSdk.ref(ctx.db, `${basePath}/files/${fileId}`);
@@ -221,9 +233,13 @@ export async function saveRemoteFile(fileId, payload, metadata) {
 }
 
 export async function deleteRemoteFile(fileId) {
+  syncDebugLog.logInfo('sync.delete.remoteFile', `Preparing remote delete for ${fileId}...`);
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return false;
+  if (!ctx || !user) {
+    syncDebugLog.logError('sync.delete.remoteFile', 'Remote delete aborted (not initialized or user missing).');
+    return false;
+  }
 
   const basePath = `${userRoot(user.uid)}`;
   const fileRef = ctx.dbSdk.ref(ctx.db, `${basePath}/files/${fileId}`);
@@ -238,7 +254,10 @@ export async function deleteRemoteFile(fileId) {
 export async function uploadAttachmentFromDataUrl(attachmentId, dataUrl) {
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return null;
+  if (!ctx || !user) {
+    syncDebugLog.logError('sync.upload.attachment', 'Attachment upload skipped (not initialized or user missing).');
+    return null;
+  }
 
   syncDebugLog.logInfo('sync.upload.attachment', `Uploading attachment ${attachmentId}...`);
   const response = await fetch(dataUrl);
@@ -284,7 +303,10 @@ export async function resolveAttachmentURL(storagePath) {
 
   const ctx = await ensureInitialized();
   const user = requireUser();
-  if (!ctx || !user) return null;
+  if (!ctx || !user) {
+    syncDebugLog.logInfo('sync.resolve.attachment', 'Resolve skipped (not initialized or user missing).');
+    return null;
+  }
 
   if (!storagePath.startsWith(`users/${user.uid}/`)) {
     return null;

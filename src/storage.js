@@ -222,19 +222,26 @@ export async function saveBlocks(name, blocks) {
   syncDebugLog.logSuccess('sync.save.local', `Saved "${name}" locally.`);
 
   if (!canUseRemoteSync()) {
-    syncDebugLog.logInfo('sync.save.remote', 'Remote sync skipped (not signed in or Firebase unavailable).');
+    const reason = !isFirebaseConfigured()
+      ? 'Firebase not configured.'
+      : !getCurrentUser()
+      ? 'No authenticated user yet.'
+      : 'Unknown remote-sync precondition failure.';
+    syncDebugLog.logInfo('sync.save.remote', `Remote sync skipped: ${reason}`);
     return;
   }
 
   try {
     const fileId = saveKey(name);
+    syncDebugLog.logInfo('sync.save.remote', `Fetching remote head for "${name}" (${fileId})...`);
     const remoteCurrent = await loadRemoteFile(fileId);
+    syncDebugLog.logInfo('sync.save.remote', `Remote head ${remoteCurrent ? 'found' : 'missing'} for "${name}".`);
     const remoteUpdatedAt = Number(
       remoteCurrent?.clientUpdatedAt || remoteCurrent?.updatedAt || 0
     );
 
     if (remoteUpdatedAt > now) {
-      const message = `Skipped remote overwrite for "${name}" because remote version is newer.`;
+      const message = `Skipped remote overwrite for "${name}" because remote version is newer (remote=${remoteUpdatedAt}, local=${now}).`;
       console.warn(message);
       syncDebugLog.logInfo('sync.save.remote', message);
       return;

@@ -660,6 +660,7 @@
   let authUser = null;
   let authError = '';
   let detachAuthListener = null;
+  let initialCloudSyncAttempted = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -1166,6 +1167,9 @@
         syncDebugLog.logInfo('auth.listener', 'Auth state callback received. Refreshing saved files.');
         authUser = user;
         authReady = true;
+        if (!user) {
+          initialCloudSyncAttempted = false;
+        }
         savedList = await listSavedBlocks();
         syncDebugLog.logSuccess('auth.listener', `Saved files refreshed (${savedList.length}).`);
         if (currentSaveName) {
@@ -1183,6 +1187,22 @@
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, refreshedOrders);
+
+          if (user && !initialCloudSyncAttempted) {
+            initialCloudSyncAttempted = true;
+            syncDebugLog.logInfo(
+              'sync.bootstrap',
+              `Attempting initial cloud sync for "${currentSaveName}" after auth.`
+            );
+            await saveBlocks(currentSaveName, {
+              blocks,
+              modeOrders
+            });
+            syncDebugLog.logSuccess(
+              'sync.bootstrap',
+              `Initial cloud sync attempt finished for "${currentSaveName}".`
+            );
+          }
         }
       });
     }
