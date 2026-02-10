@@ -5,6 +5,7 @@
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
+  import { syncDebugLog } from './syncDebug.js';
   import {
     isFirebaseConfigured,
     onAuthStateChange,
@@ -704,6 +705,7 @@
       modeOrders: normalizedOrders
     });
     savedList = await listSavedBlocks();
+    syncDebugLog.logSuccess('app.mount', `Initial saved files loaded (${savedList.length}).`);
   }
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
@@ -1122,19 +1124,25 @@
 
   async function handleSignIn() {
     authError = '';
+    syncDebugLog.logInfo('auth.signin.ui', 'User tapped "Sign in with Google".');
     try {
       await signInWithGoogle();
+      syncDebugLog.logSuccess('auth.signin.ui', 'Google sign-in flow completed.');
     } catch (error) {
       authError = error?.message || 'Sign-in failed.';
+      syncDebugLog.logError('auth.signin.ui', authError);
     }
   }
 
   async function handleSignOut() {
     authError = '';
+    syncDebugLog.logInfo('auth.signout.ui', 'User tapped "Sign out".');
     try {
       await signOutUser();
+      syncDebugLog.logSuccess('auth.signout.ui', 'Sign-out flow completed.');
     } catch (error) {
       authError = error?.message || 'Sign-out failed.';
+      syncDebugLog.logError('auth.signout.ui', authError);
     }
   }
 
@@ -1146,16 +1154,20 @@
   }
 
   onMount(async () => {
+    syncDebugLog.logInfo('app.mount', 'App mounted. Initializing local/Firebase data.');
     Pc = window.innerWidth > 1024;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
 
     if (firebaseEnabled) {
+      syncDebugLog.logInfo('auth.listener', 'Attaching Firebase auth state listener...');
       detachAuthListener = await onAuthStateChange(async user => {
+        syncDebugLog.logInfo('auth.listener', 'Auth state callback received. Refreshing saved files.');
         authUser = user;
         authReady = true;
         savedList = await listSavedBlocks();
+        syncDebugLog.logSuccess('auth.listener', `Saved files refreshed (${savedList.length}).`);
         if (currentSaveName) {
           const refreshed = await loadBlocks(currentSaveName);
           const refreshedBlocks = Array.isArray(refreshed)
@@ -1183,6 +1195,7 @@
       currentSaveName = savedList[0];
     }
 
+    syncDebugLog.logInfo('app.mount', `Loading initial workspace: "${currentSaveName}".`);
     const initialData = await loadBlocks(currentSaveName);
     const initialBlocks = Array.isArray(initialData)
       ? initialData
@@ -1202,6 +1215,7 @@
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
     persistLastSaveName(currentSaveName);
+    syncDebugLog.logSuccess('app.mount', 'Initial workspace ready.');
   });
 
   onDestroy(() => {
@@ -1333,6 +1347,7 @@
         {authReady}
         {authUser}
         {authError}
+        syncLogStore={syncDebugLog}
         signIn={handleSignIn}
         signOut={handleSignOut}
         on:updateColors={handleControlColorChange}
