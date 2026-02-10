@@ -5,6 +5,7 @@
   export let controlColors = {};
   export let themes = [];
   export let selectedThemeId = 'default-dark';
+  export let syncStatus = null;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -100,6 +101,13 @@
 
   function handleThemeSelect(event) {
     dispatch("selectTheme", event.detail);
+    if (!pc) {
+      isOpen = false;
+    }
+  }
+
+  function syncNow() {
+    dispatch("syncNow");
     if (!pc) {
       isOpen = false;
     }
@@ -270,6 +278,12 @@
     opacity: 0.65;
   }
 
+  .sync-status {
+    font-size: 0.78rem;
+    opacity: 0.82;
+    margin: 4px 0 0;
+  }
+
 
 </style>
 
@@ -292,6 +306,17 @@
             </ul>
           {:else}
             <p class="empty-state">No saved scenes yet.</p>
+          {/if}
+        </div>
+
+
+        <div class="tab-section">
+          <h4>☁️ Cloud Sync</h4>
+          <button class="create-theme-btn" type="button" on:click={syncNow}>
+            🔄 Sync all JSON to Firebase
+          </button>
+          {#if syncStatus}
+            <p class="sync-status">{syncStatus}</p>
           {/if}
         </div>
 

@@ -5,6 +5,7 @@
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
+  import { isFirebaseConfigured, getCurrentUser, signInWithGoogle, saveRemoteFile } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
@@ -648,6 +649,7 @@
   })();
   let currentSaveName = "default";
   let savedList = [];
+  let syncStatus = '';
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -882,6 +884,49 @@
       modeOrders = ensureModeOrders(blocks, modeOrders);
       await persistAutosave(blocks, modeOrders);
       hasUnsnapshottedChanges = true;
+    }
+  }
+
+
+  async function syncAllToFirebase() {
+    if (!isFirebaseConfigured()) {
+      syncStatus = 'Firebase is not configured yet.';
+      return;
+    }
+
+    syncStatus = 'Signing in with Google...';
+
+    let user = getCurrentUser();
+    if (!user) {
+      try {
+        user = await signInWithGoogle();
+      } catch (error) {
+        syncStatus = `Google sign-in failed: ${error?.message || 'unknown error'}`;
+        return;
+      }
+    }
+
+    if (!user?.uid) {
+      syncStatus = 'No Google account session available.';
+      return;
+    }
+
+    const names = await listSavedBlocks();
+    if (!names.length) {
+      syncStatus = `Connected as ${user.email || user.uid}, but there are no local JSON saves to sync.`;
+      return;
+    }
+
+    syncStatus = `Syncing ${names.length} file(s) to Firebase folder: users/${user.uid}...`;
+
+    try {
+      for (const name of names) {
+        const payload = await loadBlocks(name);
+        await saveRemoteFile(user.uid, name, payload);
+      }
+      syncStatus = `✅ Synced ${names.length} file(s) for ${user.email || user.uid}.`;
+    } catch (error) {
+      syncStatus = `Sync failed: ${error?.message || 'unknown error'}`;
     }
   }
 
@@ -1272,9 +1317,11 @@
         {controlColors}
         themes={availableThemes}
         {selectedThemeId}
+        {syncStatus}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
+        on:syncNow={syncAllToFirebase}
       />
     </div>
   </div>
