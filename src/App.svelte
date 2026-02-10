@@ -1211,8 +1211,9 @@
     const storedLastSave = loadStoredLastSaveName();
     if (storedLastSave && savedList.includes(storedLastSave)) {
       currentSaveName = storedLastSave;
-    } else if (!currentSaveName && savedList.length) {
+    } else if (savedList.length && !savedList.includes(currentSaveName)) {
       currentSaveName = savedList[0];
+      syncDebugLog.logInfo('app.mount', `Defaulting to existing saved file "${currentSaveName}".`);
     }
 
     syncDebugLog.logInfo('app.mount', `Loading initial workspace: "${currentSaveName}".`);

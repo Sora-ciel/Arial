@@ -281,6 +281,7 @@ export async function loadBlocks(name) {
         syncDebugLog.logSuccess('sync.load', `Loaded "${name}" from Firebase.`);
         return hydratePayloadForRuntime(remotePayload);
       }
+      syncDebugLog.logInfo('sync.load', `Remote file "${name}" does not exist; falling back to local.`);
     } catch (error) {
       console.warn('Firebase sync failed during load, falling back to local storage.', error);
       syncDebugLog.logError('sync.load', error?.message || 'Firebase load failed; used local fallback.');
@@ -316,23 +317,34 @@ export async function deleteBlocks(name) {
 
 export async function listSavedBlocks() {
   syncDebugLog.logInfo('sync.list', 'Loading saved files list...');
+
+  const db = await getDB();
+  const localKeys = (await db.getAllKeys(STORE_NAME)).map(String);
+  const merged = new Set(localKeys);
+  syncDebugLog.logInfo('sync.list', `Local list loaded (${localKeys.length}).`);
+
   if (canUseRemoteSync()) {
     try {
       const remoteIndex = (await loadRemoteIndex()) || {};
       const remoteList = Object.entries(remoteIndex)
         .map(([fileId, value]) => value?.name || saveNameFromKey(fileId))
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b));
-      syncDebugLog.logSuccess('sync.list', `Loaded ${remoteList.length} file(s) from Firebase index.`);
-      return remoteList;
+        .filter(Boolean);
+
+      for (const name of remoteList) merged.add(name);
+
+      const combined = [...merged].sort((a, b) => a.localeCompare(b));
+      syncDebugLog.logSuccess(
+        'sync.list',
+        `Loaded local(${localKeys.length}) + remote(${remoteList.length}) => combined(${combined.length}).`
+      );
+      return combined;
     } catch (error) {
-      console.warn('Firebase sync failed during listing, falling back to local data.', error);
-      syncDebugLog.logError('sync.list', error?.message || 'Firebase list failed; used local fallback.');
+      console.warn('Firebase sync failed during listing, using local data.', error);
+      syncDebugLog.logError('sync.list', error?.message || 'Firebase list failed; using local data.');
     }
   }
 
-  const db = await getDB();
-  const keys = await db.getAllKeys(STORE_NAME);
-  syncDebugLog.logSuccess('sync.list', `Loaded ${keys.length} file(s) from local storage.`);
-  return keys.map(String);
+  const localSorted = [...merged].sort((a, b) => a.localeCompare(b));
+  syncDebugLog.logSuccess('sync.list', `Loaded ${localSorted.length} file(s) from local storage.`);
+  return localSorted;
 }
