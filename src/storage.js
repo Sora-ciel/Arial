@@ -12,6 +12,9 @@ import {
 
 const DB_NAME = 'codex-db';
 const STORE_NAME = 'blocks';
+const REMOTE_SYNC_COOLDOWN_MS = 30_000;
+
+const pendingRemoteSyncByName = new Map();
 
 function toUtf8Base64(value) {
   if (typeof window === 'undefined') return value;
@@ -147,6 +150,64 @@ async function prepareRemotePayload(payload, fileName) {
   };
 }
 
+async function flushRemoteSync(name) {
+  const pendingSync = pendingRemoteSyncByName.get(name);
+  if (!pendingSync) return;
+
+  pendingRemoteSyncByName.delete(name);
+
+  if (!canUseRemoteSync()) return;
+
+  const { payload, updatedAt } = pendingSync;
+
+  try {
+    const fileId = saveKey(name);
+    const remoteCurrent = await loadRemoteFile(fileId);
+    const remoteUpdatedAt = Number(remoteCurrent?.updatedAt || 0);
+
+    if (remoteUpdatedAt > updatedAt) {
+      console.warn(
+        `Skipped remote overwrite for "${name}" because remote version is newer.`
+      );
+      return;
+    }
+
+    const { payload: remotePayload, migratedAttachmentCount } = await prepareRemotePayload(
+      payload,
+      name
+    );
+
+    if (migratedAttachmentCount > 0) {
+      console.info(`Migrated ${migratedAttachmentCount} inline attachment(s) to Firebase Storage.`);
+    }
+
+    await saveRemoteFile(fileId, remotePayload, {
+      name,
+      fileId,
+      clientUpdatedAt: updatedAt
+    });
+  } catch (error) {
+    console.warn('Firebase sync failed during save, using local storage only.', error);
+  }
+}
+
+function scheduleRemoteSync(name, payload, updatedAt) {
+  const previous = pendingRemoteSyncByName.get(name);
+  if (previous?.timerId) {
+    clearTimeout(previous.timerId);
+  }
+
+  const timerId = setTimeout(() => {
+    flushRemoteSync(name);
+  }, REMOTE_SYNC_COOLDOWN_MS);
+
+  pendingRemoteSyncByName.set(name, {
+    payload,
+    updatedAt,
+    timerId
+  });
+}
+
 async function hydratePayloadForRuntime(payload) {
   const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
 
@@ -220,35 +281,7 @@ export async function saveBlocks(name, blocks) {
 
   if (!canUseRemoteSync()) return;
 
-  try {
-    const fileId = saveKey(name);
-    const remoteCurrent = await loadRemoteFile(fileId);
-    const remoteUpdatedAt = Number(remoteCurrent?.updatedAt || 0);
-
-    if (remoteUpdatedAt > now) {
-      console.warn(
-        `Skipped remote overwrite for "${name}" because remote version is newer.`
-      );
-      return;
-    }
-
-    const { payload: remotePayload, migratedAttachmentCount } = await prepareRemotePayload(
-      payload,
-      name
-    );
-
-    if (migratedAttachmentCount > 0) {
-      console.info(`Migrated ${migratedAttachmentCount} inline attachment(s) to Firebase Storage.`);
-    }
-
-    await saveRemoteFile(fileId, remotePayload, {
-      name,
-      fileId,
-      clientUpdatedAt: now
-    });
-  } catch (error) {
-    console.warn('Firebase sync failed during save, using local storage only.', error);
-  }
+  scheduleRemoteSync(name, payload, now);
 }
 
 export async function loadBlocks(name) {
@@ -275,6 +308,12 @@ export async function deleteBlocks(name) {
   const db = await getDB();
   await db.delete(STORE_NAME, name);
 
+  const pendingSync = pendingRemoteSyncByName.get(name);
+  if (pendingSync?.timerId) {
+    clearTimeout(pendingSync.timerId);
+  }
+  pendingRemoteSyncByName.delete(name);
+
   if (!canUseRemoteSync()) return;
 
   try {
@@ -286,19 +325,22 @@ export async function deleteBlocks(name) {
 }
 
 export async function listSavedBlocks() {
+  const db = await getDB();
+  const localKeys = (await db.getAllKeys(STORE_NAME)).map(String);
+
   if (canUseRemoteSync()) {
     try {
       const remoteIndex = (await loadRemoteIndex()) || {};
-      return Object.entries(remoteIndex)
+      const remoteNames = Object.entries(remoteIndex)
         .map(([fileId, value]) => value?.name || saveNameFromKey(fileId))
-        .filter(Boolean)
+        .filter(Boolean);
+
+      return Array.from(new Set([...localKeys, ...remoteNames]))
         .sort((a, b) => a.localeCompare(b));
     } catch (error) {
       console.warn('Firebase sync failed during listing, falling back to local data.', error);
     }
   }
 
-  const db = await getDB();
-  const keys = await db.getAllKeys(STORE_NAME);
-  return keys.map(String);
+  return localKeys;
 }
