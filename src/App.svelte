@@ -669,6 +669,33 @@
   let history = [];
   let historyIndex = -1;
   let hasUnsnapshottedChanges = false;
+  let activeLoadToken = null;
+
+  function resetHistoryFromLoadedState(blockList, orders) {
+    const snapshotState = cloneState(blockList, orders, { bumpVersion: false });
+    history = [JSON.stringify(snapshotState)];
+    historyIndex = 0;
+    hasUnsnapshottedChanges = false;
+  }
+
+  async function applyLoadedPayload(name, payload) {
+    const loadedBlocks = Array.isArray(payload)
+      ? payload
+      : Array.isArray(payload?.blocks)
+      ? payload.blocks
+      : [];
+    const loadedOrders = !Array.isArray(payload) ? payload?.modeOrders : {};
+
+    blocks = loadedBlocks.map(b => ({
+      ...applyHistoryTriggers(b),
+      _version: 0
+    }));
+    modeOrders = ensureModeOrders(blocks, loadedOrders);
+    blocksRenderNonce += 1;
+
+    resetHistoryFromLoadedState(blocks, modeOrders);
+    persistLastSaveName(name);
+  }
 
   async function ensureCurrentHistorySnapshot() {
     if (!blocks.length && history.length) return;
@@ -922,30 +949,20 @@
   }
 
   async function load(name) {
-    blocks = [];
-    currentSaveName = "";
-    focusedBlockId = null;
-    await tick();
-    currentSaveName = name;
-    persistLastSaveName(name);
-    const loaded = await loadBlocks(name);
-    const loadedBlocks = Array.isArray(loaded)
-      ? loaded
-      : Array.isArray(loaded?.blocks)
-      ? loaded.blocks
-      : [];
-    const loadedOrders = !Array.isArray(loaded)
-      ? loaded?.modeOrders
-      : {};
-    blocks = loadedBlocks.map(b => ({
-      ...applyHistoryTriggers(b),
-      _version: 0
-    }));
-    modeOrders = ensureModeOrders(blocks, loadedOrders);
+    const loadToken = crypto.randomUUID();
+    activeLoadToken = loadToken;
 
-    history = [];
-    historyIndex = -1;
-    await pushHistory(blocks, modeOrders);
+    focusedBlockId = null;
+    currentSaveName = name;
+    await tick();
+    const loaded = await loadBlocks(name, {
+      onRemoteUpdate: async (remotePayload, meta) => {
+        if (activeLoadToken !== loadToken || meta?.source !== 'remote') return;
+        await applyLoadedPayload(name, remotePayload);
+      }
+    });
+    if (activeLoadToken !== loadToken) return;
+    await applyLoadedPayload(name, loaded);
   }
 
   async function deleteSave(name) {
