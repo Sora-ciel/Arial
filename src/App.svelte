@@ -5,7 +5,14 @@
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
-  import { isFirebaseConfigured, getCurrentUser, signInWithGoogle, saveRemoteFile } from './firebaseClient.js';
+  import {
+    isFirebaseConfigured,
+    getCurrentUser,
+    onAuthStateChange,
+    signInWithGoogle,
+    signOutUser,
+    saveRemoteFile
+  } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
@@ -650,6 +657,8 @@
   let currentSaveName = "default";
   let savedList = [];
   let syncStatus = '';
+  let firebaseUser = null;
+  let removeAuthListener = () => {};
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -888,6 +897,38 @@
   }
 
 
+  async function authenticateWithGoogle() {
+    if (!isFirebaseConfigured()) {
+      syncStatus = 'Firebase is not configured yet.';
+      return;
+    }
+
+    syncStatus = 'Opening Google sign-in...';
+
+    try {
+      const user = await signInWithGoogle();
+      firebaseUser = user || getCurrentUser();
+
+      if (firebaseUser?.uid) {
+        syncStatus = `✅ Authenticated as ${firebaseUser.email || firebaseUser.uid}.`;
+      } else {
+        syncStatus = 'Google auth started. If redirected, come back and click sync again.';
+      }
+    } catch (error) {
+      syncStatus = `Google sign-in failed: ${error?.message || 'unknown error'}`;
+    }
+  }
+
+  async function signOutFromGoogle() {
+    try {
+      await signOutUser();
+      firebaseUser = null;
+      syncStatus = 'Signed out from Google.';
+    } catch (error) {
+      syncStatus = `Sign out failed: ${error?.message || 'unknown error'}`;
+    }
+  }
+
   async function syncAllToFirebase() {
     if (!isFirebaseConfigured()) {
       syncStatus = 'Firebase is not configured yet.';
@@ -910,6 +951,8 @@
       syncStatus = 'Google auth started. If you were redirected, come back and click sync again.';
       return;
     }
+
+    firebaseUser = user;
 
     const names = await listSavedBlocks();
     if (!names.length) {
@@ -1163,6 +1206,9 @@
 
   onMount(async () => {
     Pc = window.innerWidth > 1024;
+    removeAuthListener = await onAuthStateChange(user => {
+      firebaseUser = user || null;
+    });
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
@@ -1198,6 +1244,7 @@
 
   onDestroy(() => {
     window.removeEventListener("resize", handleWindowResize);
+    removeAuthListener?.();
     window.removeEventListener("keydown", handleUndoRedoShortcut);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
@@ -1318,10 +1365,13 @@
         themes={availableThemes}
         {selectedThemeId}
         {syncStatus}
+        {firebaseUser}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
         on:syncNow={syncAllToFirebase}
+        on:authGoogle={authenticateWithGoogle}
+        on:signOutGoogle={signOutFromGoogle}
       />
     </div>
   </div>
