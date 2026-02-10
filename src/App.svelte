@@ -671,6 +671,13 @@
   let hasUnsnapshottedChanges = false;
   let activeLoadToken = null;
 
+  function resetHistoryFromLoadedState(blockList, orders) {
+    const snapshotState = cloneState(blockList, orders, { bumpVersion: false });
+    history = [JSON.stringify(snapshotState)];
+    historyIndex = 0;
+    hasUnsnapshottedChanges = false;
+  }
+
   async function applyLoadedPayload(name, payload) {
     const loadedBlocks = Array.isArray(payload)
       ? payload
@@ -684,10 +691,9 @@
       _version: 0
     }));
     modeOrders = ensureModeOrders(blocks, loadedOrders);
+    blocksRenderNonce += 1;
 
-    history = [];
-    historyIndex = -1;
-    await pushHistory(blocks, modeOrders);
+    resetHistoryFromLoadedState(blocks, modeOrders);
     persistLastSaveName(name);
   }
 

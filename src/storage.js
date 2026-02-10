@@ -47,6 +47,10 @@ function canUseRemoteSync() {
   return isFirebaseConfigured() && Boolean(getCurrentUser());
 }
 
+function getSyncNamespace() {
+  return import.meta.env.VITE_FIREBASE_SYNC_NAMESPACE || 'default';
+}
+
 function isNonEmptyObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length > 0;
 }
@@ -317,50 +321,43 @@ export async function loadBlocksLocalFirst(name, options = {}) {
 
   debugSyncLog('load:start', {
     uid: getCurrentUser()?.uid || null,
-    namespace: import.meta.env.VITE_FIREBASE_SYNC_NAMESPACE || 'default',
+    namespace: getSyncNamespace(),
     selectedKey: name,
     localKey: name,
     resolvedFileId: resolveFileId(name),
-    localUpdatedAt
+    localUpdatedAt,
+    hydrationErrors: hydratedLocalPayload?.hydrationErrors || 0
   });
 
-  if (typeof onRemoteUpdate === 'function') {
-    onRemoteUpdate(hydratedLocalPayload, {
-      source: 'local',
-      localUpdatedAt,
-      remoteUpdatedAt: 0,
-      remoteValid: false,
-      hydrationErrors: hydratedLocalPayload?.hydrationErrors || 0
-    });
-  }
-
   if (canUseRemoteSync()) {
-    try {
-      const fileId = resolveFileId(name);
-      const remotePath = `sync/${import.meta.env.VITE_FIREBASE_SYNC_NAMESPACE || 'default'}/users/${getCurrentUser()?.uid || 'unknown'}/files/${fileId}`;
-      const remotePayload = await loadRemoteFile(fileId);
-      const validation = validatePayload(remotePayload);
-      const remoteUpdatedAt = readUpdatedAt(remotePayload);
-      const shouldUseRemote = validation.valid && remoteUpdatedAt > localUpdatedAt;
+    const fileId = resolveFileId(name);
+    Promise.resolve()
+      .then(async () => {
+        const remotePath = `sync/${getSyncNamespace()}/users/${getCurrentUser()?.uid || 'unknown'}/files/${fileId}`;
+        const remotePayload = await loadRemoteFile(fileId);
+        const validation = validatePayload(remotePayload);
+        const remoteUpdatedAt = readUpdatedAt(remotePayload);
+        const shouldUseRemote = validation.valid && remoteUpdatedAt > localUpdatedAt;
 
-      debugSyncLog('load:remote', {
-        selectedKey: name,
-        resolvedFileId: fileId,
-        remotePath,
-        localKey: name,
-        localUpdatedAt,
-        remoteUpdatedAt,
-        remoteValid: validation.valid,
-        reason: validation.reason
-      });
+        debugSyncLog('load:remote', {
+          selectedKey: name,
+          resolvedFileId: fileId,
+          remotePath,
+          localKey: name,
+          localUpdatedAt,
+          remoteUpdatedAt,
+          remoteValid: validation.valid,
+          reason: validation.reason
+        });
 
-      if (shouldUseRemote) {
+        if (!shouldUseRemote) return;
+
         const hydratedRemotePayload = await hydratePayloadForRuntime(remotePayload, {
           source: 'remote'
         });
         await db.put(STORE_NAME, remotePayload, name);
         if (typeof onRemoteUpdate === 'function') {
-          onRemoteUpdate(hydratedRemotePayload, {
+          await onRemoteUpdate(hydratedRemotePayload, {
             source: 'remote',
             localUpdatedAt,
             remoteUpdatedAt,
@@ -368,10 +365,10 @@ export async function loadBlocksLocalFirst(name, options = {}) {
             hydrationErrors: hydratedRemotePayload?.hydrationErrors || 0
           });
         }
-      }
-    } catch (error) {
-      console.warn('Firebase sync failed during load, falling back to local storage.', error);
-    }
+      })
+      .catch(error => {
+        console.warn('Firebase sync failed during load, falling back to local storage.', error);
+      });
   }
 
   return hydratedLocalPayload;
