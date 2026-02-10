@@ -8,7 +8,8 @@
   export let colors = {};
   export let firebaseReady = false;
   export let authUser = null;
-  export let syncInProgress = false;
+  export let uploadInProgress = false;
+  export let downloadInProgress = false;
 
 
   const dispatch = createEventDispatcher();
@@ -84,8 +85,13 @@
     if (compactUI) showMobileMenu = true;
   }
 
-  function syncNow() {
-    dispatch("syncNow");
+  function uploadNow() {
+    dispatch("uploadNow");
+    if (compactUI) showMobileMenu = true;
+  }
+
+  function downloadNow() {
+    dispatch("downloadNow");
     if (compactUI) showMobileMenu = true;
   }
 
@@ -356,8 +362,11 @@ onMount(() => {
     {#if firebaseReady}
       {#if authUser}
         <button on:click={signOut}>🚪 Sign Out</button>
-        <button on:click={syncNow} disabled={syncInProgress}>
-          {syncInProgress ? "⏳ Syncing..." : "🔄 Sync to Cloud"}
+        <button on:click={uploadNow} disabled={uploadInProgress}>
+          {uploadInProgress ? "⏳ Uploading..." : "⤴ Upload to Cloud"}
+        </button>
+        <button on:click={downloadNow} disabled={downloadInProgress}>
+          {downloadInProgress ? "⏳ Downloading..." : "⤵ Download from Cloud"}
         </button>
         <small>Signed in as {authUser.displayName || authUser.email || authUser.uid}</small>
       {:else}

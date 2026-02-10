@@ -659,7 +659,8 @@
   let savedList = [];
   let firebaseReady = isFirebaseConfigured();
   let authUser = null;
-  let syncInProgress = false;
+  let uploadInProgress = false;
+  let downloadInProgress = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -997,7 +998,7 @@
     }
   }
 
-  async function syncCurrentSaveToCloud() {
+  async function uploadAllLocalToCloud() {
     if (!firebaseReady) {
       alert('Firebase is not configured yet.');
       return;
@@ -1008,57 +1009,61 @@
       return;
     }
 
-    if (syncInProgress) return;
+    if (uploadInProgress) return;
 
-    syncInProgress = true;
+    uploadInProgress = true;
     try {
-      const [localNames, remoteIndex] = await Promise.all([
-        listSavedBlocks(),
-        loadRemoteIndex()
-      ]);
-      const remoteNames = Object.keys(remoteIndex || {});
-      const localNameSet = new Set(localNames);
-      const names = [...new Set([...localNames, ...remoteNames])];
-
+      const names = await listSavedBlocks();
       let uploadedCount = 0;
-      let downloadedCount = 0;
-      let unchangedCount = 0;
 
       for (const fileName of names) {
-        const hasLocalFile = localNameSet.has(fileName);
-        const [localPayload, remotePayload] = await Promise.all([
-          hasLocalFile ? loadBlocks(fileName) : Promise.resolve(null),
-          loadRemoteFile(fileName)
-        ]);
+        const localPayload = await loadBlocks(fileName);
+        await saveRemoteFile(fileName, localPayload);
+        uploadedCount += 1;
+      }
 
-        const localUpdatedAt = hasLocalFile ? localPayload?.updatedAt || 0 : 0;
-        const remoteUpdatedAt = remotePayload?.updatedAt || 0;
+      alert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
+    } catch (error) {
+      console.error(error);
+      alert(`Upload failed: ${error?.message || error}`);
+    } finally {
+      uploadInProgress = false;
+    }
+  }
 
-        if (remotePayload && (!hasLocalFile || remoteUpdatedAt > localUpdatedAt)) {
-          await saveBlocks(fileName, remotePayload);
-          downloadedCount += 1;
-          continue;
-        }
+  async function downloadAllCloudToLocal() {
+    if (!firebaseReady) {
+      alert('Firebase is not configured yet.');
+      return;
+    }
 
-        if (hasLocalFile && (!remotePayload || localUpdatedAt > remoteUpdatedAt)) {
-          await saveRemoteFile(fileName, localPayload);
-          uploadedCount += 1;
-          continue;
-        }
+    if (!authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
 
-        unchangedCount += 1;
+    if (downloadInProgress) return;
+
+    downloadInProgress = true;
+    try {
+      const remoteIndex = await loadRemoteIndex();
+      const remoteNames = Object.keys(remoteIndex || {});
+      let downloadedCount = 0;
+
+      for (const fileName of remoteNames) {
+        const remotePayload = await loadRemoteFile(fileName);
+        if (!remotePayload) continue;
+        await saveBlocks(fileName, remotePayload);
+        downloadedCount += 1;
       }
 
       savedList = await listSavedBlocks();
-
-      alert(
-        `Sync complete. Uploaded ${uploadedCount}, downloaded ${downloadedCount}, unchanged ${unchangedCount}.`
-      );
+      alert(`Download complete. Downloaded ${downloadedCount} save file(s).`);
     } catch (error) {
       console.error(error);
-      alert(`Sync failed: ${error?.message || error}`);
+      alert(`Download failed: ${error?.message || error}`);
     } finally {
-      syncInProgress = false;
+      downloadInProgress = false;
     }
   }
 
@@ -1364,7 +1369,8 @@
       colors={controlColors.left}
       {firebaseReady}
       {authUser}
-      {syncInProgress}
+      {uploadInProgress}
+      {downloadInProgress}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -1377,7 +1383,8 @@
       on:moveDown={moveFocusedBlockDown}
       on:googleSignIn={signInGoogle}
       on:googleSignOut={signOutGoogle}
-      on:syncNow={syncCurrentSaveToCloud}
+      on:uploadNow={uploadAllLocalToCloud}
+      on:downloadNow={downloadAllCloudToLocal}
     />
     <div class="right-controls">
       <RightControls
