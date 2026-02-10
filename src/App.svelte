@@ -907,7 +907,7 @@
     }
 
     if (!user?.uid) {
-      syncStatus = 'No Google account session available.';
+      syncStatus = 'Google auth started. If you were redirected, come back and click sync again.';
       return;
     }
 

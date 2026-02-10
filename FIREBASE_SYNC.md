@@ -57,11 +57,46 @@ service firebase.storage {
 
 Do not use open/public read or write rules.
 
+
+## Per-user structure in RTDB
+
+After Google authentication, data is written under each authenticated user UID so users are isolated:
+
+```json
+{
+  "sync": {
+    "default": {
+      "users": {
+        "UID_OF_USER_1": {
+          "email": "user1@example.com",
+          "files": {
+            "default": { "blocks": [], "modeOrders": {}, "syncedAt": 1730000000000 }
+          },
+          "index": {
+            "default": { "fileId": "default", "updatedAt": 1730000000000 }
+          }
+        },
+        "UID_OF_USER_2": {
+          "email": "user2@example.com",
+          "files": {
+            "work-notes": { "blocks": [], "modeOrders": {}, "syncedAt": 1730000000000 }
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+This matches the idea of `users/{uid}/...` per account so RTDB sync is only for the signed-in user.
+
 ## Data paths
 
-- RTDB: `/sync/{namespace}/users/{uid}/files/{fileId}`
-- RTDB: `/sync/{namespace}/users/{uid}/index/{fileId}`
+- RTDB: `/sync/{namespace}/users/{uid}/files/{fileKey}`
+- RTDB: `/sync/{namespace}/users/{uid}/index/{fileKey}`
 - Storage: `users/{uid}/attachments/{attachmentId}.{ext}`
+
+`fileKey` is a URL-encoded key derived from the original local file name, while metadata keeps the original `fileId` text.
 
 Users only access their own `{uid}` subtree.
 

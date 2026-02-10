@@ -12,6 +12,14 @@ function hasConfigValue(value) {
   return typeof value === 'string' && value.trim().length > 0;
 }
 
+function normalizeFileKey(fileId) {
+  return encodeURIComponent(String(fileId || '').trim());
+}
+
+function userRootPath(uid) {
+  return `sync/${firebaseSyncNamespace}/users/${uid}`;
+}
+
 async function loadFirebaseModules() {
   if (!firebaseModulesPromise) {
     firebaseModulesPromise = Promise.all([
@@ -54,8 +62,19 @@ async function ensureFirebase() {
   return firebaseContext;
 }
 
-function userRootPath(uid) {
-  return `sync/${firebaseSyncNamespace}/users/${uid}`;
+async function writeUserIdentity(user) {
+  const ctx = await ensureFirebase();
+  if (!ctx || !user?.uid) return;
+
+  const now = Date.now();
+  const userPath = `${userRootPath(user.uid)}`;
+
+  await ctx.update(ctx.ref(ctx.db, userPath), {
+    email: user.email || null,
+    displayName: user.displayName || null,
+    photoURL: user.photoURL || null,
+    lastLoginAt: now
+  });
 }
 
 export function isFirebaseConfigured() {
@@ -92,8 +111,22 @@ export async function signInWithGoogle() {
 
   const provider = new ctx.GoogleAuthProvider();
   provider.setCustomParameters({ prompt: 'select_account' });
-  const result = await ctx.signInWithPopup(ctx.auth, provider);
-  authUser = result?.user || null;
+
+  try {
+    const result = await ctx.signInWithPopup(ctx.auth, provider);
+    authUser = result?.user || null;
+  } catch (error) {
+    if (error?.code === 'auth/popup-blocked' || error?.code === 'auth/cancelled-popup-request') {
+      await ctx.signInWithRedirect(ctx.auth, provider);
+      return null;
+    }
+    throw error;
+  }
+
+  if (authUser) {
+    await writeUserIdentity(authUser);
+  }
+
   return authUser;
 }
 
@@ -107,9 +140,10 @@ export async function signOutUser() {
 
 export async function loadRemoteFile(uid, fileId) {
   const ctx = await ensureFirebase();
-  if (!ctx || !uid || !fileId) return null;
+  const key = normalizeFileKey(fileId);
+  if (!ctx || !uid || !key) return null;
 
-  const snapshot = await ctx.get(ctx.ref(ctx.db, `${userRootPath(uid)}/files/${fileId}`));
+  const snapshot = await ctx.get(ctx.ref(ctx.db, `${userRootPath(uid)}/files/${key}`));
   return snapshot.exists() ? snapshot.val() : null;
 }
 
@@ -123,30 +157,40 @@ export async function loadRemoteIndex(uid) {
 
 export async function saveRemoteFile(uid, fileId, payload) {
   const ctx = await ensureFirebase();
-  if (!ctx || !uid || !fileId) return null;
+  const key = normalizeFileKey(fileId);
+  if (!ctx || !uid || !key) return null;
 
   const now = Date.now();
-  await ctx.set(ctx.ref(ctx.db, `${userRootPath(uid)}/files/${fileId}`), {
+  const userPath = userRootPath(uid);
+
+  await ctx.update(ctx.ref(ctx.db, userPath), {
+    lastSyncedAt: now
+  });
+
+  await ctx.set(ctx.ref(ctx.db, `${userPath}/files/${key}`), {
     ...payload,
+    fileId,
     syncedAt: now
   });
 
-  await ctx.set(ctx.ref(ctx.db, `${userRootPath(uid)}/index/${fileId}`), {
+  await ctx.set(ctx.ref(ctx.db, `${userPath}/index/${key}`), {
     fileId,
+    key,
     updatedAt: now,
     title: fileId
   });
 
-  return { fileId, updatedAt: now };
+  return { fileId, key, updatedAt: now };
 }
 
 export async function deleteRemoteFile(uid, fileId) {
   const ctx = await ensureFirebase();
-  if (!ctx || !uid || !fileId) return null;
+  const key = normalizeFileKey(fileId);
+  if (!ctx || !uid || !key) return null;
 
   await Promise.all([
-    ctx.remove(ctx.ref(ctx.db, `${userRootPath(uid)}/files/${fileId}`)),
-    ctx.remove(ctx.ref(ctx.db, `${userRootPath(uid)}/index/${fileId}`))
+    ctx.remove(ctx.ref(ctx.db, `${userRootPath(uid)}/files/${key}`)),
+    ctx.remove(ctx.ref(ctx.db, `${userRootPath(uid)}/index/${key}`))
   ]);
 
   return true;
