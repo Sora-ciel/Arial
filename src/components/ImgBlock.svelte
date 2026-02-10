@@ -7,6 +7,8 @@
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#ffffff';
   export let initialSrc = '';
+  export let initialResolvedSrc = null;
+  export let initialAttachmentRequiresAuth = false;
   export let focused = false;
 
   const dispatch = createEventDispatcher();
@@ -19,6 +21,8 @@
   let bgColor = initialBgColor;
   let textColor = initialTextColor || '#000000';
   let src = initialSrc;
+  let resolvedSrc = initialResolvedSrc;
+  let attachmentRequiresAuth = initialAttachmentRequiresAuth;
   let aspectRatio = size.width / (size.height - HEADER_HEIGHT);
 
 
@@ -26,6 +30,9 @@
   let resizing = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+
+  $: mediaSrc = typeof src === 'string' ? src : resolvedSrc || '';
+  $: hasStorageAttachment = src && typeof src === 'object' && src.type === 'storage';
   let suppressClick = false;
   let hasDragged = false;
   let hasResized = false;
@@ -56,6 +63,8 @@
     const reader = new FileReader();
     reader.onload = () => {
       src = reader.result;
+      resolvedSrc = null;
+      attachmentRequiresAuth = false;
 
       const isVideo = file.type.startsWith('video/');
 
@@ -398,12 +407,20 @@ function onResizeEnd() {
   </div>
 
   <div class="media-container" style="flex-grow:1;">
-    {#if src}
-      {#if src.startsWith('data:video')}
-        <video src={src} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
+    {#if mediaSrc}
+      {#if mediaSrc.startsWith('data:video')}
+        <video src={mediaSrc} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
       {:else}
-        <img src={src} alt="" style="width:100%; height:100%; object-fit:contain;" />
+        <img src={mediaSrc} alt="" style="width:100%; height:100%; object-fit:contain;" />
       {/if}
+    {:else if hasStorageAttachment}
+      <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777; text-align:center; padding: 8px;">
+        {#if attachmentRequiresAuth}
+          Sign in to view this attachment
+        {:else}
+          Attachment unavailable
+        {/if}
+      </div>
     {:else}
       <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777;">
         No image loaded

@@ -1,51 +1,117 @@
-<<<<<<< HEAD
-# Codex-pwa
-=======
-# Svelte + Vite
+# Codex PWA
 
-This template should help get you started developing with Svelte in Vite.
+A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebase sync.
 
-## Recommended IDE Setup
+## Local development
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
-
-## Need an official Svelte framework?
-
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
-
-## Technical considerations
-
-**Why use this over SvelteKit?**
-
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
-
-This template contains as little as possible to get started with Vite + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
-
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
-
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `checkJs` in the JS template?**
-
-It is likely that most cases of changing variable types in runtime are likely to be accidental, rather than deliberate. This provides advanced typechecking out of the box. Should you like to take advantage of the dynamically-typed nature of JavaScript, it is trivial to change the configuration.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/sveltejs/svelte-hmr/tree/master/packages/svelte-hmr#preservation-of-local-state).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```js
-// store.js
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+npm install
+npm run dev
 ```
->>>>>>> cf494b8 (Initial commit)
+
+## Optional secure Firebase sync (Google account)
+
+Sync is **optional**. If Firebase env vars are missing or user is signed out, the app stays local-only.
+
+### 1) Create Firebase project
+
+1. Create/select a Firebase project.
+2. Enable **Authentication → Sign-in method → Google**.
+3. Add your dev/prod domains to **Authentication → Settings → Authorized domains**.
+4. Create a **Realtime Database**.
+
+### 2) Configure environment
+
+Create `.env` in project root:
+
+```bash
+VITE_FIREBASE_API_KEY=...
+VITE_FIREBASE_AUTH_DOMAIN=...
+VITE_FIREBASE_PROJECT_ID=...
+VITE_FIREBASE_APP_ID=...
+VITE_FIREBASE_DB_URL=https://YOUR_DB.firebaseio.com
+VITE_FIREBASE_STORAGE_BUCKET=YOUR_PROJECT_ID.appspot.com
+VITE_FIREBASE_SYNC_NAMESPACE=default
+```
+
+### 3) Apply secure RTDB rules
+
+Use these rules so each user can access only their own subtree:
+
+```json
+{
+  "rules": {
+    "sync": {
+      "$ns": {
+        "users": {
+          "$uid": {
+            ".read": "auth != null && auth.uid == $uid",
+            ".write": "auth != null && auth.uid == $uid"
+          }
+        }
+      }
+    }
+  }
+}
+```
+
+> Do **not** use open rules like `".read": true` / `".write": true`.
+
+
+### 4) Apply secure Cloud Storage rules
+
+Use Storage rules scoped per authenticated uid:
+
+```txt
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    match /users/{uid}/{allPaths=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+```
+
+### 5) Billing note (important)
+
+Cloud Storage requires a **Blaze (pay-as-you-go)** plan in many Firebase projects/environments.
+To keep costs predictable:
+- set a monthly budget in Google Cloud Billing
+- create budget alerts (50% / 90% / 100%)
+- monitor Firebase Storage usage regularly
+
+## Remote data model
+
+All synced data is written under:
+
+- `/sync/{namespace}/users/{uid}/files/{fileId}`
+- `/sync/{namespace}/users/{uid}/index/{fileId}`
+- `users/{uid}/attachments/{attachmentId}.{ext}` (Cloud Storage)
+
+Where:
+- `namespace` = `VITE_FIREBASE_SYNC_NAMESPACE` (default `default`)
+- `uid` = authenticated Firebase `auth.uid`
+
+## Sync behavior
+
+- Save: writes local IndexedDB first; for signed-in users it uploads inline base64 media to Cloud Storage and writes JSON refs to RTDB.
+- Load: signed-in users read remote first, resolve Storage refs to runtime download URLs (`getDownloadURL`), then local fallback.
+- List: signed-in users read remote index, signed-out users read local keys.
+- Delete: removes local and remote when signed in.
+- Conflict safety: if remote timestamp is newer than local save attempt, remote overwrite is skipped.
+
+## Legacy remote data migration
+
+Old anonymous/public sync paths are intentionally ignored for safety.
+Inline/base64 media in existing saves are migrated on the next signed-in save (uploaded to Storage and replaced with refs in RTDB).
+Resolved download URLs are runtime-only and are not written back to RTDB.
+If you need legacy path migration, do it with an explicit one-off admin script and user consent.
+
+## Sanity checks
+
+1. **Account isolation**: Sign in as account A, save notes. Sign out, sign in as account B — account B should not see A's notes.
+2. **Cross-device sync**: Sign in with same account on two devices, save on one device, then load/list on the other.
