@@ -5,7 +5,9 @@ import {
   loadRemoteFile,
   loadRemoteIndex,
   saveRemoteFile,
-  deleteRemoteFile
+  deleteRemoteFile,
+  uploadAttachmentFromDataUrl,
+  resolveAttachmentUrl
 } from './firebaseClient.js';
 
 const DB_NAME = 'codex-db';
@@ -38,6 +40,14 @@ function canUseRemoteSync() {
   return isFirebaseConfigured() && Boolean(getCurrentUser());
 }
 
+function isDataUrl(value) {
+  return typeof value === 'string' && value.startsWith('data:');
+}
+
+function isStorageAttachmentRef(value) {
+  return value && typeof value === 'object' && value.type === 'storage' && value.storagePath;
+}
+
 function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
   if (Array.isArray(payload)) {
     return {
@@ -58,6 +68,88 @@ function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
   return {
     ...payload,
     updatedAt: payload.updatedAt || updatedAt
+  };
+}
+
+function makeAttachmentId(fileName, blockId) {
+  const randomPart = crypto.randomUUID();
+  return `${saveKey(fileName)}-${blockId || 'block'}-${randomPart}`;
+}
+
+async function prepareRemotePayload(payload, fileName) {
+  const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
+  let migratedAttachmentCount = 0;
+
+  const migratedBlocks = [];
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') {
+      migratedBlocks.push(block);
+      continue;
+    }
+
+    if (!('src' in block)) {
+      migratedBlocks.push(block);
+      continue;
+    }
+
+    if (isDataUrl(block.src)) {
+      const attachmentId = makeAttachmentId(fileName, block.id);
+      const attachmentRef = await uploadAttachmentFromDataUrl(attachmentId, block.src);
+      if (attachmentRef) {
+        migratedBlocks.push({
+          ...block,
+          src: attachmentRef
+        });
+        migratedAttachmentCount += 1;
+        continue;
+      }
+    }
+
+    migratedBlocks.push(block);
+  }
+
+  return {
+    payload: {
+      ...payload,
+      blocks: migratedBlocks
+    },
+    migratedAttachmentCount
+  };
+}
+
+async function hydrateRemotePayload(payload) {
+  const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
+  const hydratedBlocks = [];
+
+  for (const block of blocks) {
+    if (!block || typeof block !== 'object') {
+      hydratedBlocks.push(block);
+      continue;
+    }
+
+    if (!isStorageAttachmentRef(block.src)) {
+      hydratedBlocks.push(block);
+      continue;
+    }
+
+    try {
+      const url = await resolveAttachmentUrl(block.src);
+      hydratedBlocks.push({
+        ...block,
+        src: url || ''
+      });
+    } catch (error) {
+      console.warn('Attachment URL resolution failed for block, leaving empty src.', error);
+      hydratedBlocks.push({
+        ...block,
+        src: ''
+      });
+    }
+  }
+
+  return {
+    ...payload,
+    blocks: hydratedBlocks
   };
 }
 
@@ -93,7 +185,16 @@ export async function saveBlocks(name, blocks) {
       return;
     }
 
-    await saveRemoteFile(fileId, payload, {
+    const { payload: remotePayload, migratedAttachmentCount } = await prepareRemotePayload(
+      payload,
+      name
+    );
+
+    if (migratedAttachmentCount > 0) {
+      console.info(`Migrated ${migratedAttachmentCount} inline attachment(s) to Firebase Storage.`);
+    }
+
+    await saveRemoteFile(fileId, remotePayload, {
       name,
       fileId,
       clientUpdatedAt: now
@@ -109,9 +210,10 @@ export async function loadBlocks(name) {
       const fileId = saveKey(name);
       const remotePayload = await loadRemoteFile(fileId);
       if (remotePayload) {
+        const hydratedRemotePayload = await hydrateRemotePayload(remotePayload);
         const db = await getDB();
-        await db.put(STORE_NAME, remotePayload, name);
-        return remotePayload;
+        await db.put(STORE_NAME, hydratedRemotePayload, name);
+        return hydratedRemotePayload;
       }
     } catch (error) {
       console.warn('Firebase sync failed during load, falling back to local storage.', error);

@@ -5,7 +5,8 @@ const firebaseConfig = {
   authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
   projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  databaseURL: import.meta.env.VITE_FIREBASE_DB_URL
+  databaseURL: import.meta.env.VITE_FIREBASE_DB_URL,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
 };
 
 const FIREBASE_SYNC_NAMESPACE =
@@ -16,7 +17,8 @@ const requiredConfigKeys = [
   'authDomain',
   'projectId',
   'appId',
-  'databaseURL'
+  'databaseURL',
+  'storageBucket'
 ];
 
 function hasValidConfig() {
@@ -39,8 +41,16 @@ async function loadFirebaseSdk() {
     ),
     import(
       /* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_CDN_VERSION}/firebase-database.js`
+    ),
+    import(
+      /* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_CDN_VERSION}/firebase-storage.js`
     )
-  ]).then(([appSdk, authSdk, dbSdk]) => ({ appSdk, authSdk, dbSdk }));
+  ]).then(([appSdk, authSdk, dbSdk, storageSdk]) => ({
+    appSdk,
+    authSdk,
+    dbSdk,
+    storageSdk
+  }));
 
   return sdkPromise;
 }
@@ -61,20 +71,23 @@ async function ensureInitialized() {
   if (!hasValidConfig()) return null;
   if (initialized) return initialized;
 
-  const { appSdk, authSdk, dbSdk } = await loadFirebaseSdk();
+  const { appSdk, authSdk, dbSdk, storageSdk } = await loadFirebaseSdk();
 
   const app = appSdk.initializeApp(firebaseConfig);
   const auth = authSdk.getAuth(app);
   const db = dbSdk.getDatabase(app);
+  const storage = storageSdk.getStorage(app);
   const provider = new authSdk.GoogleAuthProvider();
 
   initialized = {
     app,
     auth,
     db,
+    storage,
     provider,
     authSdk,
-    dbSdk
+    dbSdk,
+    storageSdk
   };
 
   return initialized;
@@ -82,6 +95,20 @@ async function ensureInitialized() {
 
 function userRoot(uid) {
   return `sync/${FIREBASE_SYNC_NAMESPACE}/users/${uid}`;
+}
+
+function isStorageAttachmentRef(value) {
+  return value && typeof value === 'object' && value.type === 'storage' && value.storagePath;
+}
+
+function extensionFromMime(mimeType = '') {
+  const normalized = mimeType.toLowerCase();
+  if (normalized === 'image/jpeg') return 'jpg';
+  if (normalized === 'image/png') return 'png';
+  if (normalized === 'image/webp') return 'webp';
+  if (normalized === 'image/gif') return 'gif';
+  if (normalized === 'video/mp4') return 'mp4';
+  return 'bin';
 }
 
 export async function onAuthStateChange(callback) {
@@ -173,4 +200,45 @@ export async function deleteRemoteFile(fileId) {
 
   await Promise.all([ctx.dbSdk.remove(fileRef), ctx.dbSdk.remove(indexRef)]);
   return true;
+}
+
+export async function uploadAttachmentFromDataUrl(attachmentId, dataUrl) {
+  const ctx = await ensureInitialized();
+  const user = requireUser();
+  if (!ctx || !user) return null;
+
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const contentType = blob.type || 'application/octet-stream';
+  const ext = extensionFromMime(contentType);
+  const safeExt = ext ? `.${ext}` : '';
+  const storagePath = `users/${user.uid}/attachments/${attachmentId}${safeExt}`;
+  const attachmentRef = ctx.storageSdk.ref(ctx.storage, storagePath);
+
+  await ctx.storageSdk.uploadBytes(attachmentRef, blob, {
+    contentType
+  });
+
+  return {
+    type: 'storage',
+    attachmentId,
+    storagePath,
+    contentType,
+    size: blob.size
+  };
+}
+
+export async function resolveAttachmentUrl(attachmentRefLike) {
+  if (!isStorageAttachmentRef(attachmentRefLike)) return null;
+
+  const ctx = await ensureInitialized();
+  const user = requireUser();
+  if (!ctx || !user) return null;
+
+  if (!attachmentRefLike.storagePath.startsWith(`users/${user.uid}/`)) {
+    return null;
+  }
+
+  const fileRef = ctx.storageSdk.ref(ctx.storage, attachmentRefLike.storagePath);
+  return ctx.storageSdk.getDownloadURL(fileRef);
 }
