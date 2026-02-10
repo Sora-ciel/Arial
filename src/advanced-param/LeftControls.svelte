@@ -6,6 +6,9 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let colors = {};
+  export let firebaseReady = false;
+  export let authUser = null;
+  export let syncInProgress = false;
 
 
   const dispatch = createEventDispatcher();
@@ -69,6 +72,21 @@
   function exportJSON() {
     dispatch("exportJSON");
     if (compactUI) showMobileMenu = false;
+  }
+
+  function signIn() {
+    dispatch("googleSignIn");
+    if (compactUI) showMobileMenu = true;
+  }
+
+  function signOut() {
+    dispatch("googleSignOut");
+    if (compactUI) showMobileMenu = true;
+  }
+
+  function syncNow() {
+    dispatch("syncNow");
+    if (compactUI) showMobileMenu = true;
   }
 
   function importJSON(event) {
@@ -334,5 +352,17 @@ onMount(() => {
     />
     <input bind:value={currentSaveName} placeholder="File name" />
     <button on:click={save}>💾 Save</button>
+
+    {#if firebaseReady}
+      {#if authUser}
+        <button on:click={signOut}>🚪 Sign Out</button>
+        <button on:click={syncNow} disabled={syncInProgress}>
+          {syncInProgress ? "⏳ Syncing..." : "🔄 Sync to Cloud"}
+        </button>
+        <small>Signed in as {authUser.displayName || authUser.email || authUser.uid}</small>
+      {:else}
+        <button on:click={signIn}>🔐 Sign in Google</button>
+      {/if}
+    {/if}
   </div>
 </div>

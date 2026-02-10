@@ -6,6 +6,14 @@
   import ModeArea from './BACKUPS/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
   import {
+    isFirebaseConfigured,
+    onAuthStateChange,
+    signInWithGoogle,
+    signOutUser,
+    loadRemoteFile,
+    saveRemoteFile
+  } from './firebaseClient.js';
+  import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
     CUSTOM_THEME_ID,
@@ -648,6 +656,9 @@
   })();
   let currentSaveName = "default";
   let savedList = [];
+  let firebaseReady = isFirebaseConfigured();
+  let authUser = null;
+  let syncInProgress = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -962,6 +973,68 @@
     await pushHistory(blocks, modeOrders);
   }
 
+  async function signInGoogle() {
+    if (!firebaseReady) {
+      alert('Firebase is not configured yet.');
+      return;
+    }
+
+    try {
+      await signInWithGoogle();
+    } catch (error) {
+      console.error(error);
+      alert(`Google sign-in failed: ${error?.message || error}`);
+    }
+  }
+
+  async function signOutGoogle() {
+    try {
+      await signOutUser();
+    } catch (error) {
+      console.error(error);
+      alert(`Sign out failed: ${error?.message || error}`);
+    }
+  }
+
+  async function syncCurrentSaveToCloud() {
+    if (!firebaseReady) {
+      alert('Firebase is not configured yet.');
+      return;
+    }
+
+    if (!authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
+
+    if (syncInProgress) return;
+
+    syncInProgress = true;
+    try {
+      const names = await listSavedBlocks();
+      for (const fileName of names) {
+        const localPayload = await loadBlocks(fileName);
+        const remotePayload = await loadRemoteFile(fileName);
+
+        const localUpdatedAt = localPayload?.updatedAt || 0;
+        const remoteUpdatedAt = remotePayload?.updatedAt || 0;
+
+        if (remoteUpdatedAt > localUpdatedAt) {
+          continue;
+        }
+
+        await saveRemoteFile(fileName, localPayload);
+      }
+
+      alert(`Sync complete. Uploaded ${names.length} save file(s).`);
+    } catch (error) {
+      console.error(error);
+      alert(`Sync failed: ${error?.message || error}`);
+    } finally {
+      syncInProgress = false;
+    }
+  }
+
   function exportJSON() {
     const dataStr = JSON.stringify(
       {
@@ -1116,11 +1189,19 @@
     focusedBlockId = null;
   }
 
+  let stopAuthListener = () => {};
+
   onMount(async () => {
     Pc = window.innerWidth > 1024;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
+
+    if (firebaseReady) {
+      stopAuthListener = onAuthStateChange(user => {
+        authUser = user;
+      });
+    }
 
     savedList = await listSavedBlocks();
     const storedLastSave = loadStoredLastSaveName();
@@ -1156,6 +1237,7 @@
     window.removeEventListener("keydown", handleUndoRedoShortcut);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
+    stopAuthListener?.();
   });
 
   $: if (controlsRef) {
@@ -1253,6 +1335,9 @@
       {savedList}
       {focusedBlockId}
       colors={controlColors.left}
+      {firebaseReady}
+      {authUser}
+      {syncInProgress}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
@@ -1263,6 +1348,9 @@
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
       on:moveDown={moveFocusedBlockDown}
+      on:googleSignIn={signInGoogle}
+      on:googleSignOut={signOutGoogle}
+      on:syncNow={syncCurrentSaveToCloud}
     />
     <div class="right-controls">
       <RightControls
