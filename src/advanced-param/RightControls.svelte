@@ -5,6 +5,12 @@
   export let controlColors = {};
   export let themes = [];
   export let selectedThemeId = 'default-dark';
+  export let firebaseEnabled = false;
+  export let authReady = true;
+  export let authUser = null;
+  export let authError = '';
+  export let signIn = async () => {};
+  export let signOut = async () => {};
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -269,6 +275,47 @@
     font-size: 0.8rem;
     opacity: 0.65;
   }
+
+  .auth-card {
+    border: 1px solid var(--right-border-color, #444444);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .auth-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    object-fit: cover;
+    border: 1px solid var(--right-border-color, #444444);
+  }
+
+  .auth-btn {
+    padding: 6px 10px;
+    background: var(--right-button-bg, #333333);
+    color: var(--right-button-text, #ffffff);
+    border: 1px solid var(--right-border-color, #444444);
+    border-radius: 6px;
+    cursor: pointer;
+    width: fit-content;
+  }
+
+  .auth-error {
+    color: #ff8a8a;
+    font-size: 0.75rem;
+    margin: 0;
+  }
+
 </style>
 
 <div class="right-controls" style={rightCssVars}>
@@ -277,6 +324,33 @@
 
     <div class="dropdown-content">
       <div class="controls-scroll">
+        <div class="tab-section">
+          <h4>🔐 Sync account</h4>
+          {#if firebaseEnabled}
+            <div class="auth-card">
+              {#if !authReady}
+                <p class="empty-state">Checking sign-in status…</p>
+              {:else if authUser}
+                <div class="auth-row">
+                  {#if authUser.photoURL}
+                    <img class="avatar" src={authUser.photoURL} alt="Profile" />
+                  {/if}
+                  <span>{authUser.email || 'Signed in'}</span>
+                </div>
+                <button class="auth-btn" type="button" on:click={signOut}>Sign out</button>
+              {:else}
+                <p class="empty-state">Sign in to sync your saved files across devices.</p>
+                <button class="auth-btn" type="button" on:click={signIn}>Sign in with Google</button>
+              {/if}
+              {#if authError}
+                <p class="auth-error">{authError}</p>
+              {/if}
+            </div>
+          {:else}
+            <p class="empty-state">Firebase is not configured. The app is running local-only.</p>
+          {/if}
+        </div>
+
         <div class="tab-section">
           <h4>📂 Saved Files</h4>
           {#if savedList.length}
