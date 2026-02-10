@@ -229,7 +229,9 @@ export async function saveBlocks(name, blocks) {
   try {
     const fileId = saveKey(name);
     const remoteCurrent = await loadRemoteFile(fileId);
-    const remoteUpdatedAt = Number(remoteCurrent?.updatedAt || 0);
+    const remoteUpdatedAt = Number(
+      remoteCurrent?.clientUpdatedAt || remoteCurrent?.updatedAt || 0
+    );
 
     if (remoteUpdatedAt > now) {
       const message = `Skipped remote overwrite for "${name}" because remote version is newer.`;

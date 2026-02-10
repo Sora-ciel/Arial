@@ -206,6 +206,7 @@ export async function saveRemoteFile(fileId, payload, metadata) {
   syncDebugLog.logInfo('sync.save.remoteFile', `Writing remote file ${fileId}...`);
   await ctx.dbSdk.set(fileRef, {
     ...payload,
+    clientUpdatedAt: Number(metadata?.clientUpdatedAt || Date.now()),
     updatedAt: ctx.dbSdk.serverTimestamp()
   });
 
