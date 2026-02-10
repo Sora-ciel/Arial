@@ -1017,6 +1017,7 @@
         loadRemoteIndex()
       ]);
       const remoteNames = Object.keys(remoteIndex || {});
+      const localNameSet = new Set(localNames);
       const names = [...new Set([...localNames, ...remoteNames])];
 
       let uploadedCount = 0;
@@ -1024,21 +1025,22 @@
       let unchangedCount = 0;
 
       for (const fileName of names) {
+        const hasLocalFile = localNameSet.has(fileName);
         const [localPayload, remotePayload] = await Promise.all([
-          loadBlocks(fileName),
+          hasLocalFile ? loadBlocks(fileName) : Promise.resolve(null),
           loadRemoteFile(fileName)
         ]);
 
-        const localUpdatedAt = localPayload?.updatedAt || 0;
+        const localUpdatedAt = hasLocalFile ? localPayload?.updatedAt || 0 : 0;
         const remoteUpdatedAt = remotePayload?.updatedAt || 0;
 
-        if (remoteUpdatedAt > localUpdatedAt) {
+        if (remotePayload && (!hasLocalFile || remoteUpdatedAt > localUpdatedAt)) {
           await saveBlocks(fileName, remotePayload);
           downloadedCount += 1;
           continue;
         }
 
-        if (localUpdatedAt > remoteUpdatedAt) {
+        if (hasLocalFile && (!remotePayload || localUpdatedAt > remoteUpdatedAt)) {
           await saveRemoteFile(fileName, localPayload);
           uploadedCount += 1;
           continue;
