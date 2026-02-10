@@ -1,16 +1,8 @@
 const FIREBASE_CDN_VERSION = '11.0.2';
 
-const firebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-  databaseURL: import.meta.env.VITE_FIREBASE_DB_URL,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET
-};
+import { firebaseConfig, firebaseSyncNamespace } from '../firebase.ts';
 
-const FIREBASE_SYNC_NAMESPACE =
-  import.meta.env.VITE_FIREBASE_SYNC_NAMESPACE || 'default';
+const FIREBASE_SYNC_NAMESPACE = firebaseSyncNamespace || 'default';
 
 const requiredConfigKeys = [
   'apiKey',
