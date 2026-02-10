@@ -9,6 +9,7 @@ import {
   uploadAttachmentFromDataUrl,
   resolveAttachmentURL
 } from './firebaseClient.js';
+import { syncDebugLog } from './syncDebug.js';
 
 const DB_NAME = 'codex-db';
 const STORE_NAME = 'blocks';
@@ -212,23 +213,37 @@ export async function getDB() {
 }
 
 export async function saveBlocks(name, blocks) {
+  syncDebugLog.logInfo('sync.save.local', `Saving "${name}" to local IndexedDB...`);
   const now = Date.now();
   const payload = asPayloadWithTimestamp(blocks, now);
 
   const db = await getDB();
   await db.put(STORE_NAME, payload, name);
+  syncDebugLog.logSuccess('sync.save.local', `Saved "${name}" locally.`);
 
-  if (!canUseRemoteSync()) return;
+  if (!canUseRemoteSync()) {
+    const reason = !isFirebaseConfigured()
+      ? 'Firebase not configured.'
+      : !getCurrentUser()
+      ? 'No authenticated user yet.'
+      : 'Unknown remote-sync precondition failure.';
+    syncDebugLog.logInfo('sync.save.remote', `Remote sync skipped: ${reason}`);
+    return;
+  }
 
   try {
     const fileId = saveKey(name);
+    syncDebugLog.logInfo('sync.save.remote', `Fetching remote head for "${name}" (${fileId})...`);
     const remoteCurrent = await loadRemoteFile(fileId);
-    const remoteUpdatedAt = Number(remoteCurrent?.updatedAt || 0);
+    syncDebugLog.logInfo('sync.save.remote', `Remote head ${remoteCurrent ? 'found' : 'missing'} for "${name}".`);
+    const remoteUpdatedAt = Number(
+      remoteCurrent?.clientUpdatedAt || remoteCurrent?.updatedAt || 0
+    );
 
     if (remoteUpdatedAt > now) {
-      console.warn(
-        `Skipped remote overwrite for "${name}" because remote version is newer.`
-      );
+      const message = `Skipped remote overwrite for "${name}" because remote version is newer (remote=${remoteUpdatedAt}, local=${now}).`;
+      console.warn(message);
+      syncDebugLog.logInfo('sync.save.remote', message);
       return;
     }
 
@@ -241,17 +256,21 @@ export async function saveBlocks(name, blocks) {
       console.info(`Migrated ${migratedAttachmentCount} inline attachment(s) to Firebase Storage.`);
     }
 
+    syncDebugLog.logInfo('sync.save.remote', `Syncing "${name}" to Firebase...`);
     await saveRemoteFile(fileId, remotePayload, {
       name,
       fileId,
       clientUpdatedAt: now
     });
+    syncDebugLog.logSuccess('sync.save.remote', `Firebase sync completed for "${name}".`);
   } catch (error) {
     console.warn('Firebase sync failed during save, using local storage only.', error);
+    syncDebugLog.logError('sync.save.remote', error?.message || 'Firebase sync failed during save.');
   }
 }
 
 export async function loadBlocks(name) {
+  syncDebugLog.logInfo('sync.load', `Loading "${name}"...`);
   if (canUseRemoteSync()) {
     try {
       const fileId = saveKey(name);
@@ -259,46 +278,73 @@ export async function loadBlocks(name) {
       if (remotePayload) {
         const db = await getDB();
         await db.put(STORE_NAME, remotePayload, name);
+        syncDebugLog.logSuccess('sync.load', `Loaded "${name}" from Firebase.`);
         return hydratePayloadForRuntime(remotePayload);
       }
+      syncDebugLog.logInfo('sync.load', `Remote file "${name}" does not exist; falling back to local.`);
     } catch (error) {
       console.warn('Firebase sync failed during load, falling back to local storage.', error);
+      syncDebugLog.logError('sync.load', error?.message || 'Firebase load failed; used local fallback.');
     }
   }
 
   const db = await getDB();
   const localPayload = (await db.get(STORE_NAME, name)) || [];
+  syncDebugLog.logSuccess('sync.load', `Loaded "${name}" from local storage.`);
   return hydratePayloadForRuntime(localPayload);
 }
 
 export async function deleteBlocks(name) {
+  syncDebugLog.logInfo('sync.delete', `Deleting "${name}"...`);
   const db = await getDB();
   await db.delete(STORE_NAME, name);
+  syncDebugLog.logSuccess('sync.delete', `Deleted "${name}" locally.`);
 
-  if (!canUseRemoteSync()) return;
+  if (!canUseRemoteSync()) {
+    syncDebugLog.logInfo('sync.delete.remote', 'Remote delete skipped (not signed in or Firebase unavailable).');
+    return;
+  }
 
   try {
     const fileId = saveKey(name);
     await deleteRemoteFile(fileId);
+    syncDebugLog.logSuccess('sync.delete.remote', `Deleted "${name}" from Firebase.`);
   } catch (error) {
     console.warn('Firebase sync failed during delete, local copy removed only.', error);
+    syncDebugLog.logError('sync.delete.remote', error?.message || 'Firebase delete failed.');
   }
 }
 
 export async function listSavedBlocks() {
+  syncDebugLog.logInfo('sync.list', 'Loading saved files list...');
+
+  const db = await getDB();
+  const localKeys = (await db.getAllKeys(STORE_NAME)).map(String);
+  const merged = new Set(localKeys);
+  syncDebugLog.logInfo('sync.list', `Local list loaded (${localKeys.length}).`);
+
   if (canUseRemoteSync()) {
     try {
       const remoteIndex = (await loadRemoteIndex()) || {};
-      return Object.entries(remoteIndex)
+      const remoteList = Object.entries(remoteIndex)
         .map(([fileId, value]) => value?.name || saveNameFromKey(fileId))
-        .filter(Boolean)
-        .sort((a, b) => a.localeCompare(b));
+        .filter(Boolean);
+
+      for (const name of remoteList) merged.add(name);
+
+      const combined = [...merged].sort((a, b) => a.localeCompare(b));
+      syncDebugLog.logSuccess(
+        'sync.list',
+        `Loaded local(${localKeys.length}) + remote(${remoteList.length}) => combined(${combined.length}).`
+      );
+      return combined;
     } catch (error) {
-      console.warn('Firebase sync failed during listing, falling back to local data.', error);
+      console.warn('Firebase sync failed during listing, using local data.', error);
+      syncDebugLog.logError('sync.list', error?.message || 'Firebase list failed; using local data.');
     }
   }
 
-  const db = await getDB();
-  const keys = await db.getAllKeys(STORE_NAME);
-  return keys.map(String);
+  const localSorted = [...merged].sort((a, b) => a.localeCompare(b));
+  syncDebugLog.logSuccess('sync.list', `Loaded ${localSorted.length} file(s) from local storage.`);
+  return localSorted;
 }

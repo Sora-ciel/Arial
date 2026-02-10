@@ -9,6 +9,7 @@
   export let authReady = true;
   export let authUser = null;
   export let authError = '';
+  export let syncLogStore = null;
   export let signIn = async () => {};
   export let signOut = async () => {};
 
@@ -22,6 +23,9 @@
   let isOpen = true;
   let hasMounted = false;
   let resizeHandler;
+  let syncLogs = [];
+  let syncLogUnsubscribe = null;
+  let subscribedSyncStore = null;
   const RIGHT_CONTROLS_OPEN_KEY = "rightControlsOpen";
 
   const defaultColors = {
@@ -36,6 +40,19 @@
     ...defaultColors,
     ...((controlColors && controlColors.right) || {})
   };
+
+  $: if (syncLogStore !== subscribedSyncStore) {
+    syncLogUnsubscribe?.();
+    subscribedSyncStore = syncLogStore;
+    if (syncLogStore?.subscribe) {
+      syncLogUnsubscribe = syncLogStore.subscribe(value => {
+        syncLogs = value || [];
+      });
+    } else {
+      syncLogUnsubscribe = null;
+      syncLogs = [];
+    }
+  }
 
   $: rightCssVars = Object.entries({
     "--right-panel-bg": rightTheme.panelBg,
@@ -90,6 +107,9 @@
     if (resizeHandler) {
       window.removeEventListener("resize", resizeHandler);
     }
+    syncLogUnsubscribe?.();
+    syncLogUnsubscribe = null;
+    subscribedSyncStore = null;
   });
 
   function handleSelect(name) {
@@ -108,6 +128,12 @@
     dispatch("selectTheme", event.detail);
     if (!pc) {
       isOpen = false;
+    }
+  }
+
+  function clearSyncLogs() {
+    if (syncLogStore?.reset) {
+      syncLogStore.reset();
     }
   }
 
@@ -316,6 +342,49 @@
     margin: 0;
   }
 
+  .sync-log-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .sync-log-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    max-height: 220px;
+    overflow-y: auto;
+  }
+
+  .sync-log-item {
+    border: 1px solid var(--right-border-color, #444444);
+    border-left-width: 3px;
+    border-radius: 6px;
+    padding: 6px 8px;
+    font-size: 0.74rem;
+    background: color-mix(in srgb, var(--right-panel-bg, #222222) 90%, #000 10%);
+  }
+
+  .sync-log-item.level-info { border-left-color: #6bbdff; }
+  .sync-log-item.level-success { border-left-color: #6fdc95; }
+  .sync-log-item.level-error { border-left-color: #ff7b7b; }
+
+  .sync-log-meta {
+    opacity: 0.75;
+    margin-bottom: 2px;
+  }
+
+  .sync-log-clear {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+    background: var(--right-button-bg, #333333);
+    color: var(--right-button-text, #ffffff);
+    border: 1px solid var(--right-border-color, #444444);
+    border-radius: 6px;
+    cursor: pointer;
+  }
+
 </style>
 
 <div class="right-controls" style={rightCssVars}>
@@ -348,6 +417,28 @@
             </div>
           {:else}
             <p class="empty-state">Firebase is not configured. The app is running local-only.</p>
+          {/if}
+        </div>
+
+
+        <div class="tab-section">
+          <div class="sync-log-head">
+            <h4>🧪 Firebase Sync Log</h4>
+            <button class="sync-log-clear" type="button" on:click={clearSyncLogs}>Clear</button>
+          </div>
+          {#if syncLogs.length}
+            <div class="sync-log-list">
+              {#each [...syncLogs].reverse() as entry (entry.id)}
+                <div class={`sync-log-item level-${entry.level}`}>
+                  <div class="sync-log-meta">
+                    {new Date(entry.ts).toLocaleTimeString()} · {entry.step}
+                  </div>
+                  <div>{entry.detail}</div>
+                </div>
+              {/each}
+            </div>
+          {:else}
+            <p class="empty-state">No sync activity yet. Try signing in or saving a file.</p>
           {/if}
         </div>
 
