@@ -41,8 +41,10 @@ Update `firebase.ts` with your Firebase Web App values:
 ## 4) How sync works in this app
 - Click **Sign in Google**.
 - Click **Sync to Cloud**.
-- The app uploads every save from IndexedDB to:
+- The app compares local IndexedDB and remote RTDB per save file by `updatedAt`.
+- **Newest wins** on each file:
+  - If local is newer → upload local to RTDB.
+  - If remote is newer → write remote into local IndexedDB.
+- Data paths:
   - `sync/{namespace}/users/{uid}/files/{fileName}`
   - `sync/{namespace}/users/{uid}/index/{fileName}`
-
-If remote data is newer than local, that file is skipped to avoid accidental overwrite.

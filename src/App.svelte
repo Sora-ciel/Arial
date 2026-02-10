@@ -11,6 +11,7 @@
     signInWithGoogle,
     signOutUser,
     loadRemoteFile,
+    loadRemoteIndex,
     saveRemoteFile
   } from './firebaseClient.js';
   import {
@@ -1011,22 +1012,46 @@
 
     syncInProgress = true;
     try {
-      const names = await listSavedBlocks();
+      const [localNames, remoteIndex] = await Promise.all([
+        listSavedBlocks(),
+        loadRemoteIndex()
+      ]);
+      const remoteNames = Object.keys(remoteIndex || {});
+      const names = [...new Set([...localNames, ...remoteNames])];
+
+      let uploadedCount = 0;
+      let downloadedCount = 0;
+      let unchangedCount = 0;
+
       for (const fileName of names) {
-        const localPayload = await loadBlocks(fileName);
-        const remotePayload = await loadRemoteFile(fileName);
+        const [localPayload, remotePayload] = await Promise.all([
+          loadBlocks(fileName),
+          loadRemoteFile(fileName)
+        ]);
 
         const localUpdatedAt = localPayload?.updatedAt || 0;
         const remoteUpdatedAt = remotePayload?.updatedAt || 0;
 
         if (remoteUpdatedAt > localUpdatedAt) {
+          await saveBlocks(fileName, remotePayload);
+          downloadedCount += 1;
           continue;
         }
 
-        await saveRemoteFile(fileName, localPayload);
+        if (localUpdatedAt > remoteUpdatedAt) {
+          await saveRemoteFile(fileName, localPayload);
+          uploadedCount += 1;
+          continue;
+        }
+
+        unchangedCount += 1;
       }
 
-      alert(`Sync complete. Uploaded ${names.length} save file(s).`);
+      savedList = await listSavedBlocks();
+
+      alert(
+        `Sync complete. Uploaded ${uploadedCount}, downloaded ${downloadedCount}, unchanged ${unchangedCount}.`
+      );
     } catch (error) {
       console.error(error);
       alert(`Sync failed: ${error?.message || error}`);
