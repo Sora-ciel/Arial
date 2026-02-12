@@ -12,6 +12,7 @@
   export let blocks;
 
   export let canvasRef;
+  export let focusedBlockId;
 
   
 
@@ -32,6 +33,16 @@
 
   function updateBlockHandler(event) {
    dispatch('update', { ...event.detail });
+  }
+
+  function focusToggleHandler(event) {
+    dispatch('focusToggle', event.detail);
+  }
+
+  function clearFocus(event) {
+    if (event.target === event.currentTarget) {
+      dispatch('focusToggle', {});
+    }
   }
 
 
@@ -159,10 +170,12 @@
   on:touchstart={onTouchStart}
   on:touchmove={onTouchMove}
   on:touchend={onTouchEnd}
+  on:pointerdown={clearFocus}
 >
     <div
       class="canvas-inner"
       style="transform: scale({isMobile ? scale : 1})"
+      on:pointerdown={clearFocus}
     >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}
@@ -173,8 +186,10 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
 
           />
         {:else if block.type === 'image'}
@@ -185,8 +200,10 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialSrc={block.src}
+            focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
           />
         {:else if block.type === 'cleantext'}
           <Texteclean
@@ -196,8 +213,10 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
 
           />
         {:else if block.type === 'music'}
@@ -208,8 +227,10 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
           />
         {:else if block.type === 'embed'}
           <Embed
@@ -219,8 +240,10 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            focused={block.id === focusedBlockId}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
+            on:focusToggle={focusToggleHandler}
           />
         {/if}
       {/each}

@@ -7,6 +7,7 @@
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#ffffff';
   export let initialSrc = '';
+  export let focused = false;
 
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
@@ -24,6 +25,9 @@
   let resizing = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+  let suppressClick = false;
+  let hasDragged = false;
+  let hasResized = false;
 
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
@@ -38,6 +42,7 @@
 
 
   function onMediaChange(e) {
+    ensureFocus();
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -101,7 +106,9 @@
 
 
 function onDragStart(e) {
+  ensureFocus();
   dragging = true;
+  hasDragged = false;
 
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
   const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -122,6 +129,7 @@ function onMouseMove(e) {
 
   position.x = clientX - offset.x;
   position.y = clientY - offset.y;
+  hasDragged = true;
 
   // Prevent scrolling when dragging on mobile
   if (e.cancelable) e.preventDefault();
@@ -134,12 +142,19 @@ function onMouseUp() {
   window.removeEventListener('touchmove', onMouseMove);
   window.removeEventListener('touchend', onMouseUp);
   sendUpdate(['position']);
+  if (hasDragged) {
+    suppressClick = true;
+    hasDragged = false;
+    requestAnimationFrame(() => (suppressClick = false));
+  }
 }
 
 
 function onResizeStart(e) {
   e.stopPropagation();
+  ensureFocus();
   resizing = true;
+  hasResized = false;
   document.body.style.userSelect = 'none';
 
   const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -172,6 +187,7 @@ function onResizing(e) {
 
   size.width = newWidth;
   size.height = totalHeight;
+  hasResized = true;
 
   if (e.cancelable) e.preventDefault(); // stop scrolling on mobile
 }
@@ -184,12 +200,46 @@ function onResizeEnd() {
   window.removeEventListener('touchmove', onResizing);
   window.removeEventListener('touchend', onResizeEnd);
   sendUpdate(['size']);
+  if (hasResized) {
+    suppressClick = true;
+    hasResized = false;
+    requestAnimationFrame(() => (suppressClick = false));
+  }
 }
 
 
   // Delete
   function deleteBlock() {
     dispatch('delete', { id });
+  }
+
+  function ensureFocus() {
+    if (!focused) {
+      dispatch('focusToggle', { id });
+    }
+  }
+
+  function handleWrapperClick(event) {
+    if (suppressClick) return;
+    if (event.defaultPrevented) return;
+    if (event.target.closest('[data-focus-guard]')) {
+      ensureFocus();
+      return;
+    }
+    dispatch('focusToggle', { id });
+  }
+
+  function handleWrapperKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    handleWrapperClick(event);
   }
 
 </script>
@@ -209,6 +259,13 @@ function onResizeEnd() {
     display: flex;
     flex-direction: column;
     border-radius: 8px;
+    outline: 2px solid transparent;
+    transition: box-shadow 0.15s ease, outline 0.15s ease;
+  }
+
+  .wrapper.focused {
+    outline: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--bg);
   }
 
   .header {
@@ -290,21 +347,37 @@ function onResizeEnd() {
 
 <div
   class="wrapper"
+  class:focused={focused}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor}"
+  role="button"
+  tabindex="0"
+  aria-pressed={focused}
+  on:click={handleWrapperClick}
+  on:keydown={handleWrapperKeydown}
 >
-  <div class="header" on:mousedown={onDragStart} on:touchstart={onDragStart}>
+  <div class="header" role="presentation" on:mousedown={onDragStart} on:touchstart={onDragStart}>
     <div>image</div>
-    <div class="header-controls" on:mousedown|stopPropagation>
+    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
 
-        <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
-        <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
+        <input
+          type="color"
+          bind:value={bgColor}
+          on:change={() => sendUpdate(['bgColor'])}
+          data-focus-guard
+        />
+        <input
+          type="color"
+          bind:value={textColor}
+          on:change={() => sendUpdate(['textColor'])}
+          data-focus-guard
+        />
 
-      <label title="Change Image" class="media-btn">
-        <input type="file" accept="image/*,video/mp4" on:change={onMediaChange} />
-        <span class="emoji">⏏</span>
+      <label title="Change Image" class="media-btn" data-focus-guard>
+        <input type="file" accept="image/*,video/mp4" on:change={onMediaChange} data-focus-guard />
+        <span class="emoji" data-focus-guard>⏏</span>
       </label>
 
-      <button class="delete-btn" on:click={deleteBlock}>×</button>
+      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
@@ -313,7 +386,7 @@ function onResizeEnd() {
       {#if src.startsWith('data:video')}
         <video src={src} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
       {:else}
-        <img src={src} alt="Image block" style="width:100%; height:100%; object-fit:contain;" />
+        <img src={src} alt="" style="width:100%; height:100%; object-fit:contain;" />
       {/if}
     {:else}
       <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777;">
@@ -321,5 +394,5 @@ function onResizeEnd() {
       </div>
     {/if}
   </div>
-  <div class="resize-handle" on:mousedown={onResizeStart} on:touchstart={onResizeStart}></div>
+  <div class="resize-handle" role="presentation" on:mousedown={onResizeStart} on:touchstart={onResizeStart}></div>
 </div>

@@ -7,6 +7,7 @@
   export let initialBgColor = '#000000';
   export let initialTextColor = '#ffffff';
   export let initialContent = '';
+  export let focused = false;
 
   const dispatch = createEventDispatcher();
 
@@ -18,6 +19,9 @@
 
   let dragging = false;
   let resizing = false;
+  let suppressClick = false;
+  let hasDragged = false;
+  let hasResized = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
@@ -33,7 +37,9 @@
 
   // Drag start
   function onDragStart(e) {
+    ensureFocus();
     dragging = true;
+    hasDragged = false;
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
     const clientY = e.touches ? e.touches[0].clientY : e.clientY;
@@ -55,6 +61,7 @@
 
     position.x = clientX - offset.x;
     position.y = clientY - offset.y;
+    hasDragged = true;
 
     if (e.cancelable) e.preventDefault();
   }
@@ -67,12 +74,19 @@
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
     sendUpdate(['position']);
+    if (hasDragged) {
+      suppressClick = true;
+      hasDragged = false;
+      requestAnimationFrame(() => (suppressClick = false));
+    }
   }
 
   // Resize start
   function onResizeStart(e) {
     e.stopPropagation();
+    ensureFocus();
     resizing = true;
+    hasResized = false;
     document.body.style.userSelect = 'none';
 
     const clientX = e.touches ? e.touches[0].clientX : e.clientX;
@@ -103,6 +117,7 @@
 
     size.width = Math.max(50, resizeStart.width + deltaX);
     size.height = Math.max(50, resizeStart.height + deltaY);
+    hasResized = true;
 
     if (e.cancelable) e.preventDefault();
   }
@@ -116,11 +131,57 @@
     window.removeEventListener('touchmove', onResizing);
     window.removeEventListener('touchend', onResizeEnd);
     sendUpdate(['size']);
+    if (hasResized) {
+      suppressClick = true;
+      hasResized = false;
+      requestAnimationFrame(() => (suppressClick = false));
+    }
   }
 
   // Delete block
   function deleteBlock() {
     dispatch('delete', { id });
+  }
+
+  function ensureFocus() {
+    if (!focused) {
+      dispatch('focusToggle', { id });
+    }
+  }
+
+  let textareaRef;
+
+  function handleWrapperClick(event) {
+    if (suppressClick) return;
+    if (event.defaultPrevented) return;
+    const guarded = event.target.closest('[data-focus-guard]');
+    if (guarded) {
+      if (guarded === textareaRef) {
+        if (focused) {
+          textareaRef?.blur();
+          dispatch('focusToggle', { id });
+        } else {
+          ensureFocus();
+        }
+      } else {
+        ensureFocus();
+      }
+      return;
+    }
+    dispatch('focusToggle', { id });
+  }
+
+  function handleWrapperKeydown(event) {
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    event.preventDefault();
+    handleWrapperClick(event);
   }
 </script>
 
@@ -131,10 +192,15 @@
     background: white;
     box-shadow: 0 0 2px 1px var(--text),
                 0 0 6px 2px var(--text);
-
+    outline: 2px solid transparent;
+    transition: box-shadow 0.15s ease, outline 0.15s ease;
     overflow: hidden;
     display: flex;
     flex-direction: column;
+  }
+  .wrapper.focused {
+    outline: 2px solid var(--bg);
+    box-shadow: 0 0 0 2px var(--bg);
   }
   .header {
     background: #000;
@@ -202,35 +268,56 @@
 
 <div
   class="wrapper"
+  class:focused={focused}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
+  role="button"
+  tabindex="0"
+  aria-pressed={focused}
+  on:click={handleWrapperClick}
+  on:keydown={handleWrapperKeydown}
 >
   <div
     class="header"
     on:mousedown={onDragStart}
     on:touchstart={onDragStart}
+    role="presentation"
   >
     <div>text</div>
-    <div class="header-controls" on:mousedown|stopPropagation>
+    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
       <label title="Background Color">
-        <input type="color" bind:value={bgColor} on:change={() => sendUpdate(['bgColor'])}/>
+        <input
+          type="color"
+          bind:value={bgColor}
+          on:change={() => sendUpdate(['bgColor'])}
+          data-focus-guard
+        />
       </label>
       <label title="Text Color">
-        <input type="color" bind:value={textColor} on:change={() => sendUpdate(['textColor'])}/>
+        <input
+          type="color"
+          bind:value={textColor}
+          on:change={() => sendUpdate(['textColor'])}
+          data-focus-guard
+        />
       </label>
-      <button class="delete-btn" on:click={deleteBlock}>×</button>
+      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
   <div class="text-container">
     <textarea
+      bind:this={textareaRef}
       spellcheck="false"
       bind:value={content}
       on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+      on:focus={ensureFocus}
+      data-focus-guard
     ></textarea>
   </div>
 
   <div
     class="resize-handle"
+    role="presentation"
     on:mousedown={onResizeStart}
     on:touchstart={onResizeStart}
   ></div>

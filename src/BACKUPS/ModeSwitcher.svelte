@@ -9,6 +9,7 @@
   export let onTouchStart;
   export let onTouchMove;
   export let onTouchEnd;
+  export let focusedBlockId;
 
   let width = 0;
 
@@ -20,6 +21,10 @@
 
   function updateBlockHandler(event) {
     dispatch('update', event.detail);
+  }
+
+  function focusToggleHandler(event) {
+    dispatch('focusToggle', event.detail);
   }
 
   function updateWidth() {
@@ -37,23 +42,28 @@
 
 {#if mode === 'default'}
   <DefaultCanvasMode
+    {mode}
     {blocks}
+    {focusedBlockId}
     bind:canvasRef
     on:touchstart={onTouchStart}
     on:touchmove={onTouchMove}
     on:touchend={onTouchEnd}
     on:update={updateBlockHandler}
     on:delete={deleteBlockHandler}
+    on:focusToggle={focusToggleHandler}
   />
 {:else}
     <SimpleNoteMode
       {blocks}
+      {focusedBlockId}
       bind:canvasRef
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
+      on:focusToggle={focusToggleHandler}
     />
 
 {/if}
