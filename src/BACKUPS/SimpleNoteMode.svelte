@@ -1,276 +1,126 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
+  import TexteBlock from '../components/TexteBlock.svelte';
+  import ImgBlock from '../components/ImgBlock.svelte';
+  import Texteclean from '../components/TexteClean.svelte';
+  import Music from '../components/MusicBlock.svelte';
+  import Embed from '../components/EmbedBlock.svelte';
 
   export let blocks = [];
+  export let canvasRef;
+  export let focusedBlockId = null;
+
   const dispatch = createEventDispatcher();
 
-  function deleteBlock(id) {
-    dispatch('delete', { id });
+  function deleteBlockHandler(event) {
+    dispatch('delete', event.detail);
   }
 
-  function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
-    const detail = { id, ...updates };
-    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
-      ? changedKeys
-      : Object.keys(updates || {});
-
-    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
-    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
-
-    dispatch('update', detail);
+  function updateBlockHandler(event) {
+    dispatch('update', event.detail);
   }
 
-  function autoResize(textarea) {
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = textarea.scrollHeight + "px";
+  function focusToggleHandler(event) {
+    dispatch('focusToggle', event.detail);
   }
-
-
-
-
-  function focusScroll(el) {
-    if (!el) return;
-      if (window.innerWidth <= 1024)
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
-  
-
-
-
-  // Resize all textareas when component mounts
-  onMount(() => {
-    const textareas = document.querySelectorAll("textarea");
-    textareas.forEach(autoResize);
-  });
 </script>
 
-
-
-
-
-
 <style>
-/* ========== MOBILE (default) ========== */
-.simple-wrapper {
-  display: grid;
-  grid-template-columns: 1fr;   /* single column */
-  gap: 1rem;
-  justify-content: center;
-  padding: 0;
-  overflow-y: auto;
-  width: 100%;
-  max-width: 1920px;
-  margin: 0 auto;
-}
+  .simple-canvas {
+    position: fixed;
+    top: var(--controls-height, 56px);
+    left: 0;
+    right: 0;
+    bottom: 0;
+    overflow: auto;
+    background: #0f0f0f;
+  }
 
-.canvas {
-  background: #00000041;
-  border-radius: 8px;
-  padding: 5px;
-  margin-bottom: 0;
-  width: 100%;
-  box-sizing: border-box;
-}
-
-.container {
-  background: var(--bg-color);
-  color: var(--text-color);
-  padding: 4px;
-  width: 100%;
-  box-sizing: border-box;
-  border-radius: 20px;
-  overflow: hidden;
-  border: 2px solid var(--text-color);
-  box-shadow: 0 0 2px 1px var(--text-color),
-              0 0 6px 2px var(--text-color);
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-}
-
-textarea {
-  width: 100%;
-  min-height: 50px;
-  border: none;
-  border-radius: 20px;
-  resize: none;
-  margin: 0;
-  padding: 10px;
-  background: transparent;
-  color: var(--text-color);
-  font-family: Arial, Helvetica, sans-serif;
-  font-size: 1em;
-  font-weight: bold;
-  box-sizing: border-box;
-}
-
-textarea:focus {
-  color: var(--bg-color);
-  outline: none;
-  background: var(--text-color);
-}
-
-.container img {
-  width: 100%;
-  height: auto;
-  max-height: 1080px;
-  object-fit: contain;
-  border-radius: 14px;
-}
-
-input[type="text"] {
-  width: 100%;
-  border-radius: 6px;
-  border: none;
-  background: var(--bg-color);
-  color: var(--text-color);
-  font-size: 1rem;
-  margin-top: 8px;
-}
-
-li {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-}
-
-.edit-button,
-.delete-button {
-  background: transparent;
-  color: var(--text-color);
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.edit-button {
-  align-self: flex-start;
-}
-
-.delete-button {
-  align-self: flex-end;
-  margin-right: 10px;
-}
-
-.footer {
-  height: 600px;
-  width: 100%;
-  background: #000;
-}
-
-
-/* ========== PC (desktop) ========== */
-@media (min-width: 1024px) {
-  .simple-wrapper {
-    display: flex;          /* horizontal layout per row */
-    flex-wrap: wrap;        /* allow multiple rows */
-    gap: 0rem;
-    justify-content: flex-start;
-    max-width: 1920px;
+  .simple-inner {
+    position: relative;
+    width: 1920px;
+    max-width: 100%;
+    min-height: 100%;
     margin: 0 auto;
   }
 
-  .canvas {
-    display: flex;
-    flex: 1 1 48%;          /* roughly half width per block */
-    min-width: 300px;       /* optional for responsiveness */
-    margin-bottom: 0rem;
-    background: #00000041;
-    border-radius: 8px;
-    padding: 5px;
-    box-sizing: border-box;
+  @media (max-width: 1024px) {
+    .simple-inner {
+      width: 100%;
+      min-height: calc(100vh - var(--controls-height, 75px));
+    }
   }
-
-
-}
-
-.container img {
-  width: auto;
-  height: 100%;
-  max-height: 500px;
-  object-fit: contain;
-  border-radius: 14px;
-}
-
-
-
-
-
-
 </style>
 
-
-
-
-
-
-
-
-
-<div class="simple-wrapper">
-  {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
-    <div class="canvas">
-      <div
-        class="container"
-        style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
-      >
-        {#if block.type === 'text' || block.type === 'cleantext'}
-          <textarea
-            bind:value={block.content}
-            spellcheck="false"
-            rows="1"
-            style="overflow:hidden;"
-            on:input={(e) => {
-              autoResize(e.target);
-              updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-            }}
-            on:focus={(e) => focusScroll(e.target)}
-            placeholder="Type your note here..."
-          ></textarea>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
-           ×
-          </button>
-        {:else if block.type === 'image'}
-          <img src={block.src} alt="Image block" />
-          <li>
-            <button
-              class="edit-button"
-              on:click={() =>
-                updateBlock(block.id, { editing: !block.editing })
-              }
-            >
-              {block.editing ? 'Done' : 'Edit'}
-            </button>
-            {#if block.editing}
-              <input
-                type="text"
-                placeholder="Image URL"
-                value={block.src}
-                on:input={(e) => updateBlock(block.id, { src: e.target.value })}
-              />
-            {/if}
-            <button class="delete-button" on:click={() => deleteBlock(block.id)}>
-              ×
-            </button>
-          </li>
-
-        {:else if block.type === 'music'}
-          <p>🎵 {block.content}</p>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
-           ×
-          </button>
-        {:else if block.type === 'embed'}
-          <p>[Embed: {block.content}]</p>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
-           ×
-          </button>
-        {/if}
-
-
-      </div>
-    </div>
-  {/each}
-  <div class="footer"></div>
+<div class="simple-canvas" bind:this={canvasRef}>
+  <div class="simple-inner">
+    {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
+      {#if block.type === 'text'}
+        <TexteBlock
+          id={block.id}
+          initialPosition={block.position}
+          initialSize={block.size}
+          initialBgColor={block.bgColor}
+          initialTextColor={block.textColor}
+          initialContent={block.content}
+          on:delete={deleteBlockHandler}
+          on:update={updateBlockHandler}
+          on:focusToggle={focusToggleHandler}
+          focused={block.id === focusedBlockId}
+        />
+      {:else if block.type === 'image'}
+        <ImgBlock
+          id={block.id}
+          initialPosition={block.position}
+          initialSize={block.size}
+          initialBgColor={block.bgColor}
+          initialTextColor={block.textColor}
+          initialSrc={block.src}
+          on:delete={deleteBlockHandler}
+          on:update={updateBlockHandler}
+          on:focusToggle={focusToggleHandler}
+          focused={block.id === focusedBlockId}
+        />
+      {:else if block.type === 'cleantext'}
+        <Texteclean
+          id={block.id}
+          initialPosition={block.position}
+          initialSize={block.size}
+          initialBgColor={block.bgColor}
+          initialTextColor={block.textColor}
+          initialContent={block.content}
+          on:delete={deleteBlockHandler}
+          on:update={updateBlockHandler}
+          on:focusToggle={focusToggleHandler}
+          focused={block.id === focusedBlockId}
+        />
+      {:else if block.type === 'music'}
+        <Music
+          id={block.id}
+          initialPosition={block.position}
+          initialSize={block.size}
+          initialBgColor={block.bgColor}
+          initialTextColor={block.textColor}
+          initialContent={block.content}
+          on:delete={deleteBlockHandler}
+          on:update={updateBlockHandler}
+          on:focusToggle={focusToggleHandler}
+          focused={block.id === focusedBlockId}
+        />
+      {:else if block.type === 'embed'}
+        <Embed
+          id={block.id}
+          initialPosition={block.position}
+          initialSize={block.size}
+          initialBgColor={block.bgColor}
+          initialTextColor={block.textColor}
+          initialContent={block.content}
+          on:delete={deleteBlockHandler}
+          on:update={updateBlockHandler}
+          on:focusToggle={focusToggleHandler}
+          focused={block.id === focusedBlockId}
+        />
+      {/if}
+    {/each}
+  </div>
 </div>
