@@ -2,7 +2,11 @@
   import { createEventDispatcher, onMount } from 'svelte';
 
   export let blocks = [];
+  export let focusedBlockId = null;
   const dispatch = createEventDispatcher();
+
+  let orderedBlocks = [];
+  $: orderedBlocks = [...blocks].reverse();
 
   function deleteBlock(id) {
     dispatch('delete', { id });
@@ -18,6 +22,38 @@
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
 
     dispatch('update', detail);
+  }
+
+  function toggleFocus(id) {
+    dispatch('focusToggle', { id });
+  }
+
+  function ensureFocus(id) {
+    if (focusedBlockId !== id) {
+      dispatch('focusToggle', { id });
+    }
+  }
+
+  function handleBlockClick(event, id) {
+    if (event.defaultPrevented) return;
+    if (event.target.closest('[data-focus-guard]')) {
+      ensureFocus(id);
+      return;
+    }
+    toggleFocus(id);
+  }
+
+  function handleBlockKeydown(event, id) {
+    if (event.target !== event.currentTarget) {
+      return;
+    }
+
+    if (event.key !== 'Enter' && event.key !== ' ') {
+      return;
+    }
+
+    event.preventDefault();
+    handleBlockClick(event, id);
   }
 
   function autoResize(textarea) {
@@ -87,6 +123,14 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  outline: 2px solid transparent;
+  transition: box-shadow 0.15s ease, outline 0.15s ease;
+}
+
+.container.focused {
+  outline: 2px solid rgba(110, 168, 255, 0.85);
+  box-shadow: 0 0 0 2px rgba(110, 168, 255, 0.35),
+              0 0 12px rgba(110, 168, 255, 0.5);
 }
 
 textarea {
@@ -210,11 +254,17 @@ li {
 
 
 <div class="simple-wrapper">
-  {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
+  {#each orderedBlocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
     <div class="canvas">
       <div
         class="container"
+        class:focused={block.id === focusedBlockId}
         style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
+        on:click={(event) => handleBlockClick(event, block.id)}
+        role="button"
+        tabindex="0"
+        aria-pressed={block.id === focusedBlockId}
+        on:keydown={(event) => handleBlockKeydown(event, block.id)}
       >
         {#if block.type === 'text' || block.type === 'cleantext'}
           <textarea
@@ -226,17 +276,22 @@ li {
               autoResize(e.target);
               updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
             }}
-            on:focus={(e) => focusScroll(e.target)}
+            on:focus={(e) => {
+              focusScroll(e.target);
+              ensureFocus(block.id);
+            }}
+            data-focus-guard
             placeholder="Type your note here..."
           ></textarea>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
+          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
            ×
           </button>
         {:else if block.type === 'image'}
-          <img src={block.src} alt="Image block" />
+          <img src={block.src} alt="" />
           <li>
             <button
               class="edit-button"
+              data-focus-guard
               on:click={() =>
                 updateBlock(block.id, { editing: !block.editing })
               }
@@ -249,21 +304,23 @@ li {
                 placeholder="Image URL"
                 value={block.src}
                 on:input={(e) => updateBlock(block.id, { src: e.target.value })}
+                on:focus={() => ensureFocus(block.id)}
+                data-focus-guard
               />
             {/if}
-            <button class="delete-button" on:click={() => deleteBlock(block.id)}>
+            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
               ×
             </button>
           </li>
 
         {:else if block.type === 'music'}
           <p>🎵 {block.content}</p>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
+          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
            ×
           </button>
         {:else if block.type === 'embed'}
           <p>[Embed: {block.content}]</p>
-          <button class="delete-button" on:click={() => deleteBlock(block.id)}>
+          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
            ×
           </button>
         {/if}
