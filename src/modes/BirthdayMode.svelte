@@ -24,10 +24,12 @@
   let statusText = 'Press Space on the beat';
   let activeBeat = 0;
   let totalBeats = 0;
-  let rafId;
+  let timerId;
   let startTime = 0;
   let finished = false;
   let correctCount = 0;
+  let audioContext;
+  let audioUnlocked = false;
 
   function buildSlots() {
     let cursor = 2;
@@ -40,7 +42,8 @@
         pitch,
         duration,
         atBeat,
-        state: 'pending'
+        state: 'pending',
+        played: false
       };
     });
 
@@ -65,6 +68,53 @@
   $: revealOrder = rarityOrder();
   $: revealedIndices = new Set(revealOrder.slice(0, correctCount));
 
+
+  const pitchToHz = {
+    C5: 523.25,
+    D5: 587.33,
+    E5: 659.25,
+    F5: 698.46,
+    G5: 783.99,
+    A4: 440,
+    B4: 493.88,
+    G4: 392
+  };
+
+  function ensureAudioContext() {
+    if (!audioContext) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+      audioContext = new Ctx();
+    }
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => {});
+    }
+    return audioContext;
+  }
+
+  function playTone(pitch, { confirmed = false } = {}) {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+
+    const frequency = pitchToHz[pitch] || 440;
+    const oscillator = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+
+    oscillator.type = 'sine';
+    oscillator.frequency.setValueAtTime(frequency, now);
+
+    const peak = confirmed ? 0.18 : 0.055;
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(peak, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+
+    oscillator.connect(gain);
+    gain.connect(ctx.destination);
+    oscillator.start(now);
+    oscillator.stop(now + 0.3);
+  }
+
   function restart() {
     buildSlots();
     correctCount = 0;
@@ -72,8 +122,8 @@
     finished = false;
     startTime = performance.now();
     activeBeat = 0;
-    cancelAnimationFrame(rafId);
-    rafId = requestAnimationFrame(tick);
+    clearInterval(timerId);
+    timerId = setInterval(() => tick(performance.now()), 16);
   }
 
   function nextPendingIndex() {
@@ -83,6 +133,7 @@
   function handleSpace(event) {
     if (event.code !== 'Space') return;
     event.preventDefault();
+    audioUnlocked = true;
     if (finished) return;
 
     const targetIndex = nextPendingIndex();
@@ -92,9 +143,10 @@
     const offset = Math.abs(activeBeat - target.atBeat);
 
     if (offset <= hitWindow) {
-      slots[targetIndex] = { ...target, state: 'confirmed' };
+      slots[targetIndex] = { ...target, state: 'confirmed', played: true };
       slots = [...slots];
       correctCount += 1;
+      playTone(target.pitch, { confirmed: true });
       statusText = `Nice! ${correctCount}/${slots.length} confirmed.`;
 
       if (correctCount === slots.length) {
@@ -110,6 +162,16 @@
     if (!startTime) startTime = now;
     const elapsedSeconds = (now - startTime) / 1000;
     activeBeat = elapsedSeconds * beatsPerSecond;
+
+    slots = slots.map(slot => {
+      if (!slot.played && activeBeat >= slot.atBeat) {
+        if (audioUnlocked) {
+          playTone(slot.pitch, { confirmed: slot.state === 'confirmed' });
+        }
+        return { ...slot, played: true };
+      }
+      return slot;
+    });
 
     let updates = false;
     slots = slots.map(slot => {
@@ -129,11 +191,12 @@
       }
     }
 
-    if (!finished && activeBeat <= totalBeats) {
-      rafId = requestAnimationFrame(tick);
-    } else if (!finished) {
-      finished = true;
-      statusText = `Time! Confirmed ${correctCount}/${slots.length}.`;
+    if (finished || activeBeat > totalBeats) {
+      if (!finished) {
+        finished = true;
+        statusText = `Time! Confirmed ${correctCount}/${slots.length}.`;
+      }
+      clearInterval(timerId);
     }
   }
 
@@ -149,10 +212,6 @@
     return `left:${left}%; width:${width}%; background:${slotFill(slot)};`;
   }
 
-  function indicatorStyle() {
-    return `left:${beatToPercent(activeBeat)}%;`;
-  }
-
   function slotFill(slot) {
     if (slot.state !== 'confirmed') return 'transparent';
     if (!revealedIndices.has(slot.index)) return 'rgba(130, 220, 255, 0.45)';
@@ -161,14 +220,22 @@
     return `hsl(${hue}deg 82% 62%)`;
   }
 
+  function unlockAudio() {
+    audioUnlocked = true;
+    ensureAudioContext();
+  }
+
   onMount(() => {
     restart();
     window.addEventListener('keydown', handleSpace, { passive: false });
+    window.addEventListener('pointerdown', unlockAudio, { passive: true });
   });
 
   onDestroy(() => {
-    cancelAnimationFrame(rafId);
+    clearInterval(timerId);
     window.removeEventListener('keydown', handleSpace);
+    window.removeEventListener('pointerdown', unlockAudio);
+    audioContext?.close?.().catch(() => {});
   });
 </script>
 
@@ -186,7 +253,7 @@
         {/if}
       </div>
     {/each}
-    <div class="indicator" style={indicatorStyle()}></div>
+    <div class="indicator" style={`left:${beatToPercent(activeBeat)}%;`}></div>
   </div>
 
   <button on:click={restart}>Restart</button>
