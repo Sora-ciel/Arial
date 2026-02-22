@@ -15,10 +15,10 @@
     1, 1, 2, 2, 2, 4
   ];
 
-  const beatGap = 2;
+  const beatGap = 1;
   const slotWidthInBeats = 1.25;
   const hitWindow = 0.42;
-  const beatsPerSecond = 2.1;
+  const beatsPerSecond = 3;
 
   let slots = [];
   let statusText = 'Press Space on the beat';
@@ -26,10 +26,22 @@
   let totalBeats = 0;
   let timerId;
   let startTime = 0;
-  let finished = false;
   let correctCount = 0;
+  let gameCompleted = false;
+  let showFinishEffect = false;
   let audioContext;
   let audioUnlocked = false;
+
+  const pitchToHz = {
+    C5: 523.25,
+    D5: 587.33,
+    E5: 659.25,
+    F5: 698.46,
+    G5: 783.99,
+    A4: 440,
+    B4: 493.88,
+    G4: 392
+  };
 
   function buildSlots() {
     let cursor = 2;
@@ -47,7 +59,22 @@
       };
     });
 
-    totalBeats = cursor + 2;
+    totalBeats = cursor + 1;
+  }
+
+  function resetLoop(now = performance.now()) {
+    startTime = now;
+    activeBeat = 0;
+    slots = slots.map(slot => {
+      if (slot.state === 'confirmed') {
+        return { ...slot, played: false };
+      }
+      return {
+        ...slot,
+        state: gameCompleted ? slot.state : 'pending',
+        played: false
+      };
+    });
   }
 
   function rarityOrder() {
@@ -67,18 +94,6 @@
 
   $: revealOrder = rarityOrder();
   $: revealedIndices = new Set(revealOrder.slice(0, correctCount));
-
-
-  const pitchToHz = {
-    C5: 523.25,
-    D5: 587.33,
-    E5: 659.25,
-    F5: 698.46,
-    G5: 783.99,
-    A4: 440,
-    B4: 493.88,
-    G4: 392
-  };
 
   function ensureAudioContext() {
     if (!audioContext) {
@@ -101,27 +116,27 @@
     const gain = ctx.createGain();
     const now = ctx.currentTime;
 
-    oscillator.type = 'sine';
+    oscillator.type = confirmed ? 'triangle' : 'sine';
     oscillator.frequency.setValueAtTime(frequency, now);
 
-    const peak = confirmed ? 0.18 : 0.055;
+    const peak = confirmed ? 0.14 : 0.04;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + 0.015);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.28);
+    gain.gain.exponentialRampToValueAtTime(peak, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
 
     oscillator.connect(gain);
     gain.connect(ctx.destination);
     oscillator.start(now);
-    oscillator.stop(now + 0.3);
+    oscillator.stop(now + 0.24);
   }
 
   function restart() {
     buildSlots();
     correctCount = 0;
+    gameCompleted = false;
+    showFinishEffect = false;
     statusText = 'Press Space on the beat';
-    finished = false;
-    startTime = performance.now();
-    activeBeat = 0;
+    resetLoop();
     clearInterval(timerId);
     timerId = setInterval(() => tick(performance.now()), 16);
   }
@@ -134,7 +149,9 @@
     if (event.code !== 'Space') return;
     event.preventDefault();
     audioUnlocked = true;
-    if (finished) return;
+    ensureAudioContext();
+
+    if (gameCompleted) return;
 
     const targetIndex = nextPendingIndex();
     if (targetIndex === -1) return;
@@ -150,11 +167,12 @@
       statusText = `Nice! ${correctCount}/${slots.length} confirmed.`;
 
       if (correctCount === slots.length) {
-        finished = true;
-        statusText = '🎉 Happy Birthday unlocked!';
+        gameCompleted = true;
+        showFinishEffect = true;
+        statusText = '🎉 Perfect! Happy Birthday complete!';
       }
     } else {
-      statusText = 'Too early/late — keep the groove going.';
+      statusText = 'Too early/late — catch the next loop.';
     }
   }
 
@@ -166,37 +184,28 @@
     slots = slots.map(slot => {
       if (!slot.played && activeBeat >= slot.atBeat) {
         if (audioUnlocked) {
-          playTone(slot.pitch, { confirmed: slot.state === 'confirmed' });
+          playTone(slot.pitch, { confirmed: slot.state === 'confirmed' || gameCompleted });
         }
         return { ...slot, played: true };
       }
       return slot;
     });
 
-    let updates = false;
-    slots = slots.map(slot => {
-      if (slot.state !== 'pending') return slot;
-      if (activeBeat > slot.atBeat + hitWindow) {
-        updates = true;
-        return { ...slot, state: 'missed' };
-      }
-      return slot;
-    });
-
-    if (updates) {
-      const pending = slots.some(slot => slot.state === 'pending');
-      if (!pending) {
-        finished = true;
-        statusText = `Song ended. Confirmed ${correctCount}/${slots.length}.`;
-      }
+    if (!gameCompleted) {
+      slots = slots.map(slot => {
+        if (slot.state !== 'pending') return slot;
+        if (activeBeat > slot.atBeat + hitWindow) {
+          return { ...slot, state: 'missed' };
+        }
+        return slot;
+      });
     }
 
-    if (finished || activeBeat > totalBeats) {
-      if (!finished) {
-        finished = true;
-        statusText = `Time! Confirmed ${correctCount}/${slots.length}.`;
+    if (activeBeat > totalBeats) {
+      if (!gameCompleted) {
+        statusText = `Looping… confirmed ${correctCount}/${slots.length}.`;
       }
-      clearInterval(timerId);
+      resetLoop(now);
     }
   }
 
@@ -239,9 +248,16 @@
   });
 </script>
 
-<div class="birthday-mode">
+<div class="birthday-mode" class:completed={showFinishEffect}>
   <h2>🎂 Birthday Mode</h2>
   <p>{statusText}</p>
+
+  {#if showFinishEffect}
+    <div class="finish-effect" aria-hidden="true">
+      <span>🎉</span><span>✨</span><span>🎊</span><span>💫</span><span>🎉</span>
+    </div>
+  {/if}
+
   <div class="track">
     {#each slots as slot}
       <div
@@ -268,6 +284,32 @@
     background: radial-gradient(circle at top, #23193f 0%, #0f101f 60%, #080910 100%);
     overflow-x: hidden;
     box-sizing: border-box;
+    transition: box-shadow 0.3s ease;
+  }
+
+  .birthday-mode.completed {
+    box-shadow: inset 0 0 80px rgba(255, 226, 126, 0.25);
+  }
+
+  .finish-effect {
+    display: flex;
+    gap: 10px;
+    font-size: 1.4rem;
+    margin: 6px 0 10px;
+  }
+
+  .finish-effect span {
+    animation: pop 0.9s ease-in-out infinite alternate;
+  }
+
+  .finish-effect span:nth-child(2) { animation-delay: 0.1s; }
+  .finish-effect span:nth-child(3) { animation-delay: 0.2s; }
+  .finish-effect span:nth-child(4) { animation-delay: 0.3s; }
+  .finish-effect span:nth-child(5) { animation-delay: 0.4s; }
+
+  @keyframes pop {
+    from { transform: translateY(0) scale(1); opacity: 0.8; }
+    to { transform: translateY(-8px) scale(1.1); opacity: 1; }
   }
 
   .track {
