@@ -18,7 +18,7 @@
   const beatGap = 0.5;
   const slotWidthInBeats = 1.25;
   const hitWindow = 0.42;
-  const beatsPerSecond = 5.4;
+  const beatsPerSecond = 6.5;
 
   let slots = [];
   let statusText = 'Press Space on the beat';
@@ -31,6 +31,7 @@
   let showFinishEffect = false;
   let audioContext;
   let audioUnlocked = false;
+  let lastMetronomeBeat = -1;
 
   const pitchToHz = {
     C4: 261.63,
@@ -97,6 +98,7 @@
   function resetLoop(now = performance.now()) {
     startTime = now;
     activeBeat = 0;
+    lastMetronomeBeat = -1;
     slots = slots.map(slot => {
       if (slot.state === 'confirmed') {
         return { ...slot, played: false };
@@ -166,6 +168,41 @@
     oscillator.stop(now + release + 0.02);
   }
 
+
+  function playMetronome(beatNumber) {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+
+    const isBar = beatNumber % 4 === 0;
+    const freq = isBar ? 1320 : 980;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    const now = ctx.currentTime;
+
+    osc.type = 'square';
+    osc.frequency.setValueAtTime(freq, now);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(isBar ? 0.028 : 0.018, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  function playBellAccent(ctx, frequency, confirmed) {
+    const gain = confirmed ? 0.05 : 0.02;
+    playVoice(ctx, frequency * 2, {
+      wave: 'triangle',
+      peak: gain,
+      attack: 0.004,
+      sustain: 0.1,
+      release: 0.20,
+      detune: 4
+    });
+  }
+
   function playTone(pitch, index, { confirmed = false } = {}) {
     const ctx = ensureAudioContext();
     if (!ctx) return;
@@ -173,7 +210,7 @@
     const melodyFrequency = pitchToHz[pitch] || 440;
     const chord = accompanimentChords[index] || [];
 
-    const melodyPeak = confirmed ? 0.19 : 0.095;
+    const melodyPeak = confirmed ? 0.22 : 0.075;
 
     playVoice(ctx, melodyFrequency, {
       wave: confirmed ? 'triangle' : 'sine',
@@ -187,12 +224,14 @@
       release: 0.32
     });
 
+    playBellAccent(ctx, melodyFrequency, confirmed);
+
     for (const note of chord) {
       const freq = pitchToHz[note];
       if (!freq) continue;
       playVoice(ctx, freq, {
         wave: 'sawtooth',
-        peak: confirmed ? 0.046 : 0.022,
+        peak: confirmed ? 0.056 : 0.016,
         release: 0.30,
         detune: (Math.random() - 0.5) * 5
       });
@@ -250,10 +289,19 @@
     const elapsedSeconds = (now - startTime) / 1000;
     activeBeat = elapsedSeconds * beatsPerSecond;
 
+    const currentBeat = Math.floor(activeBeat);
+    if (audioUnlocked && currentBeat > lastMetronomeBeat) {
+      for (let b = lastMetronomeBeat + 1; b <= currentBeat; b += 1) {
+        if (b >= 0) playMetronome(b);
+      }
+      lastMetronomeBeat = currentBeat;
+    }
+
     slots = slots.map(slot => {
       if (!slot.played && activeBeat >= slot.atBeat) {
-        if (audioUnlocked) {
-          playTone(slot.pitch, slot.index, { confirmed: slot.state === 'confirmed' || gameCompleted });
+        const isDone = slot.state === 'confirmed' || gameCompleted;
+        if (audioUnlocked && isDone) {
+          playTone(slot.pitch, slot.index, { confirmed: true });
         }
         return { ...slot, played: true };
       }
@@ -401,17 +449,18 @@
   .slot {
     position: absolute;
     top: 20px;
-    height: 46px;
+    height: 38px;
     border: 1px solid rgba(194, 232, 255, 0.7);
-    border-radius: 13px;
+    border-radius: 9px;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.2s ease;
+    transition: background 0.18s ease, border-color 0.18s ease;
+    backdrop-filter: blur(0.5px);
   }
 
   .slot.missed {
-    border-color: rgba(255, 145, 145, 0.35);
+    border-color: rgba(255, 145, 145, 0.3);
   }
 
   .slot span {
