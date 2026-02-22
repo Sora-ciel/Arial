@@ -15,10 +15,10 @@
     1, 1, 2, 2, 2, 4
   ];
 
-  const beatGap = 1;
+  const beatGap = 0.5;
   const slotWidthInBeats = 1.25;
   const hitWindow = 0.42;
-  const beatsPerSecond = 4.2;
+  const beatsPerSecond = 5.4;
 
   let slots = [];
   let statusText = 'Press Space on the beat';
