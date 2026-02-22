@@ -5,6 +5,7 @@
   import SingleNoteMode from './SingleNoteMode.svelte';
   import HabitTrackerMode from './HabitTrackerMode.svelte';
   import TaskMode from './TaskMode.svelte';
+  import BirthdayMode from '../modes/BirthdayMode.svelte';
 
   export let mode; // 'default' or 'simple'
   export let blocks;
@@ -85,6 +86,8 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
     />
+  {:else if mode === 'birthday'}
+    <BirthdayMode />
   {:else}
     <SingleNoteMode
       {blocks}

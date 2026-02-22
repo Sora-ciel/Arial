@@ -10,6 +10,8 @@
   export let authUser = null;
   export let uploadInProgress = false;
   export let downloadInProgress = false;
+  export let birthdayModeUnlocked = false;
+  export let birthdayUnlockMessage = '';
 
 
   const dispatch = createEventDispatcher();
@@ -21,12 +23,18 @@
   let modeMenuRef;
   let modeButtonRef;
   let showModeLadder = false;
-  const modeOptions = [
+  let birthdayPassword = '';
+
+  $: modeOptions = [
     { id: "default", label: "Canvas Mode" },
     { id: "simple", label: "Simple Note Mode" },
     { id: "single", label: "Single Note Mode" },
     { id: "habit", label: "Habit Tracker Mode" },
-    { id: "task", label: "Task Mode" }
+    { id: "task", label: "Task Mode" },
+    {
+      id: "birthday",
+      label: birthdayModeUnlocked ? "Birthday Mode" : "Birthday Mode 🔒"
+    }
   ];
 
   const defaultColors = {
@@ -109,9 +117,15 @@
   }
 
   function selectMode(nextMode) {
+    if (nextMode === 'birthday' && !birthdayModeUnlocked) return;
     dispatch("setMode", nextMode);
     showModeLadder = false;
     if (compactUI) showMobileMenu = false;
+  }
+
+  function unlockBirthdayMode() {
+    dispatch('unlockBirthdayMode', { password: birthdayPassword });
+    birthdayPassword = '';
   }
 
   function moveUp() {
@@ -220,6 +234,24 @@ onMount(() => {
     border-color: rgba(127, 211, 255, 0.5);
   }
 
+  .birthday-unlock {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    border-top: 1px solid var(--left-border-color, #333333);
+    margin-top: 4px;
+    padding-top: 8px;
+  }
+
+  .birthday-unlock-row {
+    display: flex;
+    gap: 6px;
+  }
+
+  .birthday-unlock small {
+    opacity: 0.85;
+  }
+
   .left-controls button {
     background: var(--left-button-bg, #333333);
     color: var(--left-button-text, #ffffff);
@@ -312,10 +344,23 @@ onMount(() => {
               on:click={() => selectMode(option.id)}
               role="option"
               aria-selected={option.id === mode}
+              disabled={option.id === 'birthday' && !birthdayModeUnlocked}
             >
               {option.label}
             </button>
           {/each}
+          {#if !birthdayModeUnlocked}
+            <div class="birthday-unlock">
+              <small>Unlock birthday mode for 24 hours.</small>
+              <div class="birthday-unlock-row">
+                <input type="password" bind:value={birthdayPassword} placeholder="Password" />
+                <button on:click={unlockBirthdayMode}>Unlock</button>
+              </div>
+              {#if birthdayUnlockMessage}
+                <small>{birthdayUnlockMessage}</small>
+              {/if}
+            </div>
+          {/if}
         </div>
       {/if}
     </div>

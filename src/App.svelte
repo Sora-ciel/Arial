@@ -27,6 +27,10 @@
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
 
+  const BIRTHDAY_UNLOCK_STORAGE_KEY = 'birthdayModeAccess';
+  const BIRTHDAY_MODE_PASSWORD = 'Birthday24H';
+  const BIRTHDAY_MODE_DURATION_MS = 24 * 60 * 60 * 1000;
+
   function toCssVarName(key) {
     return key
       .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
@@ -231,6 +235,33 @@
         BLOCK_THEME_ID_STORAGE_KEY,
         id || CUSTOM_THEME_ID
       );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+
+  function loadBirthdayUnlockExpiry() {
+    if (typeof localStorage === 'undefined') return 0;
+    try {
+      const raw = localStorage.getItem(BIRTHDAY_UNLOCK_STORAGE_KEY);
+      if (!raw) return 0;
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed)) return 0;
+      return parsed;
+    } catch (error) {
+      return 0;
+    }
+  }
+
+  function persistBirthdayUnlockExpiry(expiresAt) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      if (expiresAt > Date.now()) {
+        localStorage.setItem(BIRTHDAY_UNLOCK_STORAGE_KEY, String(expiresAt));
+      } else {
+        localStorage.removeItem(BIRTHDAY_UNLOCK_STORAGE_KEY);
+      }
     } catch (error) {
       /* ignore persistence failures */
     }
@@ -555,13 +586,14 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single", "habit", "task"];
+  const KNOWN_MODES = ["default", "simple", "single", "habit", "task", "birthday"];
   const MODE_LABELS = {
     default: "Canvas Mode",
     simple: "Simple Note Mode",
     single: "Single Note Mode",
     habit: "Habit Tracker Mode",
-    task: "Task Mode"
+    task: "Task Mode",
+    birthday: "Birthday Mode"
   };
 
   function applyHistoryTriggers(block) {
@@ -666,6 +698,9 @@
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > 1024;
+  let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
+  let birthdayUnlockMessage = "";
+  $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
   let history = [];
@@ -1201,8 +1236,25 @@
   const moveFocusedBlockUp = () => moveFocusedBlock(-1);
   const moveFocusedBlockDown = () => moveFocusedBlock(1);
 
+
+  function unlockBirthdayMode(passwordAttempt) {
+    if ((passwordAttempt || '').trim() !== BIRTHDAY_MODE_PASSWORD) {
+      birthdayUnlockMessage = 'Incorrect password.';
+      return;
+    }
+
+    birthdayUnlockExpiry = Date.now() + BIRTHDAY_MODE_DURATION_MS;
+    persistBirthdayUnlockExpiry(birthdayUnlockExpiry);
+    birthdayUnlockMessage = 'Birthday mode unlocked for 24 hours.';
+  }
+
+  $: if (!birthdayModeUnlocked && mode === "birthday") {
+    mode = "default";
+  }
+
   function setMode(nextMode) {
     if (!KNOWN_MODES.includes(nextMode)) return;
+    if (nextMode === "birthday" && !birthdayModeUnlocked) return;
     if (nextMode === mode) return;
     mode = nextMode;
 
@@ -1257,6 +1309,11 @@
       _version: 0
     }));
     modeOrders = ensureModeOrders(blocks, initialOrders);
+    if (birthdayUnlockExpiry <= Date.now()) {
+      birthdayUnlockExpiry = 0;
+      persistBirthdayUnlockExpiry(0);
+      if (mode === "birthday") mode = "default";
+    }
 
     history = [];
     historyIndex = -1;
@@ -1371,12 +1428,15 @@
       {authUser}
       {uploadInProgress}
       {downloadInProgress}
+      {birthdayModeUnlocked}
+      {birthdayUnlockMessage}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
       on:setMode={(e) => setMode(e.detail)}
+      on:unlockBirthdayMode={(e) => unlockBirthdayMode(e.detail?.password)}
       on:undo={undo}
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
