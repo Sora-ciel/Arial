@@ -34,6 +34,8 @@
   let dryBus;
   let wetBus;
   let masterBus;
+  let toneFilter;
+  let toneCompressor;
   let audioUnlocked = false;
   let lastMetronomeBeat = -1;
 
@@ -134,7 +136,7 @@
   $: revealedIndices = new Set(revealOrder.slice(0, correctCount));
 
 
-  function createReverbImpulse(ctx, duration = 1.6, decay = 2.4) {
+  function createReverbImpulse(ctx, duration = 1.25, decay = 2.1) {
     const length = Math.floor(ctx.sampleRate * duration);
     const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
 
@@ -159,16 +161,30 @@
       dryBus = audioContext.createGain();
       wetBus = audioContext.createGain();
       reverbConvolver = audioContext.createConvolver();
+      toneFilter = audioContext.createBiquadFilter();
+      toneCompressor = audioContext.createDynamicsCompressor();
 
       reverbConvolver.buffer = createReverbImpulse(audioContext);
 
-      dryBus.gain.value = 0.8;
-      wetBus.gain.value = 0.45;
-      masterBus.gain.value = 0.9;
+      toneFilter.type = 'lowpass';
+      toneFilter.frequency.value = 4200;
+      toneFilter.Q.value = 0.8;
 
-      dryBus.connect(masterBus);
+      toneCompressor.threshold.value = -20;
+      toneCompressor.knee.value = 12;
+      toneCompressor.ratio.value = 3.2;
+      toneCompressor.attack.value = 0.004;
+      toneCompressor.release.value = 0.2;
+
+      dryBus.gain.value = 0.78;
+      wetBus.gain.value = 0.32;
+      masterBus.gain.value = 0.86;
+
+      dryBus.connect(toneFilter);
       wetBus.connect(reverbConvolver);
-      reverbConvolver.connect(masterBus);
+      reverbConvolver.connect(toneFilter);
+      toneFilter.connect(toneCompressor);
+      toneCompressor.connect(masterBus);
       masterBus.connect(audioContext.destination);
     }
     if (audioContext.state === 'suspended') {
@@ -179,10 +195,10 @@
 
   function playVoice(ctx, frequency, {
     wave = 'triangle',
-    peak = 0.08,
-    attack = 0.008,
-    sustain = 0.11,
-    release = 0.24,
+    peak = 0.075,
+    attack = 0.01,
+    sustain = 0.22,
+    release = 0.34,
     detune = 0
   } = {}) {
     const oscillator = ctx.createOscillator();
@@ -214,11 +230,11 @@
     const gain = ctx.createGain();
     const now = ctx.currentTime;
 
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(960, now);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.009, now + 0.004);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0055, now + 0.006);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
@@ -245,18 +261,18 @@
     const melodyFrequency = pitchToHz[pitch] || 440;
     const chord = accompanimentChords[index] || [];
 
-    const melodyPeak = confirmed ? 0.22 : 0.075;
+    const melodyPeak = confirmed ? 0.16 : 0.06;
 
     playVoice(ctx, melodyFrequency, {
       wave: confirmed ? 'triangle' : 'sine',
       peak: melodyPeak,
-      release: 0.36
+      release: 0.42
     });
 
     playVoice(ctx, melodyFrequency * 0.5, {
       wave: 'sine',
-      peak: confirmed ? 0.07 : 0.03,
-      release: 0.32
+      peak: confirmed ? 0.05 : 0.022,
+      release: 0.38
     });
 
     playBellAccent(ctx, melodyFrequency, confirmed);
@@ -266,8 +282,8 @@
       if (!freq) continue;
       playVoice(ctx, freq, {
         wave: 'sawtooth',
-        peak: confirmed ? 0.056 : 0.016,
-        release: 0.30,
+        peak: confirmed ? 0.032 : 0.012,
+        release: 0.34,
         detune: (Math.random() - 0.5) * 5
       });
     }
@@ -431,9 +447,11 @@
   .birthday-mode {
     width: 100%;
     min-height: calc(100vh - 120px);
-    padding: 20px;
-    color: #f2f7ff;
-    background: radial-gradient(circle at top, #23193f 0%, #0f101f 60%, #080910 100%);
+    padding: 22px;
+    color: var(--block-header-text, #f2f7ff);
+    background:
+      radial-gradient(circle at top right, color-mix(in srgb, var(--block-accent-color, #7be0ff) 24%, transparent), transparent 42%),
+      radial-gradient(circle at top, color-mix(in srgb, var(--block-border-color, #39436a) 35%, #0f101f 65%) 0%, #0f101f 58%, #090b14 100%);
     overflow-x: hidden;
     box-sizing: border-box;
     transition: box-shadow 0.3s ease;
@@ -469,23 +487,25 @@
     height: 86px;
     margin: 24px 0;
     width: min(100%, 1200px);
-    border-radius: 20px;
-    background-image:
+    border-radius: 18px;
+    background:
+      linear-gradient(180deg, color-mix(in srgb, var(--block-border-color, #2a3555) 22%, transparent), transparent),
       repeating-linear-gradient(
         to right,
-        rgba(255,255,255,0.08) 0,
-        rgba(255,255,255,0.08) 1px,
+        color-mix(in srgb, var(--block-border-color, #667) 50%, transparent) 0,
+        color-mix(in srgb, var(--block-border-color, #667) 50%, transparent) 1px,
         transparent 1px,
         transparent 12.5%
       );
-    border: 1px solid rgba(255, 255, 255, 0.18);
+    border: 1px solid color-mix(in srgb, var(--block-border-color, #667) 55%, transparent);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
   }
 
   .slot {
     position: absolute;
     top: 20px;
     height: 38px;
-    border: 1px solid rgba(194, 232, 255, 0.7);
+    border: 1px solid color-mix(in srgb, var(--block-accent-color, #7be0ff) 70%, #d7eeff);
     border-radius: 999px;
     display: flex;
     align-items: center;
@@ -494,7 +514,7 @@
   }
 
   .slot.missed {
-    border-color: rgba(255, 145, 145, 0.3);
+    border-color: color-mix(in srgb, #ff7f7f 55%, transparent);
   }
 
   .slot span {
@@ -511,8 +531,8 @@
     width: 3px;
     transform: translateX(-50%);
     border-radius: 999px;
-    background: #ffd670;
-    box-shadow: 0 0 14px #ffd670;
+    background: var(--block-accent-color, #ffd670);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--block-accent-color, #ffd670) 80%, transparent);
   }
 
   button {
