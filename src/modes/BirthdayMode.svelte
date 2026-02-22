@@ -16,7 +16,7 @@
   ];
 
   const beatGap = 0.5;
-  const slotWidthInBeats = 1.25;
+  const slotWidthInBeats = 0.12;
   const hitWindow = 0.42;
   const beatsPerSecond = 6.5;
 
@@ -173,21 +173,20 @@
     const ctx = ensureAudioContext();
     if (!ctx) return;
 
-    const freq = 1120;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
 
-    osc.type = 'square';
-    osc.frequency.setValueAtTime(freq, now);
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(960, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.02, now + 0.003);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
+    gain.gain.exponentialRampToValueAtTime(0.009, now + 0.004);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.06);
+    osc.stop(now + 0.055);
   }
 
   function playBellAccent(ctx, frequency, confirmed) {
@@ -447,8 +446,8 @@
 
   .slot {
     position: absolute;
-    top: 34px;
-    height: 10px;
+    top: 20px;
+    height: 38px;
     border: 1px solid rgba(194, 232, 255, 0.7);
     border-radius: 999px;
     display: flex;
