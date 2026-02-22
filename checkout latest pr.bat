@@ -49,4 +49,3 @@ if errorlevel 1 (
 )
 
 echo Updated %PRBR% to latest PR head.
-pause

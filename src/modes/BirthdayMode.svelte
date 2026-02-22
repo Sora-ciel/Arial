@@ -169,12 +169,11 @@
   }
 
 
-  function playMetronome(beatNumber) {
+  function playMetronome() {
     const ctx = ensureAudioContext();
     if (!ctx) return;
 
-    const isBar = beatNumber % 4 === 0;
-    const freq = isBar ? 1320 : 980;
+    const freq = 1120;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
@@ -182,7 +181,7 @@
     osc.type = 'square';
     osc.frequency.setValueAtTime(freq, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(isBar ? 0.028 : 0.018, now + 0.003);
+    gain.gain.exponentialRampToValueAtTime(0.02, now + 0.003);
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.055);
 
     osc.connect(gain);
@@ -292,7 +291,7 @@
     const currentBeat = Math.floor(activeBeat);
     if (audioUnlocked && currentBeat > lastMetronomeBeat) {
       for (let b = lastMetronomeBeat + 1; b <= currentBeat; b += 1) {
-        if (b >= 0) playMetronome(b);
+        if (b >= 0) playMetronome();
       }
       lastMetronomeBeat = currentBeat;
     }
@@ -448,15 +447,14 @@
 
   .slot {
     position: absolute;
-    top: 20px;
-    height: 38px;
+    top: 34px;
+    height: 10px;
     border: 1px solid rgba(194, 232, 255, 0.7);
-    border-radius: 9px;
+    border-radius: 999px;
     display: flex;
     align-items: center;
     justify-content: center;
     transition: background 0.18s ease, border-color 0.18s ease;
-    backdrop-filter: blur(0.5px);
   }
 
   .slot.missed {
