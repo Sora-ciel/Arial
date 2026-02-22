@@ -17,7 +17,7 @@
 
   const beatGap = 0.5;
   const slotWidthInBeats = 0.12;
-  const hitWindow = 0.42;
+  const hitWindow = 1.26;
   const beatsPerSecond = 6.5;
 
   let slots = [];
@@ -30,6 +30,10 @@
   let gameCompleted = false;
   let showFinishEffect = false;
   let audioContext;
+  let reverbConvolver;
+  let dryBus;
+  let wetBus;
+  let masterBus;
   let audioUnlocked = false;
   let lastMetronomeBeat = -1;
 
@@ -129,11 +133,43 @@
   $: revealOrder = rarityOrder();
   $: revealedIndices = new Set(revealOrder.slice(0, correctCount));
 
+
+  function createReverbImpulse(ctx, duration = 1.6, decay = 2.4) {
+    const length = Math.floor(ctx.sampleRate * duration);
+    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
+
+    for (let channel = 0; channel < 2; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i += 1) {
+        const t = i / length;
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+      }
+    }
+
+    return impulse;
+  }
+
   function ensureAudioContext() {
     if (!audioContext) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return null;
       audioContext = new Ctx();
+
+      masterBus = audioContext.createGain();
+      dryBus = audioContext.createGain();
+      wetBus = audioContext.createGain();
+      reverbConvolver = audioContext.createConvolver();
+
+      reverbConvolver.buffer = createReverbImpulse(audioContext);
+
+      dryBus.gain.value = 0.8;
+      wetBus.gain.value = 0.45;
+      masterBus.gain.value = 0.9;
+
+      dryBus.connect(masterBus);
+      wetBus.connect(reverbConvolver);
+      reverbConvolver.connect(masterBus);
+      masterBus.connect(audioContext.destination);
     }
     if (audioContext.state === 'suspended') {
       audioContext.resume().catch(() => {});
@@ -163,7 +199,8 @@
     gain.gain.exponentialRampToValueAtTime(0.0001, now + release);
 
     oscillator.connect(gain);
-    gain.connect(ctx.destination);
+    gain.connect(dryBus || ctx.destination);
+    gain.connect(wetBus || ctx.destination);
     oscillator.start(now);
     oscillator.stop(now + release + 0.02);
   }
