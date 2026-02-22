@@ -18,7 +18,7 @@
   const beatGap = 1;
   const slotWidthInBeats = 1.25;
   const hitWindow = 0.42;
-  const beatsPerSecond = 3;
+  const beatsPerSecond = 4.2;
 
   let slots = [];
   let statusText = 'Press Space on the beat';
@@ -33,15 +33,47 @@
   let audioUnlocked = false;
 
   const pitchToHz = {
+    C4: 261.63,
+    D4: 293.66,
+    E4: 329.63,
+    F4: 349.23,
+    G4: 392,
+    A4: 440,
+    B4: 493.88,
     C5: 523.25,
     D5: 587.33,
     E5: 659.25,
     F5: 698.46,
-    G5: 783.99,
-    A4: 440,
-    B4: 493.88,
-    G4: 392
+    G5: 783.99
   };
+
+  const accompanimentChords = [
+    ['G4', 'B4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['D4', 'A4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['C4', 'G4', 'E5'],
+    ['G4', 'B4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['D4', 'A4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['D4', 'A4', 'F5'],
+    ['C4', 'G4', 'E5'],
+    ['G4', 'B4', 'D5'],
+    ['G4', 'B4', 'D5'],
+    ['E4', 'B4', 'G5'],
+    ['C4', 'G4', 'E5'],
+    ['C4', 'G4', 'E5'],
+    ['G4', 'B4', 'D5'],
+    ['D4', 'A4', 'D5'],
+    ['D4', 'A4', 'F5'],
+    ['D4', 'A4', 'F5'],
+    ['C4', 'G4', 'E5'],
+    ['C4', 'G4', 'E5'],
+    ['D4', 'A4', 'D5'],
+    ['C4', 'G4', 'E5']
+  ];
 
   function buildSlots() {
     let cursor = 2;
@@ -107,27 +139,64 @@
     return audioContext;
   }
 
-  function playTone(pitch, { confirmed = false } = {}) {
-    const ctx = ensureAudioContext();
-    if (!ctx) return;
-
-    const frequency = pitchToHz[pitch] || 440;
+  function playVoice(ctx, frequency, {
+    wave = 'triangle',
+    peak = 0.08,
+    attack = 0.008,
+    sustain = 0.11,
+    release = 0.24,
+    detune = 0
+  } = {}) {
     const oscillator = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
 
-    oscillator.type = confirmed ? 'triangle' : 'sine';
+    oscillator.type = wave;
     oscillator.frequency.setValueAtTime(frequency, now);
+    oscillator.detune.setValueAtTime(detune, now);
 
-    const peak = confirmed ? 0.14 : 0.04;
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.22);
+    gain.gain.exponentialRampToValueAtTime(peak, now + attack);
+    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * sustain), now + release * 0.45);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + release);
 
     oscillator.connect(gain);
     gain.connect(ctx.destination);
     oscillator.start(now);
-    oscillator.stop(now + 0.24);
+    oscillator.stop(now + release + 0.02);
+  }
+
+  function playTone(pitch, index, { confirmed = false } = {}) {
+    const ctx = ensureAudioContext();
+    if (!ctx) return;
+
+    const melodyFrequency = pitchToHz[pitch] || 440;
+    const chord = accompanimentChords[index] || [];
+
+    const melodyPeak = confirmed ? 0.19 : 0.095;
+
+    playVoice(ctx, melodyFrequency, {
+      wave: confirmed ? 'triangle' : 'sine',
+      peak: melodyPeak,
+      release: 0.36
+    });
+
+    playVoice(ctx, melodyFrequency * 0.5, {
+      wave: 'sine',
+      peak: confirmed ? 0.07 : 0.03,
+      release: 0.32
+    });
+
+    for (const note of chord) {
+      const freq = pitchToHz[note];
+      if (!freq) continue;
+      playVoice(ctx, freq, {
+        wave: 'sawtooth',
+        peak: confirmed ? 0.046 : 0.022,
+        release: 0.30,
+        detune: (Math.random() - 0.5) * 5
+      });
+    }
   }
 
   function restart() {
@@ -163,7 +232,7 @@
       slots[targetIndex] = { ...target, state: 'confirmed', played: true };
       slots = [...slots];
       correctCount += 1;
-      playTone(target.pitch, { confirmed: true });
+      playTone(target.pitch, target.index, { confirmed: true });
       statusText = `Nice! ${correctCount}/${slots.length} confirmed.`;
 
       if (correctCount === slots.length) {
@@ -184,7 +253,7 @@
     slots = slots.map(slot => {
       if (!slot.played && activeBeat >= slot.atBeat) {
         if (audioUnlocked) {
-          playTone(slot.pitch, { confirmed: slot.state === 'confirmed' || gameCompleted });
+          playTone(slot.pitch, slot.index, { confirmed: slot.state === 'confirmed' || gameCompleted });
         }
         return { ...slot, played: true };
       }
