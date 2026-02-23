@@ -295,10 +295,10 @@ onMount(() => {
     display: none;
     position: fixed;
     top: 29px;
-    left: 130px;
+    left: 94px;
     z-index: 1000;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
   }
 
   @media (max-width: 1024px) {

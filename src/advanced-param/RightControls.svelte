@@ -20,6 +20,8 @@
   let isOpen = true;
   let hasMounted = false;
   let resizeHandler;
+  let outsideClickHandler;
+  let rightControlsRef;
   const RIGHT_CONTROLS_OPEN_KEY = "rightControlsOpen";
 
   const defaultColors = {
@@ -80,13 +82,23 @@
     };
     evaluate();
     resizeHandler = () => evaluate();
+    outsideClickHandler = (event) => {
+      if (!isOpen) return;
+      if (!rightControlsRef?.contains(event.target)) {
+        isOpen = false;
+      }
+    };
     window.addEventListener("resize", resizeHandler);
+    window.addEventListener("click", outsideClickHandler);
     hasMounted = true;
   });
 
   onDestroy(() => {
     if (resizeHandler) {
       window.removeEventListener("resize", resizeHandler);
+    }
+    if (outsideClickHandler) {
+      window.removeEventListener("click", outsideClickHandler);
     }
   });
 
@@ -293,7 +305,7 @@
 
 </style>
 
-<div class="right-controls" style={rightCssVars}>
+<div class="right-controls" style={rightCssVars} bind:this={rightControlsRef}>
   <details bind:open={isOpen}>
     <summary>⚙️ Parameters</summary>
 

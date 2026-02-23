@@ -1400,12 +1400,13 @@
 @media (max-width: 1024px) {
   .controls {
     min-height: 55px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     top: 0;
     left: 0;
     right: 0;
     padding: 8px 10px;
     justify-content: space-between;
+    align-items: center;
   }
 }
 
