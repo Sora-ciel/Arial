@@ -55,7 +55,7 @@
   let active = false;
   let gameOver = false;
   let won = false;
-  let statusText = 'Press Space to Start. Then hit D F J K in Happy Birthday rhythm.';
+  let statusText = 'Appuie sur Espace pour commencer, puis joue le rythme exact de Joyeux anniversaire.';
   let score = 0;
   let nextNoteIndex = 0;
   let frameId;
@@ -104,9 +104,9 @@
       filter = audioContext.createBiquadFilter();
 
       reverb.buffer = createImpulse(audioContext);
-      dryBus.gain.value = 0.82;
-      wetBus.gain.value = 0.34;
-      masterBus.gain.value = 0.9;
+      dryBus.gain.value = 1.0;
+      wetBus.gain.value = 0.5;
+      masterBus.gain.value = 1.25;
       filter.type = 'lowpass';
       filter.frequency.value = 5600;
       filter.Q.value = 0.8;
@@ -161,7 +161,7 @@
     osc.frequency.setValueAtTime(frequency, now);
 
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.075, now + 0.02);
 
     osc.connect(gain);
     gain.connect(dryBus || ctx.destination);
@@ -195,7 +195,7 @@
     body.type = 'triangle';
     body.frequency.setValueAtTime(frequency, now);
     bodyGain.gain.setValueAtTime(0.0001, now);
-    bodyGain.gain.exponentialRampToValueAtTime(0.095, now + 0.012);
+    bodyGain.gain.exponentialRampToValueAtTime(0.13, now + 0.012);
     bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
 
     const hammer = ctx.createOscillator();
@@ -203,7 +203,7 @@
     hammer.type = 'square';
     hammer.frequency.setValueAtTime(frequency * 2, now);
     hammerGain.gain.setValueAtTime(0.0001, now);
-    hammerGain.gain.exponentialRampToValueAtTime(0.026, now + 0.005);
+    hammerGain.gain.exponentialRampToValueAtTime(0.035, now + 0.005);
     hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
 
     body.connect(bodyGain);
@@ -226,7 +226,8 @@
   function scheduleNextSpawn() {
     if (!active || gameOver || won || nextNoteIndex >= melody.length) return;
 
-    const delay = Math.max(120, rhythm[nextNoteIndex] * beatMs);
+    const previousIndex = Math.max(0, nextNoteIndex - 1);
+    const delay = Math.max(120, rhythm[previousIndex] * beatMs);
     spawnTimeout = setTimeout(() => {
       addNote();
       scheduleNextSpawn();
@@ -272,7 +273,7 @@
     if (won || gameOver) return;
     gameOver = true;
     active = false;
-    statusText = `${message} Press Space to restart.`;
+    statusText = `${message} Appuie sur Espace pour recommencer.`;
     clearTimeout(spawnTimeout);
     cancelAnimationFrame(frameId);
   }
@@ -281,7 +282,7 @@
     if (score === melody.length && notes.length === 0 && nextNoteIndex >= melody.length) {
       won = true;
       active = false;
-      statusText = '🎉 Perfect run! Happy Birthday complete! Press Space to play again.';
+      statusText = "🎉 Parfait ! Tout est prêt pour l'anniversaire de papa demain. Appuie sur Espace pour rejouer.";
       clearTimeout(spawnTimeout);
       cancelAnimationFrame(frameId);
     }
@@ -298,7 +299,7 @@
         const hitWindow = note.height;
         if (!note.hit && tileBottom >= h - hitLineOffset + hitWindow) {
           flashMiss(note);
-          fail('Missed tile!');
+          fail('Note manquée !');
           return false;
         }
         return note.y <= h + note.height;
@@ -317,7 +318,7 @@
     gameOver = false;
     active = true;
     missedFlash = null;
-    statusText = 'Go! Follow the Happy Birthday rhythm.';
+    statusText = "C'est parti ! Suis le rythme exact de Joyeux anniversaire.";
     lanePressed = [false, false, false, false];
 
     clearTimeout(spawnTimeout);
@@ -374,20 +375,20 @@
     const target = nearestNoteInLane(laneIndex);
 
     if (!target) {
-      fail('Wrong key! No tile in that lane.');
+      fail('Mauvaise touche ! Aucune note sur cette ligne.');
       return;
     }
 
     const distance = Math.abs(target.y + target.height - hitLineY);
     if (distance > target.height) {
-      fail('Too early/late! Hit when the tile reaches the line.');
+      fail('Trop tôt / trop tard ! Appuie quand la note atteint la ligne.');
       return;
     }
 
     target.hit = true;
     notes = notes.filter(note => note.id !== target.id);
     score += 1;
-    statusText = `Perfect! ${score}/${melody.length}`;
+    statusText = `Parfait ! ${score}/${melody.length}`;
     playPitchTone(target.pitch);
     startSustainTone(laneIndex, target.pitch);
     checkWin();
@@ -425,6 +426,12 @@
   <h2>🎹 Birthday Piano Tiles (PC)</h2>
   <p>{statusText}</p>
 
+  <div class="global-confetti" aria-hidden="true">
+    {#each Array(42) as _, i}
+      <span class="confetti c-{i % 7}" style={`left:${(i * 11) % 100}%; animation-delay:${(i % 11) * 0.11}s;`}></span>
+    {/each}
+  </div>
+
   {#if won}
     <div class="win-screen">
       <div class="confetti-layer" aria-hidden="true">
@@ -432,17 +439,17 @@
           <span class="confetti c-{i % 7}" style={`left:${(i * 17) % 100}%; animation-delay:${(i % 9) * 0.09}s;`}></span>
         {/each}
       </div>
-      <h3>YOU WIN! 🎉</h3>
-      <p>100% perfect run — yhaha yeah ✨</p>
-      <button on:click={restart}>Restart Game (Space)</button>
+      <h3>TU AS GAGNÉ ! 🎉</h3>
+      <p>Run parfait 💙 Demain, c'est l'anniversaire de papa ! ✨</p>
+      <button on:click={restart}>Rejouer (Espace)</button>
     </div>
   {:else}
     <div class="hud">
       <span>Score: {score}/{melody.length}</span>
       {#if !active}
-        <button on:click={startGame}>Start (Space)</button>
+        <button on:click={startGame}>Démarrer (Espace)</button>
       {:else}
-        <button on:click={restart}>Restart (Space)</button>
+        <button on:click={restart}>Recommencer (Espace)</button>
       {/if}
     </div>
 
@@ -458,7 +465,6 @@
           class="note"
           style={`top:${note.y}px; left:calc(${note.lane} * 25% + 5px); height:${note.height}px;`}
         >
-          <span class="note-label">{note.pitch}</span>
         </div>
       {/each}
 
@@ -474,8 +480,8 @@
 
     {#if gameOver}
       <div class="game-over">
-        <h3>Game Over</h3>
-        <button on:click={restart}>Try Again (Space)</button>
+        <h3>Perdu</h3>
+        <button on:click={restart}>Réessayer (Espace)</button>
       </div>
     {/if}
   {/if}
@@ -495,6 +501,8 @@
   }
 
   .hud {
+    position: relative;
+    z-index: 2;
     display: flex;
     align-items: center;
     gap: 14px;
@@ -505,6 +513,7 @@
 
   .game-area {
     position: relative;
+    z-index: 2;
     width: min(100%, 760px);
     height: clamp(420px, 62vh, 700px);
     border-radius: 14px;
@@ -566,13 +575,6 @@
     animation: missPulse 0.2s ease;
   }
 
-  .note-label {
-    color: #f5f8ff;
-    font-weight: 700;
-    font-size: 0.8rem;
-    letter-spacing: 0.04em;
-  }
-
   .hit-line {
     position: absolute;
     left: 0;
@@ -585,6 +587,7 @@
 
   .win-screen,
   .game-over {
+    z-index: 2;
     margin-top: 18px;
     width: min(100%, 760px);
     border-radius: 14px;
@@ -599,6 +602,13 @@
     position: absolute;
     inset: 0;
     pointer-events: none;
+  }
+
+  .global-confetti {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    z-index: 1;
   }
 
   .confetti {
