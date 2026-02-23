@@ -6,10 +6,6 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let colors = {};
-  export let firebaseReady = false;
-  export let authUser = null;
-  export let uploadInProgress = false;
-  export let downloadInProgress = false;
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
 
@@ -22,7 +18,10 @@
   let toggleRef;
   let modeMenuRef;
   let modeButtonRef;
+  let addBlockMenuRef;
+  let addBlockButtonRef;
   let showModeLadder = false;
+  let showAddBlockMenu = false;
   let birthdayPassword = '';
 
   $: modeOptions = [
@@ -83,26 +82,6 @@
     if (compactUI) showMobileMenu = false;
   }
 
-  function signIn() {
-    dispatch("googleSignIn");
-    if (compactUI) showMobileMenu = true;
-  }
-
-  function signOut() {
-    dispatch("googleSignOut");
-    if (compactUI) showMobileMenu = true;
-  }
-
-  function uploadNow() {
-    dispatch("uploadNow");
-    if (compactUI) showMobileMenu = true;
-  }
-
-  function downloadNow() {
-    dispatch("downloadNow");
-    if (compactUI) showMobileMenu = true;
-  }
-
   function importJSON(event) {
     dispatch("importJSON", event);
     if (compactUI) showMobileMenu = false;
@@ -114,6 +93,10 @@
 
   function toggleModeMenu() {
     showModeLadder = !showModeLadder;
+  }
+
+  function toggleAddBlockMenu() {
+    showAddBlockMenu = !showAddBlockMenu;
   }
 
   function selectMode(nextMode) {
@@ -162,6 +145,15 @@
     ) {
       showModeLadder = false;
     }
+
+
+    if (
+      showAddBlockMenu &&
+      !addBlockMenuRef?.contains(event.target) &&
+      !addBlockButtonRef?.contains(event.target)
+    ) {
+      showAddBlockMenu = false;
+    }
   }
 
 
@@ -189,9 +181,17 @@ onMount(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex-grow: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
     color: var(--left-text-color, inherit);
+    scrollbar-width: thin;
+  }
+
+  .left-controls > * {
+    flex: 0 0 auto;
   }
 
   .left-controls button,
@@ -234,6 +234,35 @@ onMount(() => {
     border-color: rgba(127, 211, 255, 0.5);
   }
 
+
+  .add-block-menu {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .add-block-list {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 0;
+    min-width: 190px;
+    background: var(--left-panel-bg, #111111);
+    border: 1px solid var(--left-border-color, #333333);
+    border-radius: 10px;
+    padding: 6px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 1002;
+    box-shadow: 0 12px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .add-block-list button {
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+  }
+
   .birthday-unlock {
     display: flex;
     flex-direction: column;
@@ -268,6 +297,12 @@ onMount(() => {
     background: var(--left-input-bg, #1d1d1d);
     color: var(--left-text-color, #ffffff);
     padding: 6px 8px;
+  }
+
+  .left-controls small {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .compact-toggle-btn {
@@ -364,14 +399,28 @@ onMount(() => {
         </div>
       {/if}
     </div>
-    <button on:click={() => addBlock("text")}>+ Text</button>
-    <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
-    <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
-    <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
-    <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
-    {#if isTaskMode}
-      <button on:click={() => addBlock("task")}>+ Task List</button>
-    {/if}
+    <div class="add-block-menu">
+      <button
+        bind:this={addBlockButtonRef}
+        on:click={toggleAddBlockMenu}
+        aria-haspopup="listbox"
+        aria-expanded={showAddBlockMenu}
+      >
+        ➕ Add block
+      </button>
+      {#if showAddBlockMenu}
+        <div class="add-block-list" bind:this={addBlockMenuRef} role="listbox">
+          <button on:click={() => addBlock("text")}>+ Text</button>
+          <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
+          <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
+          <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
+          <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
+          {#if isTaskMode}
+            <button on:click={() => addBlock("task")}>+ Task List</button>
+          {/if}
+        </div>
+      {/if}
+    </div>
     <button
       on:click={moveUp}
       disabled={!focusedBlockId}
@@ -404,19 +453,5 @@ onMount(() => {
     <input bind:value={currentSaveName} placeholder="File name" />
     <button on:click={save}>💾 Save</button>
 
-    {#if firebaseReady}
-      {#if authUser}
-        <button on:click={signOut}>🚪 Sign Out</button>
-        <button on:click={uploadNow} disabled={uploadInProgress}>
-          {uploadInProgress ? "⏳ Uploading..." : "⤴ Upload to Cloud"}
-        </button>
-        <button on:click={downloadNow} disabled={downloadInProgress}>
-          {downloadInProgress ? "⏳ Downloading..." : "⤵ Download from Cloud"}
-        </button>
-        <small>Signed in as {authUser.displayName || authUser.email || authUser.uid}</small>
-      {:else}
-        <button on:click={signIn}>🔐 Sign in Google</button>
-      {/if}
-    {/if}
   </div>
 </div>

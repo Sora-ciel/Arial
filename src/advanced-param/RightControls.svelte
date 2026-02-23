@@ -5,6 +5,10 @@
   export let controlColors = {};
   export let themes = [];
   export let selectedThemeId = 'default-dark';
+  export let firebaseReady = false;
+  export let authUser = null;
+  export let uploadInProgress = false;
+  export let downloadInProgress = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -92,6 +96,22 @@
     if (!pc) {
       isOpen = false;
     }
+  }
+
+  function signIn() {
+    dispatch("googleSignIn");
+  }
+
+  function signOut() {
+    dispatch("googleSignOut");
+  }
+
+  function uploadNow() {
+    dispatch("uploadNow");
+  }
+
+  function downloadNow() {
+    dispatch("downloadNow");
   }
 
   function handleColorChange(event) {
@@ -294,6 +314,24 @@
             <p class="empty-state">No saved scenes yet.</p>
           {/if}
         </div>
+
+        {#if firebaseReady}
+          <div class="tab-section">
+            <h4>☁️ Cloud</h4>
+            {#if authUser}
+              <button class="create-theme-btn" type="button" on:click={uploadNow} disabled={uploadInProgress}>
+                {uploadInProgress ? "⏳ Uploading..." : "⤴ Upload to Cloud"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={downloadNow} disabled={downloadInProgress}>
+                {downloadInProgress ? "⏳ Downloading..." : "⤵ Download from Cloud"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={signOut}>🚪 Sign Out</button>
+              <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>
+            {:else}
+              <button class="create-theme-btn" type="button" on:click={signIn}>🔐 Sign in Google</button>
+            {/if}
+          </div>
+        {/if}
 
         <div class="tab-section">
           <h4>🧩 Style Presets</h4>

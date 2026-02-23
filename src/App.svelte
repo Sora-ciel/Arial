@@ -1424,10 +1424,6 @@
       {savedList}
       {focusedBlockId}
       colors={controlColors.left}
-      {firebaseReady}
-      {authUser}
-      {uploadInProgress}
-      {downloadInProgress}
       {birthdayModeUnlocked}
       {birthdayUnlockMessage}
       on:addBlock={(e) => addBlock(e.detail)}
@@ -1441,10 +1437,6 @@
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
       on:moveDown={moveFocusedBlockDown}
-      on:googleSignIn={signInGoogle}
-      on:googleSignOut={signOutGoogle}
-      on:uploadNow={uploadAllLocalToCloud}
-      on:downloadNow={downloadAllCloudToLocal}
     />
     <div class="right-controls">
       <RightControls
@@ -1454,6 +1446,14 @@
         {controlColors}
         themes={availableThemes}
         {selectedThemeId}
+        {firebaseReady}
+        {authUser}
+        {uploadInProgress}
+        {downloadInProgress}
+        on:googleSignIn={signInGoogle}
+        on:googleSignOut={signOutGoogle}
+        on:uploadNow={uploadAllLocalToCloud}
+        on:downloadNow={downloadAllCloudToLocal}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
