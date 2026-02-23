@@ -485,21 +485,27 @@
 
 <style>
   .piano-tiles-shell {
-    --mode-accent: var(--block-accent-color, #5a70ff);
-    --mode-accent-text: var(--block-accent-text, #ffffff);
-    --mode-border: var(--block-border-color, #2b365d);
+    --mode-bg: var(--bg, #0f0f10);
+    --mode-text: var(--text, #f7fbff);
+    --mode-accent: var(--mode-text);
+    --mode-accent-text: var(--mode-bg);
+    --mode-border: var(--block-border-color, color-mix(in srgb, var(--mode-text) 28%, transparent));
     --mode-radius: var(--block-border-radius, 14px);
     --mode-button-bg: var(--block-media-button-bg, #3045a0);
     --mode-button-text: var(--block-media-button-text, #ffffff);
-    --mode-panel-bg: var(--block-header-bg, linear-gradient(180deg, #17243f, #101a2e));
-    --mode-key-bg: color-mix(in srgb, var(--mode-accent) 32%, #0d1428);
-    --mode-key-pressed: color-mix(in srgb, var(--mode-accent) 62%, #0d1428);
-    --mode-note-bg: linear-gradient(180deg, color-mix(in srgb, var(--mode-accent) 34%, #161616), color-mix(in srgb, var(--mode-accent) 14%, #080808));
+    --mode-panel-bg: var(--block-header-bg, color-mix(in srgb, var(--mode-bg) 88%, var(--mode-text) 12%));
+    --mode-key-bg: color-mix(in srgb, var(--mode-accent) 32%, var(--mode-bg));
+    --mode-key-pressed: color-mix(in srgb, var(--mode-accent) 54%, var(--mode-bg));
+    --mode-note-bg: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--mode-accent) 34%, var(--mode-bg)),
+      color-mix(in srgb, var(--mode-accent) 14%, var(--mode-bg))
+    );
     width: 100%;
     min-height: calc(100vh - 120px);
     padding: 20px;
-    color: #f7fbff;
-    background: radial-gradient(circle at top, #1d1f30, #0b0d18 65%);
+    color: var(--mode-text);
+    background: var(--mode-bg);
     box-sizing: border-box;
     display: flex;
     flex-direction: column;
@@ -509,7 +515,12 @@
   }
 
   .piano-tiles-shell.won-mode {
-    background-image: linear-gradient(rgba(10, 8, 20, 0.18), rgba(10, 8, 20, 0.18)), var(--birthday-win-bg);
+    background-image:
+      linear-gradient(
+        color-mix(in srgb, var(--mode-bg) 16%, transparent),
+        color-mix(in srgb, var(--mode-bg) 16%, transparent)
+      ),
+      var(--birthday-win-bg);
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -542,7 +553,7 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     border: 2px solid var(--mode-border);
-    background: #fcfcff;
+    background: color-mix(in srgb, var(--mode-bg) 80%, var(--mode-text) 20%);
   }
 
   .lane {
@@ -590,9 +601,13 @@
   }
 
   .note.missed {
-    background: linear-gradient(180deg, #ff6b6b, #b01334);
-    box-shadow: 0 0 18px rgba(255, 67, 67, 0.6), inset 0 -8px 0 rgba(255, 255, 255, 0.16);
-    border: 1px solid #ffd8df;
+    background: linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--mode-accent) 80%, var(--mode-bg)),
+      color-mix(in srgb, var(--mode-accent) 40%, var(--mode-bg))
+    );
+    box-shadow: 0 0 16px color-mix(in srgb, var(--mode-accent) 50%, transparent), inset 0 -8px 0 rgba(255, 255, 255, 0.16);
+    border: 1px solid color-mix(in srgb, var(--mode-accent) 52%, var(--mode-bg));
     animation: missPulse 0.2s ease;
   }
 
