@@ -141,6 +141,8 @@
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
+  const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
+  const FALLBACK_SAVE_NAME = 'Fallback';
 
   function loadStoredCustomThemes() {
     if (typeof localStorage === 'undefined') return [];
@@ -209,6 +211,65 @@
       }
     } catch (error) {
       /* ignore persistence failures */
+    }
+  }
+
+  function loadBootLoadGuard() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(BOOT_LOAD_GUARD_STORAGE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return null;
+      const pendingSaveName = typeof parsed.pendingSaveName === 'string'
+        ? parsed.pendingSaveName
+        : '';
+      const startedAt = Number(parsed.startedAt);
+      if (!pendingSaveName || !Number.isFinite(startedAt)) return null;
+      return { pendingSaveName, startedAt };
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function startBootLoadGuard(pendingSaveName) {
+    if (typeof localStorage === 'undefined' || !pendingSaveName) return;
+    try {
+      localStorage.setItem(
+        BOOT_LOAD_GUARD_STORAGE_KEY,
+        JSON.stringify({ pendingSaveName, startedAt: Date.now() })
+      );
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  function clearBootLoadGuard() {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.removeItem(BOOT_LOAD_GUARD_STORAGE_KEY);
+    } catch (error) {
+      /* ignore persistence failures */
+    }
+  }
+
+  async function openFallbackSave(reason = '') {
+    const fallbackPayload = { blocks: [], modeOrders: {} };
+    await saveBlocks(FALLBACK_SAVE_NAME, fallbackPayload);
+
+    currentSaveName = FALLBACK_SAVE_NAME;
+    persistLastSaveName(FALLBACK_SAVE_NAME);
+    blocks = [];
+    focusedBlockId = null;
+    modeOrders = ensureModeOrders(blocks, {});
+    savedList = await listSavedBlocks();
+
+    history = [];
+    historyIndex = -1;
+    await pushHistory(blocks, modeOrders);
+
+    if (reason) {
+      alert(`Opened ${FALLBACK_SAVE_NAME} because "${reason}" could not be loaded.`);
     }
   }
 
@@ -963,26 +1024,37 @@
     currentSaveName = "";
     focusedBlockId = null;
     await tick();
-    currentSaveName = name;
-    persistLastSaveName(name);
-    const loaded = await loadBlocks(name);
-    const loadedBlocks = Array.isArray(loaded)
-      ? loaded
-      : Array.isArray(loaded?.blocks)
-      ? loaded.blocks
-      : [];
-    const loadedOrders = !Array.isArray(loaded)
-      ? loaded?.modeOrders
-      : {};
-    blocks = loadedBlocks.map(b => ({
-      ...applyHistoryTriggers(b),
-      _version: 0
-    }));
-    modeOrders = ensureModeOrders(blocks, loadedOrders);
 
-    history = [];
-    historyIndex = -1;
-    await pushHistory(blocks, modeOrders);
+    startBootLoadGuard(name);
+
+    try {
+      const loaded = await loadBlocks(name);
+      const loadedBlocks = Array.isArray(loaded)
+        ? loaded
+        : Array.isArray(loaded?.blocks)
+        ? loaded.blocks
+        : [];
+      const loadedOrders = !Array.isArray(loaded)
+        ? loaded?.modeOrders
+        : {};
+
+      currentSaveName = name;
+      persistLastSaveName(name);
+      blocks = loadedBlocks.map(b => ({
+        ...applyHistoryTriggers(b),
+        _version: 0
+      }));
+      modeOrders = ensureModeOrders(blocks, loadedOrders);
+
+      history = [];
+      historyIndex = -1;
+      await pushHistory(blocks, modeOrders);
+      clearBootLoadGuard();
+    } catch (error) {
+      console.error('Failed to load save file:', error);
+      clearBootLoadGuard();
+      await openFallbackSave(name);
+    }
   }
 
   async function deleteSave(name) {
@@ -1295,20 +1367,37 @@
       currentSaveName = savedList[0];
     }
 
-    const initialData = await loadBlocks(currentSaveName);
-    const initialBlocks = Array.isArray(initialData)
-      ? initialData
-      : Array.isArray(initialData?.blocks)
-      ? initialData.blocks
-      : [];
-    const initialOrders = !Array.isArray(initialData)
-      ? initialData?.modeOrders
-      : {};
-    blocks = initialBlocks.map(b => ({
-      ...applyHistoryTriggers(b),
-      _version: 0
-    }));
-    modeOrders = ensureModeOrders(blocks, initialOrders);
+    const guardedSave = currentSaveName || FALLBACK_SAVE_NAME;
+    const bootGuard = loadBootLoadGuard();
+
+    if (bootGuard?.pendingSaveName === guardedSave) {
+      clearBootLoadGuard();
+      await openFallbackSave(guardedSave);
+    } else {
+      startBootLoadGuard(guardedSave);
+      try {
+        const initialData = await loadBlocks(guardedSave);
+        const initialBlocks = Array.isArray(initialData)
+          ? initialData
+          : Array.isArray(initialData?.blocks)
+          ? initialData.blocks
+          : [];
+        const initialOrders = !Array.isArray(initialData)
+          ? initialData?.modeOrders
+          : {};
+        currentSaveName = guardedSave;
+        blocks = initialBlocks.map(b => ({
+          ...applyHistoryTriggers(b),
+          _version: 0
+        }));
+        modeOrders = ensureModeOrders(blocks, initialOrders);
+        clearBootLoadGuard();
+      } catch (error) {
+        console.error('Failed to load last opened save:', error);
+        clearBootLoadGuard();
+        await openFallbackSave(guardedSave);
+      }
+    }
     if (birthdayUnlockExpiry <= Date.now()) {
       birthdayUnlockExpiry = 0;
       persistBirthdayUnlockExpiry(0);
