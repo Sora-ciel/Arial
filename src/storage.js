@@ -26,6 +26,7 @@ function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
   };
 }
 
+
 export async function getDB() {
   return await openDB(DB_NAME, 1, {
     upgrade(db) {
@@ -58,3 +59,4 @@ export async function listSavedBlocks() {
   const keys = await db.getAllKeys(STORE_NAME);
   return keys.map(String);
 }
+

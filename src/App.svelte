@@ -226,7 +226,8 @@
         : '';
       const startedAt = Number(parsed.startedAt);
       if (!pendingSaveName || !Number.isFinite(startedAt)) return null;
-      return { pendingSaveName, startedAt };
+      const openingLastFile = parsed.openingLastFile === true;
+      return { pendingSaveName, startedAt, openingLastFile };
     } catch (error) {
       return null;
     }
@@ -237,7 +238,7 @@
     try {
       localStorage.setItem(
         BOOT_LOAD_GUARD_STORAGE_KEY,
-        JSON.stringify({ pendingSaveName, startedAt: Date.now() })
+        JSON.stringify({ pendingSaveName, startedAt: Date.now(), openingLastFile: true })
       );
     } catch (error) {
       /* ignore persistence failures */
@@ -251,6 +252,31 @@
     } catch (error) {
       /* ignore persistence failures */
     }
+  }
+
+
+  function detectShiftSafeModeDuringStartup(waitMs = 700) {
+    if (typeof window === 'undefined') return Promise.resolve(false);
+
+    return new Promise(resolve => {
+      let resolved = false;
+
+      const finish = value => {
+        if (resolved) return;
+        resolved = true;
+        window.removeEventListener('keydown', onKeyDown);
+        resolve(value);
+      };
+
+      const onKeyDown = event => {
+        if (event.key === 'Shift') {
+          finish(true);
+        }
+      };
+
+      window.addEventListener('keydown', onKeyDown);
+      setTimeout(() => finish(false), waitMs);
+    });
   }
 
   async function openFallbackSave(reason = '') {
@@ -761,6 +787,8 @@
   let Pc = window.innerWidth > 1024;
   let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
   let birthdayUnlockMessage = "";
+  let deferredLastSaveName = '';
+  let deferredLastSaveReason = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -1055,6 +1083,15 @@
       clearBootLoadGuard();
       await openFallbackSave(name);
     }
+  }
+
+  async function openDeferredLastSave() {
+    const name = deferredLastSaveName;
+    if (!name) return;
+
+    deferredLastSaveName = '';
+    deferredLastSaveReason = '';
+    await load(name);
   }
 
   async function deleteSave(name) {
@@ -1361,41 +1398,61 @@
 
     savedList = await listSavedBlocks();
     const storedLastSave = loadStoredLastSaveName();
-    if (storedLastSave && savedList.includes(storedLastSave)) {
-      currentSaveName = storedLastSave;
-    } else if (!currentSaveName && savedList.length) {
-      currentSaveName = savedList[0];
-    }
+    const safeModeFromShift = await detectShiftSafeModeDuringStartup();
+    const safeModeActive = safeModeFromShift;
+    let shouldClearLastSavePointer = false;
 
-    const guardedSave = currentSaveName || FALLBACK_SAVE_NAME;
-    const bootGuard = loadBootLoadGuard();
-
-    if (bootGuard?.pendingSaveName === guardedSave) {
+    if (safeModeActive) {
+      deferredLastSaveName = storedLastSave || '';
+      deferredLastSaveReason = 'Safe mode: Shift key held on launch.';
+      shouldClearLastSavePointer = true;
+      persistLastSaveName('');
       clearBootLoadGuard();
-      await openFallbackSave(guardedSave);
+      currentSaveName = FALLBACK_SAVE_NAME;
+      blocks = [];
+      modeOrders = ensureModeOrders(blocks, {});
     } else {
-      startBootLoadGuard(guardedSave);
-      try {
-        const initialData = await loadBlocks(guardedSave);
-        const initialBlocks = Array.isArray(initialData)
-          ? initialData
-          : Array.isArray(initialData?.blocks)
-          ? initialData.blocks
-          : [];
-        const initialOrders = !Array.isArray(initialData)
-          ? initialData?.modeOrders
-          : {};
-        currentSaveName = guardedSave;
-        blocks = initialBlocks.map(b => ({
-          ...applyHistoryTriggers(b),
-          _version: 0
-        }));
-        modeOrders = ensureModeOrders(blocks, initialOrders);
+      if (storedLastSave && savedList.includes(storedLastSave)) {
+        currentSaveName = storedLastSave;
+      } else if (!currentSaveName && savedList.length) {
+        currentSaveName = savedList[0];
+      }
+
+      const guardedSave = currentSaveName || FALLBACK_SAVE_NAME;
+      const bootGuard = loadBootLoadGuard();
+
+      if (bootGuard?.openingLastFile === true) {
         clearBootLoadGuard();
-      } catch (error) {
-        console.error('Failed to load last opened save:', error);
-        clearBootLoadGuard();
-        await openFallbackSave(guardedSave);
+        deferredLastSaveName = bootGuard.pendingSaveName || guardedSave;
+        deferredLastSaveReason =
+          'Recovered from a previous startup crash while opening the last file.';
+        currentSaveName = FALLBACK_SAVE_NAME;
+        blocks = [];
+        modeOrders = ensureModeOrders(blocks, {});
+      } else {
+        startBootLoadGuard(guardedSave);
+        try {
+          const initialData = await loadBlocks(guardedSave);
+          const initialBlocks = Array.isArray(initialData)
+            ? initialData
+            : Array.isArray(initialData?.blocks)
+            ? initialData.blocks
+            : [];
+          const initialOrders = !Array.isArray(initialData)
+            ? initialData?.modeOrders
+            : {};
+          currentSaveName = guardedSave;
+          blocks = initialBlocks.map(b => ({
+            ...applyHistoryTriggers(b),
+            _version: 0
+          }));
+          modeOrders = ensureModeOrders(blocks, initialOrders);
+          clearBootLoadGuard();
+        } catch (error) {
+          console.error('Failed to load last opened save:', error);
+          clearBootLoadGuard();
+          await openFallbackSave(guardedSave);
+        }
       }
     }
     if (birthdayUnlockExpiry <= Date.now()) {
@@ -1407,7 +1464,13 @@
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
-    persistLastSaveName(currentSaveName);
+    if (shouldClearLastSavePointer) {
+      persistLastSaveName('');
+    } else if (deferredLastSaveName) {
+      persistLastSaveName(deferredLastSaveName);
+    } else {
+      persistLastSaveName(currentSaveName);
+    }
   });
 
   onDestroy(() => {
@@ -1474,6 +1537,30 @@
   padding: 8px 10px;
   background: var(--controls-bg, #111);
   border-bottom: 1px solid var(--controls-border, #333);
+}
+
+.startup-warning {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: #322300;
+  color: #ffe6a3;
+  border-bottom: 1px solid #6f4f00;
+}
+
+.startup-warning button {
+  background: #ad7a00;
+  border: none;
+  color: #1e1500;
+  font-weight: 600;
+  padding: 6px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.startup-warning button:hover {
+  filter: brightness(1.08);
 }
 
 .modes {
@@ -1550,6 +1637,15 @@
       />
     </div>
   </div>
+
+  {#if deferredLastSaveName}
+    <div class="startup-warning">
+      <span>{deferredLastSaveReason || `Skipped auto-open for ${deferredLastSaveName}.`}</span>
+      <button on:click={openDeferredLastSave}>
+        Click to open last file
+      </button>
+    </div>
+  {/if}
 
   <div class="modes">
     {#key blocksKey}
