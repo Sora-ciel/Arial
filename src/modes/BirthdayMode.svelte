@@ -485,6 +485,16 @@
 
 <style>
   .piano-tiles-shell {
+    --mode-accent: var(--block-accent-color, #5a70ff);
+    --mode-accent-text: var(--block-accent-text, #ffffff);
+    --mode-border: var(--block-border-color, #2b365d);
+    --mode-radius: var(--block-border-radius, 14px);
+    --mode-button-bg: var(--block-media-button-bg, #3045a0);
+    --mode-button-text: var(--block-media-button-text, #ffffff);
+    --mode-panel-bg: var(--block-header-bg, linear-gradient(180deg, #17243f, #101a2e));
+    --mode-key-bg: color-mix(in srgb, var(--mode-accent) 32%, #0d1428);
+    --mode-key-pressed: color-mix(in srgb, var(--mode-accent) 62%, #0d1428);
+    --mode-note-bg: linear-gradient(180deg, color-mix(in srgb, var(--mode-accent) 34%, #161616), color-mix(in srgb, var(--mode-accent) 14%, #080808));
     width: 100%;
     min-height: calc(100vh - 120px);
     padding: 20px;
@@ -499,7 +509,7 @@
   }
 
   .piano-tiles-shell.won-mode {
-    background-image: linear-gradient(rgba(10, 8, 20, 0.34), rgba(10, 8, 20, 0.34)), var(--birthday-win-bg);
+    background-image: linear-gradient(rgba(10, 8, 20, 0.18), rgba(10, 8, 20, 0.18)), var(--birthday-win-bg);
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -527,16 +537,16 @@
     z-index: 2;
     width: min(100%, 760px);
     height: clamp(420px, 62vh, 700px);
-    border-radius: 14px;
+    border-radius: var(--mode-radius);
     overflow: hidden;
     display: grid;
     grid-template-columns: repeat(4, 1fr);
-    border: 2px solid #2b365d;
+    border: 2px solid var(--mode-border);
     background: #fcfcff;
   }
 
   .lane {
-    border-right: 1px solid #dbe1ff;
+    border-right: 1px solid color-mix(in srgb, var(--mode-border) 50%, #dbe1ff);
     position: relative;
   }
 
@@ -552,19 +562,19 @@
     width: 46px;
     height: 46px;
     border-radius: 10px;
-    background: #202843;
-    color: #fff;
+    background: var(--mode-key-bg);
+    color: var(--mode-accent-text);
     display: flex;
     align-items: center;
     justify-content: center;
     font-weight: 800;
-    border: 2px solid #5e74d0;
+    border: 2px solid var(--mode-accent);
     transition: transform 0.08s ease, background 0.08s ease;
   }
 
   .lane-key.pressed {
     transform: translateX(-50%) scale(0.94);
-    background: #3d53ad;
+    background: var(--mode-key-pressed);
   }
 
   .note {
@@ -572,7 +582,7 @@
     width: calc(25% - 10px);
     min-height: 104px;
     border-radius: 8px;
-    background: linear-gradient(180deg, #212121, #0d0d0d);
+    background: var(--mode-note-bg);
     box-shadow: inset 0 -8px 0 rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
@@ -592,8 +602,8 @@
     right: 0;
     bottom: 120px;
     height: 4px;
-    background: #5a70ff;
-    box-shadow: 0 0 10px rgba(90, 112, 255, 0.8);
+    background: var(--mode-accent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--mode-accent) 75%, transparent);
   }
 
   .win-screen,
@@ -601,10 +611,10 @@
     z-index: 2;
     margin-top: 18px;
     width: min(100%, 760px);
-    border-radius: 14px;
+    border-radius: var(--mode-radius);
     padding: 20px;
-    background: linear-gradient(180deg, #17243f, #101a2e);
-    border: 1px solid #4f74c5;
+    background: var(--mode-panel-bg);
+    border: 1px solid var(--mode-border);
     position: relative;
     overflow: hidden;
   }
@@ -644,9 +654,9 @@
   }
 
   button {
-    border: 1px solid #7f9cff;
-    background: #3045a0;
-    color: #ffffff;
+    border: 1px solid var(--mode-border);
+    background: var(--mode-button-bg);
+    color: var(--mode-button-text);
     border-radius: 8px;
     padding: 8px 14px;
     cursor: pointer;
