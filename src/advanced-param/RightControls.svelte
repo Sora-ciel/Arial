@@ -307,7 +307,7 @@
 
 <div class="right-controls" style={rightCssVars} bind:this={rightControlsRef}>
   <details bind:open={isOpen}>
-    <summary>⚙️ Parameters</summary>
+    <summary>⚙️ Settings</summary>
 
     <div class="dropdown-content">
       <div class="controls-scroll">

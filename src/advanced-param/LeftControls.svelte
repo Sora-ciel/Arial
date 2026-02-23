@@ -320,15 +320,12 @@ onMount(() => {
       display: flex;
     }
     .compact-toggle-btn {
-      display: inline-block;
-      position: fixed;
-      top: 29px;
-      left: 10px;
-      z-index: 1000;
+      display: inline-flex;
     }
 
     .mobile-quick-actions {
       display: inline-flex;
+      left: 10px;
     }
 
     .mobile-only {
@@ -340,15 +337,16 @@ onMount(() => {
 <div class="left-controls-wrapper" style={leftCssVars}>
   <!-- Toggle button for <= 1024px -->
   {#if compactUI}
-    <button
+
+
+    <div class="mobile-quick-actions" bind:this={mobileQuickActionsRef}>
+        <button
       class="compact-toggle-btn"
       bind:this={toggleRef}
       on:click={() => (showMobileMenu = !showMobileMenu)}
     >
       {showMobileMenu ? "✖ Close" : "☰ Menu"}
-    </button>
-
-    <div class="mobile-quick-actions" bind:this={mobileQuickActionsRef}>
+      </button>
       <div class="mode-switcher">
         <button
           bind:this={modeButtonRef}
