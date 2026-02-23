@@ -26,6 +26,14 @@ function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
   };
 }
 
+function estimatePayloadSizeBytes(payload) {
+  try {
+    return new Blob([JSON.stringify(payload)]).size;
+  } catch (error) {
+    return 0;
+  }
+}
+
 export async function getDB() {
   return await openDB(DB_NAME, 1, {
     upgrade(db) {
@@ -38,6 +46,7 @@ export async function getDB() {
 
 export async function saveBlocks(name, blocks) {
   const payload = asPayloadWithTimestamp(blocks, Date.now());
+  payload.sizeBytes = estimatePayloadSizeBytes(payload);
   const db = await getDB();
   await db.put(STORE_NAME, payload, name);
 }
@@ -57,4 +66,18 @@ export async function listSavedBlocks() {
   const db = await getDB();
   const keys = await db.getAllKeys(STORE_NAME);
   return keys.map(String);
+}
+
+export async function getSavedBlocksMeta(name) {
+  const db = await getDB();
+  const payload = await db.get(STORE_NAME, name);
+
+  if (!payload || typeof payload !== 'object') {
+    return null;
+  }
+
+  return {
+    updatedAt: Number(payload.updatedAt) || 0,
+    sizeBytes: Number(payload.sizeBytes) || estimatePayloadSizeBytes(payload)
+  };
 }
