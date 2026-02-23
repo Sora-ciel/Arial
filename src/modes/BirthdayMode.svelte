@@ -56,7 +56,7 @@
   let active = false;
   let gameOver = false;
   let won = false;
-  let statusText = 'Appuie sur Espace pour commencer, puis joue le rythme exact de Joyeux anniversaire.';
+  let statusText = 'Appuie sur Espace pour commencer, puis joue le piano avec les touches D,F,J,K ';
   let score = 0;
   let nextNoteIndex = 0;
   let frameId;
@@ -283,7 +283,7 @@
     if (score === melody.length && notes.length === 0 && nextNoteIndex >= melody.length) {
       won = true;
       active = false;
-      statusText = "🎉 Parfait ! Tout est prêt pour l'anniversaire de papa demain. Appuie sur Espace pour rejouer.";
+      statusText = "🎉 Joyeux anniversaire en retard papa !!! XD";
       clearTimeout(spawnTimeout);
       cancelAnimationFrame(frameId);
     }
@@ -424,7 +424,7 @@
 </script>
 
 <div class="piano-tiles-shell" class:won-mode={won} style={won ? `--birthday-win-bg: url(${birthdayWinBgDataUri})` : ""}>
-  <h2 class="mode-title">🎹 Piano Tiles Anniversaire (PC)</h2>
+  <h2 class="mode-title">🎹 De quelle chanson pourrait-il s'agir ?</h2>
   <p class="mode-status">{statusText}</p>
 
 
