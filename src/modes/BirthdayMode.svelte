@@ -49,7 +49,7 @@
   const noteSpeed = 260;
   const noteHeight = 84;
   const hitLineOffset = 120;
-  const hitWindow = 56;
+  const hitWindow = noteHeight;
 
   let notes = [];
   let active = false;
