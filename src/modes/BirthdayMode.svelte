@@ -283,7 +283,7 @@
     if (score === melody.length && notes.length === 0 && nextNoteIndex >= melody.length) {
       won = true;
       active = false;
-      statusText = "🎉 Joyeux anniversaire en retard papa !!! XD";
+      statusText = " ";
       clearTimeout(spawnTimeout);
       cancelAnimationFrame(frameId);
     }
@@ -436,7 +436,7 @@
         {/each}
       </div>
       <h3>TU AS GAGNÉ ! 🎉</h3>
-      <p>Joyeux anniversaire papa!!! 🎂💛</p>
+      <p>Joyeux anniversaire en retard papa!!! :D🎂💛</p>
       <button on:click={restart}>Rejouer (Espace)</button>
     </div>
   {:else}
