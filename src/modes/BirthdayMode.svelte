@@ -1,6 +1,14 @@
 <script>
   import { onMount, onDestroy } from 'svelte';
 
+  const lanes = ['D', 'F', 'J', 'K'];
+  const keyToLane = {
+    KeyD: 0,
+    KeyF: 1,
+    KeyJ: 2,
+    KeyK: 3
+  };
+
   const melody = [
     'G4', 'G4', 'A4', 'G4', 'C5', 'B4',
     'G4', 'G4', 'A4', 'G4', 'D5', 'C5',
@@ -15,29 +23,12 @@
     1, 1, 2, 2, 2, 4
   ];
 
-  const beatGap = 0.5;
-  const slotWidthInBeats = 0.12;
-  const hitWindow = 1.26;
-  const beatsPerSecond = 6.5;
-
-  let slots = [];
-  let statusText = 'Press Space on the beat';
-  let activeBeat = 0;
-  let totalBeats = 0;
-  let timerId;
-  let startTime = 0;
-  let correctCount = 0;
-  let gameCompleted = false;
-  let showFinishEffect = false;
-  let audioContext;
-  let reverbConvolver;
-  let dryBus;
-  let wetBus;
-  let masterBus;
-  let toneFilter;
-  let toneCompressor;
-  let audioUnlocked = false;
-  let lastMetronomeBeat = -1;
+  const lanePattern = [
+    0, 1, 2, 1, 3, 2,
+    0, 1, 2, 1, 3, 2,
+    0, 1, 3, 2, 1, 2, 3,
+    0, 1, 2, 1, 3, 2
+  ];
 
   const pitchToHz = {
     C4: 261.63,
@@ -54,89 +45,36 @@
     G5: 783.99
   };
 
-  const accompanimentChords = [
-    ['G4', 'B4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['D4', 'A4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['C4', 'G4', 'E5'],
-    ['G4', 'B4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['D4', 'A4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['D4', 'A4', 'F5'],
-    ['C4', 'G4', 'E5'],
-    ['G4', 'B4', 'D5'],
-    ['G4', 'B4', 'D5'],
-    ['E4', 'B4', 'G5'],
-    ['C4', 'G4', 'E5'],
-    ['C4', 'G4', 'E5'],
-    ['G4', 'B4', 'D5'],
-    ['D4', 'A4', 'D5'],
-    ['D4', 'A4', 'F5'],
-    ['D4', 'A4', 'F5'],
-    ['C4', 'G4', 'E5'],
-    ['C4', 'G4', 'E5'],
-    ['D4', 'A4', 'D5'],
-    ['C4', 'G4', 'E5']
-  ];
+  const beatMs = 260;
+  const noteSpeed = 260;
+  const baseNoteHeight = 104;
+  const extraHeightPerBeat = 48;
+  const hitLineOffset = 120;
 
-  function buildSlots() {
-    let cursor = 2;
-    slots = melody.map((pitch, index) => {
-      const duration = rhythm[index];
-      const atBeat = cursor;
-      cursor += duration + beatGap;
-      return {
-        index,
-        pitch,
-        duration,
-        atBeat,
-        state: 'pending',
-        played: false
-      };
-    });
+  let notes = [];
+  let active = false;
+  let gameOver = false;
+  let won = false;
+  let statusText = 'Press Start, then hit D F J K in Happy Birthday rhythm.';
+  let score = 0;
+  let nextNoteIndex = 0;
+  let frameId;
+  let spawnTimeout;
+  let gameAreaEl;
+  let lanePressed = [false, false, false, false];
 
-    totalBeats = cursor + 1;
+  let audioContext;
+  let dryBus;
+  let wetBus;
+  let masterBus;
+  let reverb;
+  let filter;
+
+  function areaHeight() {
+    return gameAreaEl?.clientHeight || 640;
   }
 
-  function resetLoop(now = performance.now()) {
-    startTime = now;
-    activeBeat = 0;
-    lastMetronomeBeat = -1;
-    slots = slots.map(slot => {
-      if (slot.state === 'confirmed') {
-        return { ...slot, played: false };
-      }
-      return {
-        ...slot,
-        state: gameCompleted ? slot.state : 'pending',
-        played: false
-      };
-    });
-  }
-
-  function rarityOrder() {
-    const freq = new Map();
-    for (const note of melody) {
-      freq.set(note, (freq.get(note) || 0) + 1);
-    }
-
-    return [...slots]
-      .sort((a, b) => {
-        const freqDiff = (freq.get(a.pitch) || 0) - (freq.get(b.pitch) || 0);
-        if (freqDiff !== 0) return freqDiff;
-        return a.index - b.index;
-      })
-      .map(slot => slot.index);
-  }
-
-  $: revealOrder = rarityOrder();
-  $: revealedIndices = new Set(revealOrder.slice(0, correctCount));
-
-
-  function createReverbImpulse(ctx, duration = 1.25, decay = 2.1) {
+  function createImpulse(ctx, duration = 1.9, decay = 2.8) {
     const length = Math.floor(ctx.sampleRate * duration);
     const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
 
@@ -147,400 +85,432 @@
         data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
       }
     }
-
     return impulse;
   }
 
-  function ensureAudioContext() {
+  function ensureAudio() {
     if (!audioContext) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return null;
-      audioContext = new Ctx();
 
-      masterBus = audioContext.createGain();
+      audioContext = new Ctx();
       dryBus = audioContext.createGain();
       wetBus = audioContext.createGain();
-      reverbConvolver = audioContext.createConvolver();
-      toneFilter = audioContext.createBiquadFilter();
-      toneCompressor = audioContext.createDynamicsCompressor();
+      masterBus = audioContext.createGain();
+      reverb = audioContext.createConvolver();
+      filter = audioContext.createBiquadFilter();
 
-      reverbConvolver.buffer = createReverbImpulse(audioContext);
+      reverb.buffer = createImpulse(audioContext);
+      dryBus.gain.value = 0.82;
+      wetBus.gain.value = 0.34;
+      masterBus.gain.value = 0.9;
+      filter.type = 'lowpass';
+      filter.frequency.value = 5600;
+      filter.Q.value = 0.8;
 
-      toneFilter.type = 'lowpass';
-      toneFilter.frequency.value = 4200;
-      toneFilter.Q.value = 0.8;
-
-      toneCompressor.threshold.value = -20;
-      toneCompressor.knee.value = 12;
-      toneCompressor.ratio.value = 3.2;
-      toneCompressor.attack.value = 0.004;
-      toneCompressor.release.value = 0.2;
-
-      dryBus.gain.value = 0.78;
-      wetBus.gain.value = 0.32;
-      masterBus.gain.value = 0.86;
-
-      dryBus.connect(toneFilter);
-      wetBus.connect(reverbConvolver);
-      reverbConvolver.connect(toneFilter);
-      toneFilter.connect(toneCompressor);
-      toneCompressor.connect(masterBus);
+      dryBus.connect(filter);
+      wetBus.connect(reverb);
+      reverb.connect(filter);
+      filter.connect(masterBus);
       masterBus.connect(audioContext.destination);
     }
+
     if (audioContext.state === 'suspended') {
       audioContext.resume().catch(() => {});
     }
+
     return audioContext;
   }
 
-  function playVoice(ctx, frequency, {
-    wave = 'triangle',
-    peak = 0.075,
-    attack = 0.01,
-    sustain = 0.22,
-    release = 0.34,
-    detune = 0
-  } = {}) {
-    const oscillator = ctx.createOscillator();
-    const gain = ctx.createGain();
-    const now = ctx.currentTime;
-
-    oscillator.type = wave;
-    oscillator.frequency.setValueAtTime(frequency, now);
-    oscillator.detune.setValueAtTime(detune, now);
-
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(peak, now + attack);
-    gain.gain.exponentialRampToValueAtTime(Math.max(0.0001, peak * sustain), now + release * 0.45);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + release);
-
-    oscillator.connect(gain);
-    gain.connect(dryBus || ctx.destination);
-    gain.connect(wetBus || ctx.destination);
-    oscillator.start(now);
-    oscillator.stop(now + release + 0.02);
-  }
-
-
-  function playMetronome() {
-    const ctx = ensureAudioContext();
+  function playPitchTone(pitch) {
+    const ctx = ensureAudio();
     if (!ctx) return;
 
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
     const now = ctx.currentTime;
+    const frequency = pitchToHz[pitch] || 440;
 
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(880, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.0055, now + 0.006);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.045);
+    const body = ctx.createOscillator();
+    const bodyGain = ctx.createGain();
+    body.type = 'triangle';
+    body.frequency.setValueAtTime(frequency, now);
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.095, now + 0.012);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.055);
+    const hammer = ctx.createOscillator();
+    const hammerGain = ctx.createGain();
+    hammer.type = 'square';
+    hammer.frequency.setValueAtTime(frequency * 2, now);
+    hammerGain.gain.setValueAtTime(0.0001, now);
+    hammerGain.gain.exponentialRampToValueAtTime(0.026, now + 0.005);
+    hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+
+    body.connect(bodyGain);
+    hammer.connect(hammerGain);
+    bodyGain.connect(dryBus);
+    bodyGain.connect(wetBus);
+    hammerGain.connect(dryBus);
+    hammerGain.connect(wetBus);
+
+    body.start(now);
+    hammer.start(now);
+    hammer.stop(now + 0.08);
+    body.stop(now + 0.66);
   }
 
-  function playBellAccent(ctx, frequency, confirmed) {
-    const gain = confirmed ? 0.05 : 0.02;
-    playVoice(ctx, frequency * 2, {
-      wave: 'triangle',
-      peak: gain,
-      attack: 0.004,
-      sustain: 0.1,
-      release: 0.20,
-      detune: 4
-    });
+  function noteHeightFor(duration) {
+    return baseNoteHeight + Math.max(0, duration - 1) * extraHeightPerBeat;
   }
 
-  function playTone(pitch, index, { confirmed = false } = {}) {
-    const ctx = ensureAudioContext();
-    if (!ctx) return;
+  function scheduleNextSpawn() {
+    if (!active || gameOver || won || nextNoteIndex >= melody.length) return;
 
-    const melodyFrequency = pitchToHz[pitch] || 440;
-    const chord = accompanimentChords[index] || [];
+    const delay = Math.max(120, rhythm[nextNoteIndex] * beatMs);
+    spawnTimeout = setTimeout(() => {
+      addNote();
+      scheduleNextSpawn();
+    }, delay);
+  }
 
-    const melodyPeak = confirmed ? 0.16 : 0.06;
+  function addNote() {
+    if (nextNoteIndex >= melody.length) return;
 
-    playVoice(ctx, melodyFrequency, {
-      wave: confirmed ? 'triangle' : 'sine',
-      peak: melodyPeak,
-      release: 0.42
-    });
+    const duration = rhythm[nextNoteIndex] || 1;
 
-    playVoice(ctx, melodyFrequency * 0.5, {
-      wave: 'sine',
-      peak: confirmed ? 0.05 : 0.022,
-      release: 0.38
-    });
+    notes = [
+      ...notes,
+      {
+        id: `note-${nextNoteIndex}-${Date.now()}`,
+        lane: lanePattern[nextNoteIndex] ?? (nextNoteIndex % lanes.length),
+        pitch: melody[nextNoteIndex],
+        duration,
+        height: noteHeightFor(duration),
+        y: -noteHeightFor(duration),
+        hit: false
+      }
+    ];
+    nextNoteIndex += 1;
+  }
 
-    playBellAccent(ctx, melodyFrequency, confirmed);
+  function fail(message) {
+    if (won || gameOver) return;
+    gameOver = true;
+    active = false;
+    statusText = message;
+    clearTimeout(spawnTimeout);
+    cancelAnimationFrame(frameId);
+  }
 
-    for (const note of chord) {
-      const freq = pitchToHz[note];
-      if (!freq) continue;
-      playVoice(ctx, freq, {
-        wave: 'sawtooth',
-        peak: confirmed ? 0.032 : 0.012,
-        release: 0.34,
-        detune: (Math.random() - 0.5) * 5
-      });
+  function checkWin() {
+    if (score === melody.length && notes.length === 0 && nextNoteIndex >= melody.length) {
+      won = true;
+      active = false;
+      statusText = '🎉 Perfect run! Happy Birthday complete!';
+      clearTimeout(spawnTimeout);
+      cancelAnimationFrame(frameId);
     }
+  }
+
+  function tick() {
+    if (!active) return;
+
+    const h = areaHeight();
+    notes = notes
+      .map(note => ({ ...note, y: note.y + (noteSpeed / 60) }))
+      .filter(note => {
+        const tileBottom = note.y + note.height;
+        const hitWindow = note.height;
+        if (!note.hit && tileBottom >= h - hitLineOffset + hitWindow) {
+          fail('Missed tile! Restart and try again.');
+          return false;
+        }
+        return note.y <= h + note.height;
+      })
+      .filter(note => !note.hit);
+
+    checkWin();
+    frameId = requestAnimationFrame(tick);
+  }
+
+  function startGame() {
+    notes = [];
+    score = 0;
+    nextNoteIndex = 0;
+    won = false;
+    gameOver = false;
+    active = true;
+    statusText = 'Go! Follow the Happy Birthday rhythm.';
+    lanePressed = [false, false, false, false];
+
+    clearTimeout(spawnTimeout);
+    cancelAnimationFrame(frameId);
+
+    addNote();
+    scheduleNextSpawn();
+    frameId = requestAnimationFrame(tick);
   }
 
   function restart() {
-    buildSlots();
-    correctCount = 0;
-    gameCompleted = false;
-    showFinishEffect = false;
-    statusText = 'Press Space on the beat';
-    resetLoop();
-    clearInterval(timerId);
-    timerId = setInterval(() => tick(performance.now()), 16);
+    startGame();
   }
 
-  function nextPendingIndex() {
-    return slots.findIndex(slot => slot.state === 'pending');
+  function nearestNoteInLane(laneIndex) {
+    const h = areaHeight();
+    const hitLineY = h - hitLineOffset;
+
+    return notes
+      .filter(note => note.lane === laneIndex)
+      .sort((a, b) => Math.abs(a.y + a.height - hitLineY) - Math.abs(b.y + b.height - hitLineY))[0];
   }
 
-  function handleSpace(event) {
-    if (event.code !== 'Space') return;
+  function handleKeyDown(event) {
+    const laneIndex = keyToLane[event.code];
+    if (laneIndex === undefined) return;
     event.preventDefault();
-    audioUnlocked = true;
-    ensureAudioContext();
 
-    if (gameCompleted) return;
+    lanePressed[laneIndex] = true;
+    lanePressed = [...lanePressed];
+    ensureAudio();
 
-    const targetIndex = nextPendingIndex();
-    if (targetIndex === -1) return;
+    if (!active || gameOver || won) return;
 
-    const target = slots[targetIndex];
-    const offset = Math.abs(activeBeat - target.atBeat);
+    const h = areaHeight();
+    const hitLineY = h - hitLineOffset;
+    const target = nearestNoteInLane(laneIndex);
 
-    if (offset <= hitWindow) {
-      slots[targetIndex] = { ...target, state: 'confirmed', played: true };
-      slots = [...slots];
-      correctCount += 1;
-      playTone(target.pitch, target.index, { confirmed: true });
-      statusText = `Nice! ${correctCount}/${slots.length} confirmed.`;
-
-      if (correctCount === slots.length) {
-        gameCompleted = true;
-        showFinishEffect = true;
-        statusText = '🎉 Perfect! Happy Birthday complete!';
-      }
-    } else {
-      statusText = 'Too early/late — catch the next loop.';
-    }
-  }
-
-  function tick(now) {
-    if (!startTime) startTime = now;
-    const elapsedSeconds = (now - startTime) / 1000;
-    activeBeat = elapsedSeconds * beatsPerSecond;
-
-    const currentBeat = Math.floor(activeBeat);
-    if (audioUnlocked && currentBeat > lastMetronomeBeat) {
-      for (let b = lastMetronomeBeat + 1; b <= currentBeat; b += 1) {
-        if (b >= 0) playMetronome();
-      }
-      lastMetronomeBeat = currentBeat;
+    if (!target) {
+      fail('Wrong key! No tile in that lane.');
+      return;
     }
 
-    slots = slots.map(slot => {
-      if (!slot.played && activeBeat >= slot.atBeat) {
-        const isDone = slot.state === 'confirmed' || gameCompleted;
-        if (audioUnlocked && isDone) {
-          playTone(slot.pitch, slot.index, { confirmed: true });
-        }
-        return { ...slot, played: true };
-      }
-      return slot;
-    });
-
-    if (!gameCompleted) {
-      slots = slots.map(slot => {
-        if (slot.state !== 'pending') return slot;
-        if (activeBeat > slot.atBeat + hitWindow) {
-          return { ...slot, state: 'missed' };
-        }
-        return slot;
-      });
+    const distance = Math.abs(target.y + target.height - hitLineY);
+    if (distance > target.height) {
+      fail('Too early/late! Hit when the tile reaches the line.');
+      return;
     }
 
-    if (activeBeat > totalBeats) {
-      if (!gameCompleted) {
-        statusText = `Looping… confirmed ${correctCount}/${slots.length}.`;
-      }
-      resetLoop(now);
-    }
+    target.hit = true;
+    notes = notes.filter(note => note.id !== target.id);
+    score += 1;
+    statusText = `Perfect! ${score}/${melody.length}`;
+    playPitchTone(target.pitch);
+    checkWin();
   }
 
-  function beatToPercent(beat) {
-    if (!totalBeats) return 0;
-    const percent = (beat / totalBeats) * 100;
-    return Math.min(100, Math.max(0, percent));
-  }
-
-  function slotStyle(slot) {
-    const left = beatToPercent(slot.atBeat);
-    const width = beatToPercent(slotWidthInBeats);
-    return `left:${left}%; width:${width}%; background:${slotFill(slot)};`;
-  }
-
-  function slotFill(slot) {
-    if (slot.state !== 'confirmed') return 'transparent';
-    if (!revealedIndices.has(slot.index)) return 'rgba(130, 220, 255, 0.45)';
-
-    const hue = 180 + (slot.index * 17) % 120;
-    return `hsl(${hue}deg 82% 62%)`;
-  }
-
-  function unlockAudio() {
-    audioUnlocked = true;
-    ensureAudioContext();
+  function handleKeyUp(event) {
+    const laneIndex = keyToLane[event.code];
+    if (laneIndex === undefined) return;
+    lanePressed[laneIndex] = false;
+    lanePressed = [...lanePressed];
   }
 
   onMount(() => {
-    restart();
-    window.addEventListener('keydown', handleSpace, { passive: false });
-    window.addEventListener('pointerdown', unlockAudio, { passive: true });
+    window.addEventListener('keydown', handleKeyDown, { passive: false });
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('pointerdown', ensureAudio, { passive: true });
   });
 
   onDestroy(() => {
-    clearInterval(timerId);
-    window.removeEventListener('keydown', handleSpace);
-    window.removeEventListener('pointerdown', unlockAudio);
+    clearTimeout(spawnTimeout);
+    cancelAnimationFrame(frameId);
+    window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('keyup', handleKeyUp);
+    window.removeEventListener('pointerdown', ensureAudio);
     audioContext?.close?.().catch(() => {});
   });
 </script>
 
-<div class="birthday-mode" class:completed={showFinishEffect}>
-  <h2>🎂 Birthday Mode</h2>
+<div class="piano-tiles-shell">
+  <h2>🎹 Birthday Piano Tiles (PC)</h2>
   <p>{statusText}</p>
 
-  {#if showFinishEffect}
-    <div class="finish-effect" aria-hidden="true">
-      <span>🎉</span><span>✨</span><span>🎊</span><span>💫</span><span>🎉</span>
-    </div>
-  {/if}
-
-  <div class="track">
-    {#each slots as slot}
-      <div
-        class="slot {slot.state}"
-        style={slotStyle(slot)}
-      >
-        {#if slot.state === 'confirmed' && revealedIndices.has(slot.index)}
-          <span>{slot.pitch}</span>
-        {/if}
+  {#if won}
+    <div class="win-screen">
+      <div class="confetti-layer" aria-hidden="true">
+        {#each Array(28) as _, i}
+          <span class="confetti c-{i % 7}" style={`left:${(i * 17) % 100}%; animation-delay:${(i % 9) * 0.09}s;`}></span>
+        {/each}
       </div>
-    {/each}
-    <div class="indicator" style={`left:${beatToPercent(activeBeat)}%;`}></div>
-  </div>
+      <h3>YOU WIN! 🎉</h3>
+      <p>100% perfect run — yhaha yeah ✨</p>
+      <button on:click={restart}>Restart Game</button>
+    </div>
+  {:else}
+    <div class="hud">
+      <span>Score: {score}/{melody.length}</span>
+      {#if !active}
+        <button on:click={startGame}>Start</button>
+      {:else}
+        <button on:click={restart}>Restart</button>
+      {/if}
+    </div>
 
-  <button on:click={restart}>Restart</button>
+    <div class="game-area" bind:this={gameAreaEl}>
+      {#each lanes as lane, index}
+        <div class="lane">
+          <div class="lane-key" class:pressed={lanePressed[index]}>{lane}</div>
+        </div>
+      {/each}
+
+      {#each notes as note (note.id)}
+        <div
+          class="note"
+          style={`top:${note.y}px; left:calc(${note.lane} * 25% + 5px); height:${note.height}px;`}
+        >
+          <span class="note-label">{note.pitch}</span>
+        </div>
+      {/each}
+
+      <div class="hit-line"></div>
+    </div>
+
+    {#if gameOver}
+      <div class="game-over">
+        <h3>Game Over</h3>
+        <button on:click={restart}>Try Again</button>
+      </div>
+    {/if}
+  {/if}
 </div>
 
 <style>
-  .birthday-mode {
+  .piano-tiles-shell {
     width: 100%;
     min-height: calc(100vh - 120px);
-    padding: 22px;
-    color: var(--block-header-text, #f2f7ff);
-    background:
-      radial-gradient(circle at top right, color-mix(in srgb, var(--block-accent-color, #7be0ff) 24%, transparent), transparent 42%),
-      radial-gradient(circle at top, color-mix(in srgb, var(--block-border-color, #39436a) 35%, #0f101f 65%) 0%, #0f101f 58%, #090b14 100%);
-    overflow-x: hidden;
+    padding: 20px;
+    color: #f7fbff;
+    background: radial-gradient(circle at top, #1d1f30, #0b0d18 65%);
     box-sizing: border-box;
-    transition: box-shadow 0.3s ease;
   }
 
-  .birthday-mode.completed {
-    box-shadow: inset 0 0 80px rgba(255, 226, 126, 0.25);
-  }
-
-  .finish-effect {
+  .hud {
     display: flex;
-    gap: 10px;
-    font-size: 1.4rem;
-    margin: 6px 0 10px;
+    align-items: center;
+    gap: 14px;
+    margin-bottom: 12px;
   }
 
-  .finish-effect span {
-    animation: pop 0.9s ease-in-out infinite alternate;
-  }
-
-  .finish-effect span:nth-child(2) { animation-delay: 0.1s; }
-  .finish-effect span:nth-child(3) { animation-delay: 0.2s; }
-  .finish-effect span:nth-child(4) { animation-delay: 0.3s; }
-  .finish-effect span:nth-child(5) { animation-delay: 0.4s; }
-
-  @keyframes pop {
-    from { transform: translateY(0) scale(1); opacity: 0.8; }
-    to { transform: translateY(-8px) scale(1.1); opacity: 1; }
-  }
-
-  .track {
+  .game-area {
     position: relative;
-    height: 86px;
-    margin: 24px 0;
-    width: min(100%, 1200px);
-    border-radius: 18px;
-    background:
-      linear-gradient(180deg, color-mix(in srgb, var(--block-border-color, #2a3555) 22%, transparent), transparent),
-      repeating-linear-gradient(
-        to right,
-        color-mix(in srgb, var(--block-border-color, #667) 50%, transparent) 0,
-        color-mix(in srgb, var(--block-border-color, #667) 50%, transparent) 1px,
-        transparent 1px,
-        transparent 12.5%
-      );
-    border: 1px solid color-mix(in srgb, var(--block-border-color, #667) 55%, transparent);
-    box-shadow: inset 0 1px 0 rgba(255,255,255,0.08);
+    width: min(100%, 760px);
+    height: 700px;
+    border-radius: 14px;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    border: 2px solid #2b365d;
+    background: #fcfcff;
   }
 
-  .slot {
+  .lane {
+    border-right: 1px solid #dbe1ff;
+    position: relative;
+  }
+
+  .lane:last-child {
+    border-right: none;
+  }
+
+  .lane-key {
     position: absolute;
-    top: 20px;
-    height: 38px;
-    border: 1px solid color-mix(in srgb, var(--block-accent-color, #7be0ff) 70%, #d7eeff);
-    border-radius: 999px;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 46px;
+    height: 46px;
+    border-radius: 10px;
+    background: #202843;
+    color: #fff;
     display: flex;
     align-items: center;
     justify-content: center;
-    transition: background 0.18s ease, border-color 0.18s ease;
+    font-weight: 800;
+    border: 2px solid #5e74d0;
+    transition: transform 0.08s ease, background 0.08s ease;
   }
 
-  .slot.missed {
-    border-color: color-mix(in srgb, #ff7f7f 55%, transparent);
+  .lane-key.pressed {
+    transform: translateX(-50%) scale(0.94);
+    background: #3d53ad;
   }
 
-  .slot span {
-    color: #071423;
+  .note {
+    position: absolute;
+    width: calc(25% - 10px);
+    min-height: 104px;
+    border-radius: 8px;
+    background: linear-gradient(180deg, #212121, #0d0d0d);
+    box-shadow: inset 0 -8px 0 rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .note-label {
+    color: #f5f8ff;
     font-weight: 700;
-    font-size: 0.72rem;
+    font-size: 0.8rem;
     letter-spacing: 0.04em;
   }
 
-  .indicator {
+  .hit-line {
     position: absolute;
-    top: 8px;
-    bottom: 8px;
-    width: 3px;
-    transform: translateX(-50%);
-    border-radius: 999px;
-    background: var(--block-accent-color, #ffd670);
-    box-shadow: 0 0 12px color-mix(in srgb, var(--block-accent-color, #ffd670) 80%, transparent);
+    left: 0;
+    right: 0;
+    bottom: 120px;
+    height: 4px;
+    background: #5a70ff;
+    box-shadow: 0 0 10px rgba(90, 112, 255, 0.8);
+  }
+
+  .win-screen,
+  .game-over {
+    margin-top: 18px;
+    width: min(100%, 760px);
+    border-radius: 14px;
+    padding: 20px;
+    background: linear-gradient(180deg, #17243f, #101a2e);
+    border: 1px solid #4f74c5;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .confetti-layer {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+
+  .confetti {
+    position: absolute;
+    top: -14px;
+    width: 10px;
+    height: 16px;
+    border-radius: 2px;
+    animation: confettiDrop 2.2s linear infinite;
+    opacity: 0.92;
+  }
+
+  .c-0 { background: #ff6b6b; }
+  .c-1 { background: #ffd93d; }
+  .c-2 { background: #6bcB77; }
+  .c-3 { background: #4d96ff; }
+  .c-4 { background: #b892ff; }
+  .c-5 { background: #ff9f68; }
+  .c-6 { background: #f8f9fa; }
+
+  @keyframes confettiDrop {
+    0% { transform: translateY(-10%) rotate(0deg); }
+    100% { transform: translateY(360px) rotate(330deg); }
   }
 
   button {
-    border: 1px solid #7987ff;
-    background: #2e3a87;
-    color: #fff;
+    border: 1px solid #7f9cff;
+    background: #3045a0;
+    color: #ffffff;
     border-radius: 8px;
     padding: 8px 14px;
     cursor: pointer;
+    font-weight: 700;
   }
 </style>
