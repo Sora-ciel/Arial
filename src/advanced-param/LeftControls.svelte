@@ -94,11 +94,13 @@
   function toggleModeMenu() {
     showModeLadder = !showModeLadder;
     if (showModeLadder) showAddBlockMenu = false;
+    if (compactUI && showModeLadder) showMobileMenu = false;
   }
 
   function toggleAddBlockMenu() {
     showAddBlockMenu = !showAddBlockMenu;
     if (showAddBlockMenu) showModeLadder = false;
+    if (compactUI && showAddBlockMenu) showMobileMenu = false;
   }
 
   function selectMode(nextMode) {
