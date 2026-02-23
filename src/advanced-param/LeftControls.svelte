@@ -18,8 +18,12 @@
   let toggleRef;
   let modeMenuRef;
   let modeButtonRef;
+  let modeMenuDesktopRef;
+  let modeButtonDesktopRef;
   let addBlockMenuRef;
   let addBlockButtonRef;
+  let addBlockMenuDesktopRef;
+  let addBlockButtonDesktopRef;
   let mobileQuickActionsRef;
   let showModeLadder = false;
   let showAddBlockMenu = false;
@@ -89,10 +93,12 @@
 
   function toggleModeMenu() {
     showModeLadder = !showModeLadder;
+    if (showModeLadder) showAddBlockMenu = false;
   }
 
   function toggleAddBlockMenu() {
     showAddBlockMenu = !showAddBlockMenu;
+    if (showAddBlockMenu) showModeLadder = false;
   }
 
   function selectMode(nextMode) {
@@ -120,31 +126,45 @@
     compactUI = window.innerWidth <= 1024;
   }
 
-  
+  function elementContainsTarget(element, target) {
+    return Boolean(element && target && element.contains(target));
+  }
+
+  function clickedInsideAny(target, elements = []) {
+    return elements.some((element) => elementContainsTarget(element, target));
+  }
+
   // Close when clicking outside to put for after button click on mobile phones and right controls too 
   function handleClickOutside(event) {
+    const target = event.target;
+
     if (
       showMobileMenu &&
-      !menuRef.contains(event.target) &&
-      !toggleRef.contains(event.target) &&
-      !mobileQuickActionsRef?.contains(event.target)
+      !clickedInsideAny(target, [menuRef, toggleRef, mobileQuickActionsRef])
     ) {
       showMobileMenu = false;
     }
 
     if (
       showModeLadder &&
-      !modeMenuRef?.contains(event.target) &&
-      !modeButtonRef?.contains(event.target)
+      !clickedInsideAny(target, [
+        modeMenuRef,
+        modeButtonRef,
+        modeMenuDesktopRef,
+        modeButtonDesktopRef
+      ])
     ) {
       showModeLadder = false;
     }
 
-
     if (
       showAddBlockMenu &&
-      !addBlockMenuRef?.contains(event.target) &&
-      !addBlockButtonRef?.contains(event.target)
+      !clickedInsideAny(target, [
+        addBlockMenuRef,
+        addBlockButtonRef,
+        addBlockMenuDesktopRef,
+        addBlockButtonDesktopRef
+      ])
     ) {
       showAddBlockMenu = false;
     }
@@ -417,7 +437,7 @@ onMount(() => {
   >
     <div class="mode-switcher mobile-only">
       <button
-        bind:this={modeButtonRef}
+        bind:this={modeButtonDesktopRef}
         on:click={toggleModeMenu}
         aria-haspopup="listbox"
         aria-expanded={showModeLadder}
@@ -425,7 +445,7 @@ onMount(() => {
         📝 {modeLabels?.[mode] ?? mode}
       </button>
       {#if showModeLadder}
-        <div class="mode-ladder" bind:this={modeMenuRef} role="listbox">
+        <div class="mode-ladder" bind:this={modeMenuDesktopRef} role="listbox">
           {#each modeOptions as option}
             <button
               class:active={option.id === mode}
@@ -454,7 +474,7 @@ onMount(() => {
     </div>
     <div class="add-block-menu mobile-only">
       <button
-        bind:this={addBlockButtonRef}
+        bind:this={addBlockButtonDesktopRef}
         on:click={toggleAddBlockMenu}
         aria-haspopup="listbox"
         aria-expanded={showAddBlockMenu}
@@ -462,7 +482,7 @@ onMount(() => {
         ➕ Add block
       </button>
       {#if showAddBlockMenu}
-        <div class="add-block-list" bind:this={addBlockMenuRef} role="listbox">
+        <div class="add-block-list" bind:this={addBlockMenuDesktopRef} role="listbox">
           <button on:click={() => addBlock("text")}>+ Text</button>
           <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
           <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
