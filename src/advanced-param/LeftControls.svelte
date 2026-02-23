@@ -189,9 +189,17 @@ onMount(() => {
     display: flex;
     align-items: center;
     gap: 8px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     flex-grow: 1;
+    overflow-x: auto;
+    overflow-y: hidden;
+    white-space: nowrap;
     color: var(--left-text-color, inherit);
+    scrollbar-width: thin;
+  }
+
+  .left-controls > * {
+    flex: 0 0 auto;
   }
 
   .left-controls button,
@@ -268,6 +276,12 @@ onMount(() => {
     background: var(--left-input-bg, #1d1d1d);
     color: var(--left-text-color, #ffffff);
     padding: 6px 8px;
+  }
+
+  .left-controls small {
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .compact-toggle-btn {
