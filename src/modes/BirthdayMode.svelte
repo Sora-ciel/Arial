@@ -71,6 +71,7 @@
   let masterBus;
   let reverb;
   let filter;
+  let sustainedVoices = new Map();
 
   function areaHeight() {
     return gameAreaEl?.clientHeight || 640;
@@ -143,6 +144,43 @@
     gain.connect(dryBus || ctx.destination);
     osc.start(now);
     osc.stop(now + 0.1);
+  }
+
+  function startSustainTone(laneIndex, pitch) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+
+    stopSustainTone(laneIndex);
+
+    const now = ctx.currentTime;
+    const frequency = pitchToHz[pitch] || 440;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(frequency, now);
+
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.05, now + 0.02);
+
+    osc.connect(gain);
+    gain.connect(dryBus || ctx.destination);
+    gain.connect(wetBus || ctx.destination);
+
+    osc.start(now);
+    sustainedVoices.set(laneIndex, { osc, gain });
+  }
+
+  function stopSustainTone(laneIndex) {
+    const voice = sustainedVoices.get(laneIndex);
+    if (!voice || !audioContext) return;
+
+    const now = audioContext.currentTime;
+    voice.gain.gain.cancelScheduledValues(now);
+    voice.gain.gain.setValueAtTime(Math.max(0.0001, voice.gain.gain.value), now);
+    voice.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+    voice.osc.stop(now + 0.14);
+    sustainedVoices.delete(laneIndex);
   }
 
   function playPitchTone(pitch) {
@@ -285,6 +323,9 @@
     clearTimeout(spawnTimeout);
     clearTimeout(missedFlashTimeout);
     cancelAnimationFrame(frameId);
+    for (const lane of sustainedVoices.keys()) {
+      stopSustainTone(lane);
+    }
 
     addNote();
     scheduleNextSpawn();
@@ -307,6 +348,7 @@
   function handleKeyDown(event) {
     if (event.code === 'Space') {
       event.preventDefault();
+      if (event.repeat) return;
       playUiClick();
       if (!active || gameOver || won) {
         startGame();
@@ -319,6 +361,7 @@
     const laneIndex = keyToLane[event.code];
     if (laneIndex === undefined) return;
     event.preventDefault();
+    if (event.repeat) return;
 
     lanePressed[laneIndex] = true;
     lanePressed = [...lanePressed];
@@ -346,6 +389,7 @@
     score += 1;
     statusText = `Perfect! ${score}/${melody.length}`;
     playPitchTone(target.pitch);
+    startSustainTone(laneIndex, target.pitch);
     checkWin();
   }
 
@@ -354,6 +398,7 @@
     if (laneIndex === undefined) return;
     lanePressed[laneIndex] = false;
     lanePressed = [...lanePressed];
+    stopSustainTone(laneIndex);
   }
 
   onMount(() => {
@@ -366,6 +411,9 @@
     clearTimeout(spawnTimeout);
     clearTimeout(missedFlashTimeout);
     cancelAnimationFrame(frameId);
+    for (const lane of sustainedVoices.keys()) {
+      stopSustainTone(lane);
+    }
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
     window.removeEventListener('pointerdown', ensureAudio);
@@ -441,6 +489,9 @@
     color: #f7fbff;
     background: radial-gradient(circle at top, #1d1f30, #0b0d18 65%);
     box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
   }
 
   .hud {
@@ -448,12 +499,14 @@
     align-items: center;
     gap: 14px;
     margin-bottom: 12px;
+    width: min(100%, 760px);
+    justify-content: space-between;
   }
 
   .game-area {
     position: relative;
     width: min(100%, 760px);
-    height: 700px;
+    height: clamp(420px, 62vh, 700px);
     border-radius: 14px;
     overflow: hidden;
     display: grid;
