@@ -959,30 +959,43 @@
   }
 
   async function load(name) {
+    const previousSaveName = currentSaveName;
+
     blocks = [];
     currentSaveName = "";
     focusedBlockId = null;
     await tick();
-    currentSaveName = name;
-    persistLastSaveName(name);
-    const loaded = await loadBlocks(name);
-    const loadedBlocks = Array.isArray(loaded)
-      ? loaded
-      : Array.isArray(loaded?.blocks)
-      ? loaded.blocks
-      : [];
-    const loadedOrders = !Array.isArray(loaded)
-      ? loaded?.modeOrders
-      : {};
-    blocks = loadedBlocks.map(b => ({
-      ...applyHistoryTriggers(b),
-      _version: 0
-    }));
-    modeOrders = ensureModeOrders(blocks, loadedOrders);
 
-    history = [];
-    historyIndex = -1;
-    await pushHistory(blocks, modeOrders);
+    try {
+      const loaded = await loadBlocks(name);
+      const loadedBlocks = Array.isArray(loaded)
+        ? loaded
+        : Array.isArray(loaded?.blocks)
+        ? loaded.blocks
+        : [];
+      const loadedOrders = !Array.isArray(loaded)
+        ? loaded?.modeOrders
+        : {};
+
+      currentSaveName = name;
+      persistLastSaveName(name);
+      blocks = loadedBlocks.map(b => ({
+        ...applyHistoryTriggers(b),
+        _version: 0
+      }));
+      modeOrders = ensureModeOrders(blocks, loadedOrders);
+
+      history = [];
+      historyIndex = -1;
+      await pushHistory(blocks, modeOrders);
+    } catch (error) {
+      console.error('Failed to load save file:', error);
+      alert(`Could not open "${name}". Loading your previous save instead.`);
+
+      currentSaveName = previousSaveName || '';
+      persistLastSaveName(previousSaveName || '');
+      savedList = await listSavedBlocks();
+    }
   }
 
   async function deleteSave(name) {
@@ -1295,20 +1308,29 @@
       currentSaveName = savedList[0];
     }
 
-    const initialData = await loadBlocks(currentSaveName);
-    const initialBlocks = Array.isArray(initialData)
-      ? initialData
-      : Array.isArray(initialData?.blocks)
-      ? initialData.blocks
-      : [];
-    const initialOrders = !Array.isArray(initialData)
-      ? initialData?.modeOrders
-      : {};
-    blocks = initialBlocks.map(b => ({
-      ...applyHistoryTriggers(b),
-      _version: 0
-    }));
-    modeOrders = ensureModeOrders(blocks, initialOrders);
+    try {
+      const initialData = await loadBlocks(currentSaveName);
+      const initialBlocks = Array.isArray(initialData)
+        ? initialData
+        : Array.isArray(initialData?.blocks)
+        ? initialData.blocks
+        : [];
+      const initialOrders = !Array.isArray(initialData)
+        ? initialData?.modeOrders
+        : {};
+      blocks = initialBlocks.map(b => ({
+        ...applyHistoryTriggers(b),
+        _version: 0
+      }));
+      modeOrders = ensureModeOrders(blocks, initialOrders);
+    } catch (error) {
+      console.error('Failed to load last opened save:', error);
+      currentSaveName = savedList[0] || '';
+      persistLastSaveName(currentSaveName);
+      blocks = [];
+      modeOrders = ensureModeOrders(blocks, {});
+      alert('The last opened save could not be loaded, so the app opened an empty workspace.');
+    }
     if (birthdayUnlockExpiry <= Date.now()) {
       birthdayUnlockExpiry = 0;
       persistBirthdayUnlockExpiry(0);
