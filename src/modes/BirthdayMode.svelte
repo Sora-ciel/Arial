@@ -47,9 +47,9 @@
 
   const beatMs = 260;
   const noteSpeed = 260;
-  const noteHeight = 84;
+  const baseNoteHeight = 104;
+  const extraHeightPerBeat = 48;
   const hitLineOffset = 120;
-  const hitWindow = noteHeight;
 
   let notes = [];
   let active = false;
@@ -63,31 +63,103 @@
   let gameAreaEl;
   let lanePressed = [false, false, false, false];
 
+  let audioContext;
+  let dryBus;
+  let wetBus;
+  let masterBus;
+  let reverb;
+  let filter;
+
   function areaHeight() {
     return gameAreaEl?.clientHeight || 640;
   }
 
-  function playPitchTone(pitch) {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    if (!Ctx) return;
+  function createImpulse(ctx, duration = 1.9, decay = 2.8) {
+    const length = Math.floor(ctx.sampleRate * duration);
+    const impulse = ctx.createBuffer(2, length, ctx.sampleRate);
 
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
+    for (let channel = 0; channel < 2; channel += 1) {
+      const data = impulse.getChannelData(channel);
+      for (let i = 0; i < length; i += 1) {
+        const t = i / length;
+        data[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+      }
+    }
+    return impulse;
+  }
+
+  function ensureAudio() {
+    if (!audioContext) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return null;
+
+      audioContext = new Ctx();
+      dryBus = audioContext.createGain();
+      wetBus = audioContext.createGain();
+      masterBus = audioContext.createGain();
+      reverb = audioContext.createConvolver();
+      filter = audioContext.createBiquadFilter();
+
+      reverb.buffer = createImpulse(audioContext);
+      dryBus.gain.value = 0.82;
+      wetBus.gain.value = 0.34;
+      masterBus.gain.value = 0.9;
+      filter.type = 'lowpass';
+      filter.frequency.value = 5600;
+      filter.Q.value = 0.8;
+
+      dryBus.connect(filter);
+      wetBus.connect(reverb);
+      reverb.connect(filter);
+      filter.connect(masterBus);
+      masterBus.connect(audioContext.destination);
+    }
+
+    if (audioContext.state === 'suspended') {
+      audioContext.resume().catch(() => {});
+    }
+
+    return audioContext;
+  }
+
+  function playPitchTone(pitch) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+
     const now = ctx.currentTime;
     const frequency = pitchToHz[pitch] || 440;
 
-    osc.type = 'triangle';
-    osc.frequency.setValueAtTime(frequency, now);
-    gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
+    const body = ctx.createOscillator();
+    const bodyGain = ctx.createGain();
+    body.type = 'triangle';
+    body.frequency.setValueAtTime(frequency, now);
+    bodyGain.gain.setValueAtTime(0.0001, now);
+    bodyGain.gain.exponentialRampToValueAtTime(0.095, now + 0.012);
+    bodyGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.62);
 
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start(now);
-    osc.stop(now + 0.21);
-    osc.onended = () => ctx.close().catch(() => {});
+    const hammer = ctx.createOscillator();
+    const hammerGain = ctx.createGain();
+    hammer.type = 'square';
+    hammer.frequency.setValueAtTime(frequency * 2, now);
+    hammerGain.gain.setValueAtTime(0.0001, now);
+    hammerGain.gain.exponentialRampToValueAtTime(0.026, now + 0.005);
+    hammerGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.07);
+
+    body.connect(bodyGain);
+    hammer.connect(hammerGain);
+    bodyGain.connect(dryBus);
+    bodyGain.connect(wetBus);
+    hammerGain.connect(dryBus);
+    hammerGain.connect(wetBus);
+
+    body.start(now);
+    hammer.start(now);
+    hammer.stop(now + 0.08);
+    body.stop(now + 0.66);
+  }
+
+  function noteHeightFor(duration) {
+    return baseNoteHeight + Math.max(0, duration - 1) * extraHeightPerBeat;
   }
 
   function scheduleNextSpawn() {
@@ -103,13 +175,17 @@
   function addNote() {
     if (nextNoteIndex >= melody.length) return;
 
+    const duration = rhythm[nextNoteIndex] || 1;
+
     notes = [
       ...notes,
       {
         id: `note-${nextNoteIndex}-${Date.now()}`,
         lane: lanePattern[nextNoteIndex] ?? (nextNoteIndex % lanes.length),
         pitch: melody[nextNoteIndex],
-        y: -noteHeight,
+        duration,
+        height: noteHeightFor(duration),
+        y: -noteHeightFor(duration),
         hit: false
       }
     ];
@@ -142,11 +218,13 @@
     notes = notes
       .map(note => ({ ...note, y: note.y + (noteSpeed / 60) }))
       .filter(note => {
-        if (!note.hit && note.y + noteHeight >= h - hitLineOffset + hitWindow) {
+        const tileBottom = note.y + note.height;
+        const hitWindow = note.height;
+        if (!note.hit && tileBottom >= h - hitLineOffset + hitWindow) {
           fail('Missed tile! Restart and try again.');
           return false;
         }
-        return note.y <= h + noteHeight;
+        return note.y <= h + note.height;
       })
       .filter(note => !note.hit);
 
@@ -182,7 +260,7 @@
 
     return notes
       .filter(note => note.lane === laneIndex)
-      .sort((a, b) => Math.abs(a.y + noteHeight - hitLineY) - Math.abs(b.y + noteHeight - hitLineY))[0];
+      .sort((a, b) => Math.abs(a.y + a.height - hitLineY) - Math.abs(b.y + b.height - hitLineY))[0];
   }
 
   function handleKeyDown(event) {
@@ -192,6 +270,7 @@
 
     lanePressed[laneIndex] = true;
     lanePressed = [...lanePressed];
+    ensureAudio();
 
     if (!active || gameOver || won) return;
 
@@ -204,8 +283,8 @@
       return;
     }
 
-    const distance = Math.abs(target.y + noteHeight - hitLineY);
-    if (distance > hitWindow) {
+    const distance = Math.abs(target.y + target.height - hitLineY);
+    if (distance > target.height) {
       fail('Too early/late! Hit when the tile reaches the line.');
       return;
     }
@@ -228,6 +307,7 @@
   onMount(() => {
     window.addEventListener('keydown', handleKeyDown, { passive: false });
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('pointerdown', ensureAudio, { passive: true });
   });
 
   onDestroy(() => {
@@ -235,6 +315,8 @@
     cancelAnimationFrame(frameId);
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
+    window.removeEventListener('pointerdown', ensureAudio);
+    audioContext?.close?.().catch(() => {});
   });
 </script>
 
@@ -273,7 +355,7 @@
       {#each notes as note (note.id)}
         <div
           class="note"
-          style={`top:${note.y}px; left:calc(${note.lane} * 25% + 5px);`}
+          style={`top:${note.y}px; left:calc(${note.lane} * 25% + 5px); height:${note.height}px;`}
         >
           <span class="note-label">{note.pitch}</span>
         </div>
@@ -311,7 +393,7 @@
   .game-area {
     position: relative;
     width: min(100%, 760px);
-    height: 640px;
+    height: 700px;
     border-radius: 14px;
     overflow: hidden;
     display: grid;
@@ -355,9 +437,9 @@
   .note {
     position: absolute;
     width: calc(25% - 10px);
-    height: 84px;
+    min-height: 104px;
     border-radius: 8px;
-    background: linear-gradient(180deg, #212121, #111111);
+    background: linear-gradient(180deg, #212121, #0d0d0d);
     box-shadow: inset 0 -8px 0 rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
