@@ -9,19 +9,44 @@
     KeyK: 3
   };
 
-  const easyPattern = [
-    0, 1, 2, 3,
-    1, 2, 0, 3,
-    0, 2, 1, 3,
-    0, 1, 2, 3,
-    1, 0, 2, 3,
-    0, 1, 3, 2,
-    0, 1, 2, 3,
-    1, 2, 3, 0
+  const melody = [
+    'G4', 'G4', 'A4', 'G4', 'C5', 'B4',
+    'G4', 'G4', 'A4', 'G4', 'D5', 'C5',
+    'G4', 'G4', 'G5', 'E5', 'C5', 'B4', 'A4',
+    'F5', 'F5', 'E5', 'C5', 'D5', 'C5'
   ];
 
+  const rhythm = [
+    1, 1, 2, 2, 2, 4,
+    1, 1, 2, 2, 2, 4,
+    1, 1, 2, 2, 2, 2, 4,
+    1, 1, 2, 2, 2, 4
+  ];
+
+  const lanePattern = [
+    0, 1, 2, 1, 3, 2,
+    0, 1, 2, 1, 3, 2,
+    0, 1, 3, 2, 1, 2, 3,
+    0, 1, 2, 1, 3, 2
+  ];
+
+  const pitchToHz = {
+    C4: 261.63,
+    D4: 293.66,
+    E4: 329.63,
+    F4: 349.23,
+    G4: 392,
+    A4: 440,
+    B4: 493.88,
+    C5: 523.25,
+    D5: 587.33,
+    E5: 659.25,
+    F5: 698.46,
+    G5: 783.99
+  };
+
+  const beatMs = 260;
   const noteSpeed = 260;
-  const spawnIntervalMs = 500;
   const noteHeight = 84;
   const hitLineOffset = 120;
   const hitWindow = 56;
@@ -30,11 +55,11 @@
   let active = false;
   let gameOver = false;
   let won = false;
-  let statusText = 'Press Start, then hit D F J K like Piano Tiles.';
+  let statusText = 'Press Start, then hit D F J K in Happy Birthday rhythm.';
   let score = 0;
   let nextNoteIndex = 0;
   let frameId;
-  let spawnerId;
+  let spawnTimeout;
   let gameAreaEl;
   let lanePressed = [false, false, false, false];
 
@@ -42,7 +67,7 @@
     return gameAreaEl?.clientHeight || 640;
   }
 
-  function playBeep(laneIndex) {
+  function playPitchTone(pitch) {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
 
@@ -50,32 +75,40 @@
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
     const now = ctx.currentTime;
-    const frequencies = [261.63, 329.63, 392.0, 523.25];
+    const frequency = pitchToHz[pitch] || 440;
 
     osc.type = 'triangle';
-    osc.frequency.setValueAtTime(frequencies[laneIndex] || 440, now);
+    osc.frequency.setValueAtTime(frequency, now);
     gain.gain.setValueAtTime(0.0001, now);
-    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.16);
+    gain.gain.exponentialRampToValueAtTime(0.08, now + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.2);
 
     osc.connect(gain);
     gain.connect(ctx.destination);
     osc.start(now);
-    osc.stop(now + 0.17);
+    osc.stop(now + 0.21);
     osc.onended = () => ctx.close().catch(() => {});
   }
 
+  function scheduleNextSpawn() {
+    if (!active || gameOver || won || nextNoteIndex >= melody.length) return;
+
+    const delay = Math.max(120, rhythm[nextNoteIndex] * beatMs);
+    spawnTimeout = setTimeout(() => {
+      addNote();
+      scheduleNextSpawn();
+    }, delay);
+  }
+
   function addNote() {
-    if (nextNoteIndex >= easyPattern.length) {
-      clearInterval(spawnerId);
-      return;
-    }
+    if (nextNoteIndex >= melody.length) return;
 
     notes = [
       ...notes,
       {
         id: `note-${nextNoteIndex}-${Date.now()}`,
-        lane: easyPattern[nextNoteIndex],
+        lane: lanePattern[nextNoteIndex] ?? (nextNoteIndex % lanes.length),
+        pitch: melody[nextNoteIndex],
         y: -noteHeight,
         hit: false
       }
@@ -88,16 +121,16 @@
     gameOver = true;
     active = false;
     statusText = message;
-    clearInterval(spawnerId);
+    clearTimeout(spawnTimeout);
     cancelAnimationFrame(frameId);
   }
 
   function checkWin() {
-    if (score === easyPattern.length && notes.length === 0 && nextNoteIndex >= easyPattern.length) {
+    if (score === melody.length && notes.length === 0 && nextNoteIndex >= melody.length) {
       won = true;
       active = false;
-      statusText = '🎉 Perfect run! You cleared every tile!';
-      clearInterval(spawnerId);
+      statusText = '🎉 Perfect run! Happy Birthday complete!';
+      clearTimeout(spawnTimeout);
       cancelAnimationFrame(frameId);
     }
   }
@@ -128,14 +161,14 @@
     won = false;
     gameOver = false;
     active = true;
-    statusText = 'Go! Hit the bottom tile in the correct lane.';
+    statusText = 'Go! Follow the Happy Birthday rhythm.';
     lanePressed = [false, false, false, false];
 
-    clearInterval(spawnerId);
+    clearTimeout(spawnTimeout);
     cancelAnimationFrame(frameId);
 
     addNote();
-    spawnerId = setInterval(addNote, spawnIntervalMs);
+    scheduleNextSpawn();
     frameId = requestAnimationFrame(tick);
   }
 
@@ -149,7 +182,7 @@
 
     return notes
       .filter(note => note.lane === laneIndex)
-      .sort((a, b) => Math.abs((a.y + noteHeight) - hitLineY) - Math.abs((b.y + noteHeight) - hitLineY))[0];
+      .sort((a, b) => Math.abs(a.y + noteHeight - hitLineY) - Math.abs(b.y + noteHeight - hitLineY))[0];
   }
 
   function handleKeyDown(event) {
@@ -171,7 +204,7 @@
       return;
     }
 
-    const distance = Math.abs((target.y + noteHeight) - hitLineY);
+    const distance = Math.abs(target.y + noteHeight - hitLineY);
     if (distance > hitWindow) {
       fail('Too early/late! Hit when the tile reaches the line.');
       return;
@@ -180,8 +213,8 @@
     target.hit = true;
     notes = notes.filter(note => note.id !== target.id);
     score += 1;
-    statusText = `Perfect! ${score}/${easyPattern.length}`;
-    playBeep(laneIndex);
+    statusText = `Perfect! ${score}/${melody.length}`;
+    playPitchTone(target.pitch);
     checkWin();
   }
 
@@ -198,7 +231,7 @@
   });
 
   onDestroy(() => {
-    clearInterval(spawnerId);
+    clearTimeout(spawnTimeout);
     cancelAnimationFrame(frameId);
     window.removeEventListener('keydown', handleKeyDown);
     window.removeEventListener('keyup', handleKeyUp);
@@ -222,7 +255,7 @@
     </div>
   {:else}
     <div class="hud">
-      <span>Score: {score}/{easyPattern.length}</span>
+      <span>Score: {score}/{melody.length}</span>
       {#if !active}
         <button on:click={startGame}>Start</button>
       {:else}
@@ -241,7 +274,9 @@
         <div
           class="note"
           style={`top:${note.y}px; left:calc(${note.lane} * 25% + 5px);`}
-        ></div>
+        >
+          <span class="note-label">{note.pitch}</span>
+        </div>
       {/each}
 
       <div class="hit-line"></div>
@@ -324,6 +359,16 @@
     border-radius: 8px;
     background: linear-gradient(180deg, #212121, #111111);
     box-shadow: inset 0 -8px 0 rgba(255, 255, 255, 0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .note-label {
+    color: #f5f8ff;
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
   }
 
   .hit-line {
