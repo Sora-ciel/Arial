@@ -20,6 +20,7 @@
   let modeButtonRef;
   let addBlockMenuRef;
   let addBlockButtonRef;
+  let mobileQuickActionsRef;
   let showModeLadder = false;
   let showAddBlockMenu = false;
   let birthdayPassword = '';
@@ -64,27 +65,22 @@
   function addBlock(type) {
     if (isSingleNoteMode && type !== "text" && type !== "cleantext") return;
     dispatch("addBlock", type);
-    if (compactUI) showMobileMenu = true;
   }
 
   function clear() {
     dispatch("clear");
-    if (compactUI) showMobileMenu = false;
   }
 
   function save() {
     dispatch("save");
-    if (compactUI) showMobileMenu = true;
   }
 
   function exportJSON() {
     dispatch("exportJSON");
-    if (compactUI) showMobileMenu = false;
   }
 
   function importJSON(event) {
     dispatch("importJSON", event);
-    if (compactUI) showMobileMenu = false;
   }
 
   function triggerFileInput() {
@@ -103,7 +99,6 @@
     if (nextMode === 'birthday' && !birthdayModeUnlocked) return;
     dispatch("setMode", nextMode);
     showModeLadder = false;
-    if (compactUI) showMobileMenu = false;
   }
 
   function unlockBirthdayMode() {
@@ -114,13 +109,11 @@
   function moveUp() {
     if (!focusedBlockId) return;
     dispatch("moveUp");
-    if (compactUI) showMobileMenu = true;
   }
 
   function moveDown() {
     if (!focusedBlockId) return;
     dispatch("moveDown");
-    if (compactUI) showMobileMenu = true;
   }
 
   function checkWidth() {
@@ -133,7 +126,8 @@
     if (
       showMobileMenu &&
       !menuRef.contains(event.target) &&
-      !toggleRef.contains(event.target)
+      !toggleRef.contains(event.target) &&
+      !mobileQuickActionsRef?.contains(event.target)
     ) {
       showMobileMenu = false;
     }
@@ -187,8 +181,8 @@ onMount(() => {
   }
 
 
-  .left-controls button,
-  .left-controls input {
+  .left-controls-wrapper button,
+  .left-controls-wrapper input {
     border-radius: 6px;
     border: 1px solid var(--left-border-color, #444444);
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
@@ -274,19 +268,19 @@ onMount(() => {
     opacity: 0.85;
   }
 
-  .left-controls button {
+  .left-controls-wrapper button {
     background: var(--left-button-bg, #333333);
     color: var(--left-button-text, #ffffff);
     padding: 8px 12px;
     cursor: pointer;
   }
 
-  .left-controls button:disabled {
+  .left-controls-wrapper button:disabled {
     opacity: 0.5;
     cursor: not-allowed;
   }
 
-  .left-controls input {
+  .left-controls-wrapper input {
     background: var(--left-input-bg, #1d1d1d);
     color: var(--left-text-color, #ffffff);
     padding: 6px 8px;
@@ -295,14 +289,16 @@ onMount(() => {
 
   .compact-toggle-btn {
     display: none;
-    background: var(--left-button-bg, #222222);
-    color: var(--left-button-text, #ffffff);
-    border: 1px solid var(--left-border-color, #444444);
-    border-radius: 6px;
-    padding: 8px 12px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+  }
+
+  .mobile-quick-actions {
+    display: none;
+    position: fixed;
+    top: 29px;
+    left: 130px;
+    z-index: 1000;
+    align-items: center;
+    gap: 8px;
   }
 
   @media (max-width: 1024px) {
@@ -330,6 +326,14 @@ onMount(() => {
       left: 10px;
       z-index: 1000;
     }
+
+    .mobile-quick-actions {
+      display: inline-flex;
+    }
+
+    .mobile-only {
+      display: none;
+    }
   }
 </style>
 
@@ -343,6 +347,69 @@ onMount(() => {
     >
       {showMobileMenu ? "✖ Close" : "☰ Menu"}
     </button>
+
+    <div class="mobile-quick-actions" bind:this={mobileQuickActionsRef}>
+      <div class="mode-switcher">
+        <button
+          bind:this={modeButtonRef}
+          on:click={toggleModeMenu}
+          aria-haspopup="listbox"
+          aria-expanded={showModeLadder}
+        >
+          📝 {modeLabels?.[mode] ?? mode}
+        </button>
+        {#if showModeLadder}
+          <div class="mode-ladder" bind:this={modeMenuRef} role="listbox">
+            {#each modeOptions as option}
+              <button
+                class:active={option.id === mode}
+                on:click={() => selectMode(option.id)}
+                role="option"
+                aria-selected={option.id === mode}
+                disabled={option.id === 'birthday' && !birthdayModeUnlocked}
+              >
+                {option.label}
+              </button>
+            {/each}
+            {#if !birthdayModeUnlocked}
+              <div class="birthday-unlock">
+                <small>Unlock birthday mode for 24 hours.</small>
+                <div class="birthday-unlock-row">
+                  <input type="password" bind:value={birthdayPassword} placeholder="Password" />
+                  <button on:click={unlockBirthdayMode}>Unlock</button>
+                </div>
+                {#if birthdayUnlockMessage}
+                  <small>{birthdayUnlockMessage}</small>
+                {/if}
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
+
+      <div class="add-block-menu">
+        <button
+          bind:this={addBlockButtonRef}
+          on:click={toggleAddBlockMenu}
+          aria-haspopup="listbox"
+          aria-expanded={showAddBlockMenu}
+        >
+          ➕ Add block
+        </button>
+        {#if showAddBlockMenu}
+          <div class="add-block-list" bind:this={addBlockMenuRef} role="listbox">
+            <button on:click={() => addBlock("text")}>+ Text</button>
+            <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
+            <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
+            <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
+            <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
+            {#if isTaskMode}
+              <button on:click={() => addBlock("task")}>+ Task List</button>
+            {/if}
+          </div>
+        {/if}
+      </div>
+    </div>
   {/if}
 
   <!-- Controls -->
@@ -350,7 +417,7 @@ onMount(() => {
     class="left-controls {showMobileMenu ? 'show' : ''}"
     bind:this={menuRef}
   >
-    <div class="mode-switcher">
+    <div class="mode-switcher mobile-only">
       <button
         bind:this={modeButtonRef}
         on:click={toggleModeMenu}
@@ -387,7 +454,7 @@ onMount(() => {
         </div>
       {/if}
     </div>
-    <div class="add-block-menu">
+    <div class="add-block-menu mobile-only">
       <button
         bind:this={addBlockButtonRef}
         on:click={toggleAddBlockMenu}
