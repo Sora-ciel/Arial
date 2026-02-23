@@ -555,7 +555,7 @@
     display: grid;
     grid-template-columns: repeat(4, 1fr);
     border: 2px solid var(--mode-border);
-    background: color-mix(in srgb, var(--mode-key-bg) 74%, var(--mode-bg));
+    background: color-mix(in srgb, black 4%, white);
   }
 
   .lane {
@@ -576,7 +576,7 @@
     height: 46px;
     border-radius: 10px;
     background: var(--mode-key-bg);
-    color: var(--mode-accent-text);
+    color: white;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -595,7 +595,7 @@
     width: calc(25% - 10px);
     min-height: 104px;
     border-radius: 8px;
-    background: var(--mode-note-bg);
+    background: rgb(27, 27, 27);
     box-shadow: inset 0 -8px 0 rgba(255, 255, 255, 0.08);
     display: flex;
     align-items: center;
@@ -619,8 +619,8 @@
     right: 0;
     bottom: 120px;
     height: 4px;
-    background: var(--mode-accent);
-    box-shadow: 0 0 10px color-mix(in srgb, var(--mode-accent) 75%, transparent);
+    background: rgb(255, 115, 90);
+    box-shadow: 0 0 10px color-mix(in srgb, rgb(255, 45, 45) 75%, transparent);
   }
 
   .win-screen,
