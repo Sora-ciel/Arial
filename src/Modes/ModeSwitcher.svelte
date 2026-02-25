@@ -6,6 +6,7 @@
   import HabitTrackerMode from './HabitTrackerMode.svelte';
   import TaskMode from './TaskMode.svelte';
   import BirthdayMode from './BirthdayMode.svelte';
+  import GridMode from './GridMode.svelte';
 
   export let mode; // 'default' or 'simple'
   export let blocks;
@@ -16,6 +17,7 @@
   export let focusedBlockId;
   export let canvasColors = {};
   export let modeLabels = {};
+  export let gridSettings = { desktopColumns: 3, mobileColumns: 2 };
 
   let width = 0;
 
@@ -31,6 +33,10 @@
 
   function focusToggleHandler(event) {
     dispatch('focusToggle', event.detail);
+  }
+
+  function gridSettingsChangeHandler(event) {
+    dispatch('gridSettingsChange', event.detail);
   }
 
   function updateWidth() {
@@ -88,6 +94,18 @@
     />
   {:else if mode === 'birthday'}
     <BirthdayMode />
+  {:else if mode === 'grid'}
+    <GridMode
+      {blocks}
+      {focusedBlockId}
+      bind:canvasRef
+      {canvasColors}
+      {gridSettings}
+      on:update={updateBlockHandler}
+      on:delete={deleteBlockHandler}
+      on:focusToggle={focusToggleHandler}
+      on:gridSettingsChange={gridSettingsChangeHandler}
+    />
   {:else}
     <SingleNoteMode
       {blocks}
