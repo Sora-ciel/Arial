@@ -323,6 +323,10 @@ onMount(() => {
     gap: 6px;
   }
 
+  .mobile-block-actions {
+    display: none;
+  }
+
   @media (max-width: 1024px) {
     .left-controls {
       display: none;
@@ -352,6 +356,13 @@ onMount(() => {
 
     .mobile-only {
       display: none;
+    }
+
+    .mobile-block-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      width: 100%;
     }
   }
 </style>
@@ -407,28 +418,6 @@ onMount(() => {
         {/if}
       </div>
 
-      <div class="add-block-menu">
-        <button
-          bind:this={addBlockButtonRef}
-          on:click={toggleAddBlockMenu}
-          aria-haspopup="listbox"
-          aria-expanded={showAddBlockMenu}
-        >
-          ➕ Add block
-        </button>
-        {#if showAddBlockMenu}
-          <div class="add-block-list" bind:this={addBlockMenuRef} role="listbox">
-            <button on:click={() => addBlock("text")}>+ Text</button>
-            <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
-            <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
-            <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
-            <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
-            {#if isTaskMode}
-              <button on:click={() => addBlock("task")}>+ Task List</button>
-            {/if}
-          </div>
-        {/if}
-      </div>
     </div>
   {/if}
 
@@ -517,6 +506,17 @@ onMount(() => {
     <button on:click={triggerFileInput}>📁 Import JSON</button>
     <button on:click={() => dispatch('undo')}>↩ Undo</button>
     <button on:click={() => dispatch('redo')}>↪ Redo</button>
+
+    <div class="mobile-block-actions">
+      <button on:click={() => addBlock("text")}>+ Text</button>
+      <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
+      <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
+      <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
+      <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
+      {#if isTaskMode}
+        <button on:click={() => addBlock("task")}>+ Task List</button>
+      {/if}
+    </div>
 
     <input
       type="file"
