@@ -3,7 +3,7 @@
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
-  import ModeArea from './BACKUPS/ModeSwitcher.svelte';
+  import ModeArea from './Modes/ModeSwitcher.svelte';
   import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
   import {
     isFirebaseConfigured,
