@@ -30,6 +30,12 @@
   const BIRTHDAY_UNLOCK_STORAGE_KEY = 'birthdayModeAccess';
   const BIRTHDAY_MODE_PASSWORD = 'Birthday24H';
   const BIRTHDAY_MODE_DURATION_MS = 24 * 60 * 60 * 1000;
+  const MOBILE_BREAKPOINT = 1024;
+
+  function getDefaultModeForViewport() {
+    if (typeof window === 'undefined') return 'default';
+    return window.innerWidth <= MOBILE_BREAKPOINT ? 'simple' : 'default';
+  }
 
   function toCssVarName(key) {
     return key
@@ -744,7 +750,7 @@
   let controlsResizeObserver;
   let observedControlsEl;
 
-  let mode = "default";
+  let mode = getDefaultModeForViewport();
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -784,7 +790,7 @@
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
-  let Pc = window.innerWidth > 1024;
+  let Pc = window.innerWidth > MOBILE_BREAKPOINT;
   let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
@@ -1277,7 +1283,7 @@
   function adjustCanvasPadding() {
     if (typeof window === "undefined") return;
 
-    if (window.innerWidth <= 1024) {
+    if (window.innerWidth <= MOBILE_BREAKPOINT) {
       setControlsHeight(75);
       return;
     }
@@ -1303,7 +1309,7 @@
 
   const handleWindowResize = () => {
     adjustCanvasPadding();
-    Pc = window.innerWidth > 1024;
+    Pc = window.innerWidth > MOBILE_BREAKPOINT;
   };
 
   function handleFocusToggle(event) {
@@ -1358,7 +1364,7 @@
   }
 
   $: if (!birthdayModeUnlocked && mode === "birthday") {
-    mode = "default";
+    mode = getDefaultModeForViewport();
   }
 
   function setMode(nextMode) {
@@ -1385,7 +1391,7 @@
   let stopAuthListener = () => {};
 
   onMount(async () => {
-    Pc = window.innerWidth > 1024;
+    Pc = window.innerWidth > MOBILE_BREAKPOINT;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
     adjustCanvasPadding();
@@ -1458,7 +1464,7 @@
     if (birthdayUnlockExpiry <= Date.now()) {
       birthdayUnlockExpiry = 0;
       persistBirthdayUnlockExpiry(0);
-      if (mode === "birthday") mode = "default";
+      if (mode === "birthday") mode = getDefaultModeForViewport();
     }
 
     history = [];
