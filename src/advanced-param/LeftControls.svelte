@@ -35,6 +35,7 @@
     { id: "single", label: "Single Note Mode" },
     { id: "habit", label: "Habit Tracker Mode" },
     { id: "task", label: "Task Mode" },
+    { id: "grid", label: "Grid Mode" },
     {
       id: "birthday",
       label: birthdayModeUnlocked ? "Birthday Mode" : "Birthday Mode 🔒"
