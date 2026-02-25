@@ -220,7 +220,7 @@
     top: 71px;
     right: 0;
     bottom: 0;
-    width: min(320px, 85vw);
+    max-width: fit-content;
     background: var(--right-panel-bg, #222222);
     border-left: 1px solid var(--right-border-color, #444444);
     padding: 0;

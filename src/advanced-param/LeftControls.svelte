@@ -360,9 +360,9 @@ onMount(() => {
 
     .mobile-block-actions {
       display: flex;
-      flex-wrap: wrap;
+      flex-direction: column;
       gap: 6px;
-      width: 100%;
+
     }
   }
 </style>
