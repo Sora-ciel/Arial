@@ -15,6 +15,19 @@ const FIREBASE_SDK_VERSION = '11.7.0';
 let firebaseModulesPromise;
 let firebaseContextPromise;
 
+function isTauriRuntime() {
+  if (typeof window === 'undefined' || typeof location === 'undefined') return false;
+  const protocol = location.protocol || '';
+  const hostname = location.hostname || '';
+
+  return (
+    protocol.startsWith('tauri:') ||
+    hostname === 'tauri.localhost' ||
+    !!window.__TAURI__ ||
+    !!window.__TAURI_INTERNALS__
+  );
+}
+
 function loadFirebaseModules() {
   if (!firebaseModulesPromise) {
     firebaseModulesPromise = Promise.all([
@@ -35,7 +48,17 @@ async function getFirebaseContext() {
         : app.initializeApp(firebaseConfig);
       const firebaseAuth = auth.getAuth(firebaseApp);
       auth.setPersistence(firebaseAuth, auth.browserLocalPersistence).catch(() => {});
-      const firebaseDb = database.getDatabase(firebaseApp);
+
+      let firebaseDb;
+      if (isTauriRuntime() && typeof database.initializeDatabase === 'function') {
+        firebaseDb = database.initializeDatabase(firebaseApp, {
+          experimentalForceLongPolling: true,
+          useFetchStreams: false
+        });
+      } else {
+        firebaseDb = database.getDatabase(firebaseApp);
+      }
+
       return { app: firebaseApp, auth: firebaseAuth, db: firebaseDb, authApi: auth, dbApi: database };
     });
   }
