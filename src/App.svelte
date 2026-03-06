@@ -286,7 +286,7 @@
   }
 
   async function openFallbackSave(reason = '') {
-    const fallbackPayload = { blocks: [], modeOrders: {} };
+    const fallbackPayload = { blocks: [], modeOrders: {}, gridSettings: DEFAULT_GRID_SETTINGS };
     await saveBlocks(FALLBACK_SAVE_NAME, fallbackPayload);
 
     currentSaveName = FALLBACK_SAVE_NAME;
@@ -294,6 +294,7 @@
     blocks = [];
     focusedBlockId = null;
     modeOrders = ensureModeOrders(blocks, {});
+    gridSettings = normalizeGridSettings(DEFAULT_GRID_SETTINGS);
     savedList = await listSavedBlocks();
 
     history = [];
@@ -679,15 +680,34 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single", "habit", "task", "birthday"];
+  const KNOWN_MODES = ["default", "simple", "single", "habit", "task", "birthday", "grid"];
   const MODE_LABELS = {
     default: "Canvas Mode",
     simple: "Simple Note Mode",
     single: "Single Note Mode",
     habit: "Habit Tracker Mode",
     task: "Task Mode",
-    birthday: "Birthday Mode"
+    birthday: "Birthday Mode",
+    grid: "Grid Mode"
   };
+
+  const DEFAULT_GRID_SETTINGS = {
+    desktopColumns: 3,
+    mobileColumns: 2
+  };
+
+  function normalizeGridSettings(settings = {}) {
+    const clamp = value => {
+      const parsed = Number(value);
+      if (!Number.isFinite(parsed)) return 1;
+      return Math.max(1, Math.min(8, Math.round(parsed)));
+    };
+
+    return {
+      desktopColumns: clamp(settings.desktopColumns ?? DEFAULT_GRID_SETTINGS.desktopColumns),
+      mobileColumns: clamp(settings.mobileColumns ?? DEFAULT_GRID_SETTINGS.mobileColumns)
+    };
+  }
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -725,7 +745,7 @@
     return clone;
   }
 
-  function cloneState(blockList, orders, { bumpVersion = true } = {}) {
+  function cloneState(blockList, orders, gridSettingsValue = gridSettings, { bumpVersion = true } = {}) {
     const normalizedOrders = ensureModeOrders(blockList, orders);
     const blocksClone = blockList.map(block => ({
       ...block,
@@ -736,12 +756,13 @@
 
     return {
       blocks: blocksClone,
-      modeOrders: cloneModeOrders(normalizedOrders)
+      modeOrders: cloneModeOrders(normalizedOrders),
+      gridSettings: normalizeGridSettings(gridSettingsValue)
     };
   }
 
-  function serializeState(blockList, orders, { bumpVersion = false } = {}) {
-    const snapshot = cloneState(blockList, orders, { bumpVersion });
+  function serializeState(blockList, orders, gridSettingsValue = gridSettings, { bumpVersion = false } = {}) {
+    const snapshot = cloneState(blockList, orders, gridSettingsValue, { bumpVersion });
     return JSON.stringify(snapshot);
   }
 
@@ -752,6 +773,7 @@
 
   let mode = getDefaultModeForViewport();
   let blocks = [];
+  let gridSettings = normalizeGridSettings(DEFAULT_GRID_SETTINGS);
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
   let modeOrderedBlocks = [];
@@ -815,7 +837,7 @@
     const isAtLatestSnapshot = historyIndex === history.length - 1;
     if (!isAtLatestSnapshot) return;
 
-    const currentSnapshot = serializeState(blocks, modeOrders, {
+    const currentSnapshot = serializeState(blocks, modeOrders, gridSettings, {
       bumpVersion: false
     });
     const latestHistorySnapshot = history[historyIndex];
@@ -827,26 +849,28 @@
     }
   }
 
-  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
+  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, gridSettingsToPersist = gridSettings) {
     if (!currentSaveName) return;
     persistLastSaveName(currentSaveName);
     const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
     await saveBlocks(currentSaveName, {
       blocks: blocksToPersist,
-      modeOrders: normalizedOrders
+      modeOrders: normalizedOrders,
+      gridSettings: normalizeGridSettings(gridSettingsToPersist)
     });
     savedList = await listSavedBlocks();
   }
 
-  async function pushHistory(newBlocks, newOrders = modeOrders) {
-    const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
+  async function pushHistory(newBlocks, newOrders = modeOrders, newGridSettings = gridSettings) {
+    const stateSnapshot = cloneState(newBlocks, newOrders, newGridSettings, { bumpVersion: true });
     const snapshot = JSON.stringify(stateSnapshot);
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = stateSnapshot.blocks;
       modeOrders = stateSnapshot.modeOrders;
       blocksRenderNonce += 1;
-      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+      gridSettings = normalizeGridSettings(stateSnapshot.gridSettings);
+      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, stateSnapshot.gridSettings);
       hasUnsnapshottedChanges = false;
       return;
     }
@@ -862,7 +886,8 @@
     modeOrders = stateSnapshot.modeOrders;
     blocksRenderNonce += 1;
 
-    await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+    gridSettings = normalizeGridSettings(stateSnapshot.gridSettings);
+    await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, stateSnapshot.gridSettings);
     hasUnsnapshottedChanges = false;
   }
 
@@ -882,10 +907,12 @@
         snapshotBlocks,
         snapshotState.modeOrders
       );
+      const snapshotGridSettings = normalizeGridSettings(snapshotState.gridSettings);
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
+      gridSettings = snapshotGridSettings;
       blocksRenderNonce += 1;
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, snapshotGridSettings);
     }
   }
 
@@ -903,10 +930,12 @@
         snapshotBlocks,
         snapshotState.modeOrders
       );
+      const snapshotGridSettings = normalizeGridSettings(snapshotState.gridSettings);
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
+      gridSettings = snapshotGridSettings;
       blocksRenderNonce += 1;
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, snapshotGridSettings);
     }
   }
 
@@ -1071,6 +1100,9 @@
       const loadedOrders = !Array.isArray(loaded)
         ? loaded?.modeOrders
         : {};
+      const loadedGridSettings = !Array.isArray(loaded)
+        ? loaded?.gridSettings
+        : null;
 
       currentSaveName = name;
       persistLastSaveName(name);
@@ -1079,6 +1111,7 @@
         _version: 0
       }));
       modeOrders = ensureModeOrders(blocks, loadedOrders);
+      gridSettings = normalizeGridSettings(loadedGridSettings || DEFAULT_GRID_SETTINGS);
 
       history = [];
       historyIndex = -1;
@@ -1221,7 +1254,8 @@
     const dataStr = JSON.stringify(
       {
         blocks,
-        modeOrders: ensureModeOrders(blocks, modeOrders)
+        modeOrders: ensureModeOrders(blocks, modeOrders),
+        gridSettings: normalizeGridSettings(gridSettings)
       },
       null,
       2
@@ -1251,11 +1285,15 @@
           const importedOrders = Array.isArray(imported)
             ? {}
             : imported.modeOrders;
+          const importedGridSettings = Array.isArray(imported)
+            ? null
+            : imported.gridSettings;
           blocks = importedBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, importedOrders);
+          gridSettings = normalizeGridSettings(importedGridSettings || DEFAULT_GRID_SETTINGS);
           focusedBlockId = null;
           history = [];
           historyIndex = -1;
@@ -1322,6 +1360,19 @@
     focusedBlockId = focusedBlockId === id ? null : id;
   }
 
+
+  async function handleGridSettingsChange(event) {
+    const next = normalizeGridSettings(event.detail || {});
+    if (
+      next.desktopColumns === gridSettings.desktopColumns &&
+      next.mobileColumns === gridSettings.mobileColumns
+    ) {
+      return;
+    }
+
+    gridSettings = next;
+    await pushHistory(blocks, modeOrders, next);
+  }
   async function moveFocusedBlock(offset) {
     if (!focusedBlockId) return;
 
@@ -1417,6 +1468,7 @@
       currentSaveName = FALLBACK_SAVE_NAME;
       blocks = [];
       modeOrders = ensureModeOrders(blocks, {});
+      gridSettings = normalizeGridSettings(DEFAULT_GRID_SETTINGS);
     } else {
       if (storedLastSave && savedList.includes(storedLastSave)) {
         currentSaveName = storedLastSave;
@@ -1435,6 +1487,7 @@
         currentSaveName = FALLBACK_SAVE_NAME;
         blocks = [];
         modeOrders = ensureModeOrders(blocks, {});
+        gridSettings = normalizeGridSettings(DEFAULT_GRID_SETTINGS);
       } else {
         startBootLoadGuard(guardedSave);
         try {
@@ -1447,12 +1500,16 @@
           const initialOrders = !Array.isArray(initialData)
             ? initialData?.modeOrders
             : {};
+          const initialGridSettings = !Array.isArray(initialData)
+            ? initialData?.gridSettings
+            : null;
           currentSaveName = guardedSave;
           blocks = initialBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, initialOrders);
+          gridSettings = normalizeGridSettings(initialGridSettings || DEFAULT_GRID_SETTINGS);
           clearBootLoadGuard();
         } catch (error) {
           console.error('Failed to load last opened save:', error);
@@ -1663,9 +1720,11 @@
         modeLabels={MODE_LABELS}
         bind:canvasRef
         canvasColors={canvasTheme}
+        {gridSettings}
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
         on:focusToggle={handleFocusToggle}
+        on:gridSettingsChange={handleGridSettingsChange}
       />
     {/key}
   </div>
