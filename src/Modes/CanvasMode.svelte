@@ -22,6 +22,7 @@
   let baseScale = 1; 
   let lastDistance = null;
   let isMobile = false;
+  let hasUserZoomed = false;
 
 
 
@@ -65,6 +66,7 @@
       newScale = Math.max(baseScale * 0.5, Math.min(baseScale * 3, newScale)); 
 
       scale = newScale;
+      hasUserZoomed = true;
       lastDistance = newDistance;
 
       e.preventDefault();
@@ -89,6 +91,7 @@
     baseScale = Math.min(scaleX, scaleY);
 
     scale = baseScale;
+    hasUserZoomed = false;
     inner.style.transformOrigin = "top left";
   }
 
@@ -99,11 +102,14 @@
   }
 
   function checkIsMobile() {
+    const wasMobile = isMobile;
     isMobile = window.innerWidth <= 1024;
-    if (isMobile) {
+
+    if (isMobile && (!hasUserZoomed || !wasMobile)) {
       fitCanvasToScreen();
-    } else {
+    } else if (!isMobile) {
       scale = 1; // reset scale on desktop
+      hasUserZoomed = false;
     }
   }
 
