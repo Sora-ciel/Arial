@@ -406,7 +406,7 @@ li {
     display: block;
     height: 600px;
     width: 100%;
-    background: #000;
+    background: var(--canvas-inner-bg, #000000);
     grid-column: 1 / -1;
     column-span: none;
   }
