@@ -90,14 +90,22 @@
 
     const scaleX = availableWidth / 1920;
     const scaleY = availableHeight / 1080;
+    const previousScale = scale;
     baseScale = Math.min(scaleX, scaleY);
 
     if (resetUserZoom) {
       userZoom = 1;
       hasUserZoomed = false;
+      scale = baseScale;
+    } else if (hasUserZoomed) {
+      const nextUserZoom = previousScale / baseScale;
+      userZoom = Math.max(0.5, Math.min(3, nextUserZoom));
+      scale = baseScale * userZoom;
+    } else {
+      userZoom = 1;
+      scale = baseScale;
     }
 
-    scale = baseScale * userZoom;
     inner.style.transformOrigin = "top left";
   }
 
