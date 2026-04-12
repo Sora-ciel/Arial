@@ -99,13 +99,12 @@
   display: block;
   column-count: 2;
   column-gap: 1rem;
+  column-fill: balance;
   padding: clamp(12px, 2vw, 24px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  flex: 1 1 100%;
   min-width: 0;
   box-sizing: border-box;
 }
