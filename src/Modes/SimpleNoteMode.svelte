@@ -219,10 +219,7 @@ li {
 }
 
 .footer {
-  height: 600px;
-  width: 100%;
-  background: #000;
-  column-span: all;
+  display: none;
 }
 
 
@@ -244,6 +241,10 @@ li {
   }
 
   .footer {
+    display: block;
+    height: 600px;
+    width: 100%;
+    background: #000;
     grid-column: 1 / -1;
     column-span: none;
   }
