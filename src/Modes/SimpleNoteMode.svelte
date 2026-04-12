@@ -218,6 +218,7 @@
   display: flex;
   gap: 1rem;
   align-items: flex-start;
+  background: var(--canvas-inner-bg, #000000);
   padding: clamp(12px, 2vw, 24px);
   overflow-y: auto;
   overflow-x: hidden;
