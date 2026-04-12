@@ -16,6 +16,7 @@
   export let focusedBlockId;
   export let canvasColors = {};
   export let modeLabels = {};
+  export let simpleNoteColumnCount = 2;
 
   let width = 0;
 
@@ -64,6 +65,7 @@
     <SimpleNoteMode
       {blocks}
       {focusedBlockId}
+      columnCount={simpleNoteColumnCount}
       bind:canvasRef
       {canvasColors}
       on:touchstart={onTouchStart}

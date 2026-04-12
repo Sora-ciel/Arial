@@ -5,8 +5,8 @@
   export let focusedBlockId = null;
   export let canvasColors = {};
   export let canvasRef;
+  export let columnCount = 2;
   const dispatch = createEventDispatcher();
-  let isMobile = false;
 
   const defaultCanvasColors = {
     outerBg: '#000000',
@@ -168,15 +168,10 @@
     }
   }
 
-  function updateViewportMode() {
-    if (typeof window === 'undefined') return;
-    isMobile = window.innerWidth < 1024;
-  }
-
-  $: mobileColumns = [
-    blocks.filter((_, index) => index % 2 === 0),
-    blocks.filter((_, index) => index % 2 === 1)
-  ];
+  $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
+  $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
+    blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
+  );
   
 
 
@@ -184,10 +179,8 @@
   // Resize all textareas when component mounts
   onMount(() => {
     let rafId;
-    window.addEventListener('resize', updateViewportMode);
     
     const initializeLayout = async () => {
-      updateViewportMode();
       await tick();
       resizeAllTextareas();
       rafId = requestAnimationFrame(() => {
@@ -197,7 +190,6 @@
     initializeLayout();
 
     return () => {
-      window.removeEventListener('resize', updateViewportMode);
       if (rafId) cancelAnimationFrame(rafId);
     };
   });
@@ -215,7 +207,8 @@
 <style>
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(var(--simple-note-columns, 2), minmax(0, 1fr));
   gap: 1rem;
   align-items: flex-start;
   background: var(--canvas-inner-bg, #000000);
@@ -223,8 +216,8 @@
   overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
-  max-width: 1200px;
-  margin: 0 auto;
+  max-width: none;
+  margin: 0;
   min-width: 0;
   box-sizing: border-box;
 }
@@ -377,55 +370,6 @@ li {
   margin-right: 10px;
 }
 
-.footer {
-  display: none;
-}
-
-
-/* ========== PC (desktop) ========== */
-@media (min-width: 1024px) {
-  .simple-wrapper {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    column-count: auto;
-    column-gap: 0;
-    gap: 1rem;
-    justify-content: stretch;
-    max-width: 1400px;
-  }
-
-  .canvas {
-    display: block;
-    margin-bottom: 0;
-  }
-
-  .simple-column {
-    display: contents;
-  }
-
-  .footer {
-    display: block;
-    height: 600px;
-    width: 100%;
-    background: var(--canvas-inner-bg, #000000);
-    grid-column: 1 / -1;
-    column-span: none;
-  }
-
-  .container img {
-    width: auto;
-    height: 100%;
-    max-height: 500px;
-    object-fit: contain;
-    border-radius: 14px;
-  }
-}
-
-
-
-
-
-
 </style>
 
 
@@ -436,129 +380,10 @@ li {
 
 
 
-<div class="simple-wrapper" bind:this={canvasRef} style={canvasCssVars}>
-  {#if isMobile}
-    {#each mobileColumns as column}
-      <div class="simple-column">
-        {#each column as block (blockKey(block))}
-          <div class="canvas">
-            <div
-              class="container"
-              class:focused={block.id === focusedBlockId}
-              style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
-              on:click={(event) => handleBlockClick(event, block.id)}
-              role="button"
-              tabindex="0"
-              aria-pressed={block.id === focusedBlockId}
-              on:keydown={(event) => handleBlockKeydown(event, block.id)}
-            >
-              {#if block.type === 'text' || block.type === 'cleantext'}
-                <textarea
-                  bind:value={block.content}
-                  spellcheck="false"
-                  rows="1"
-                  style="overflow:hidden;"
-                  on:input={(e) => {
-                    updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-                  }}
-                  on:focus={(e) => {
-                    focusScroll(e.target);
-                    ensureFocus(block.id);
-                  }}
-                  data-focus-guard
-                  placeholder="Type your note here..."
-                ></textarea>
-                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-                </button>
-              {:else if block.type === 'image'}
-                {#if hasImageSource(block)}
-                  <img
-                    src={getImageSource(block)}
-                    alt=""
-                    data-focus-guard
-                    on:dblclick|stopPropagation={() => openImagePicker(block.id)}
-                    on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
-                  />
-                {:else}
-                  <div class="image-empty-state" data-focus-guard>
-                    <button
-                      class="image-select-button"
-                      on:click|stopPropagation={() => openImagePicker(block.id)}
-                      data-focus-guard
-                    >
-                      Add image
-                    </button>
-                  </div>
-                {/if}
-                <li>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    style="display:none;"
-                    use:imageInputRef={block.id}
-                    on:change={(event) => handleImageChange(event, block)}
-                    data-focus-guard
-                  />
-                  <button
-                    class="edit-button"
-                    data-focus-guard
-                    on:click={() =>
-                      updateBlock(block.id, { editing: !block.editing })
-                    }
-                  >
-                    {block.editing ? 'Done' : 'Edit'}
-                  </button>
-                  {#if block.editing}
-                    <input
-                      type="text"
-                      placeholder="Image URL"
-                      value={block.src}
-                      on:input={(e) => updateBlock(block.id, { src: e.target.value })}
-                      on:focus={() => ensureFocus(block.id)}
-                      data-focus-guard
-                    />
-                  {/if}
-                  <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                    ×
-                  </button>
-                </li>
-
-              {:else if block.type === 'music'}
-                <p>🎵 {block.content}</p>
-                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-                </button>
-              {:else if block.type === 'embed'}
-                <p>[Embed: {block.content}]</p>
-                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-                </button>
-              {:else if block.type === 'task'}
-                <div class="task-list-title">{block.title || 'Task List'}</div>
-                <div class="task-list">
-                  {#if Array.isArray(block.tasks) && block.tasks.length}
-                    {#each block.tasks as task (task.id)}
-                      <div class="task-item">
-                        {task.done ? '✅' : '⬜'} {task.text}
-                      </div>
-                    {/each}
-                  {:else}
-                    <div class="task-item">No tasks yet</div>
-                  {/if}
-                </div>
-                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-                </button>
-              {/if}
-
-            </div>
-          </div>
-        {/each}
-      </div>
-    {/each}
-  {:else}
-    {#each blocks as block (blockKey(block))}
+<div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
+  {#each renderColumns as column}
+    <div class="simple-column">
+      {#each column as block (blockKey(block))}
       <div class="canvas">
         <div
           class="container"
@@ -673,7 +498,7 @@ li {
 
         </div>
       </div>
-    {/each}
-    <div class="footer"></div>
-  {/if}
+      {/each}
+    </div>
+  {/each}
 </div>

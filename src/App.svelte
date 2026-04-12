@@ -751,6 +751,7 @@
   let observedControlsEl;
 
   let mode = getDefaultModeForViewport();
+  let simpleNoteColumnCount = 2;
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -1658,6 +1659,7 @@
       <ModeArea
         {mode}
         blocks={modeOrderedBlocks}
+        {simpleNoteColumnCount}
         {groupedBlocks}
         {focusedBlockId}
         modeLabels={MODE_LABELS}
