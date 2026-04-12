@@ -1,5 +1,5 @@
 <script>
-  import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
+  import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -103,13 +103,22 @@
 
   // Resize all textareas when component mounts
   onMount(() => {
-    updateViewportMode();
+    let rafId;
     window.addEventListener('resize', updateViewportMode);
-
-    resizeAllTextareas();
+    
+    const initializeLayout = async () => {
+      updateViewportMode();
+      await tick();
+      resizeAllTextareas();
+      rafId = requestAnimationFrame(() => {
+        resizeAllTextareas();
+      });
+    };
+    initializeLayout();
 
     return () => {
       window.removeEventListener('resize', updateViewportMode);
+      if (rafId) cancelAnimationFrame(rafId);
     };
   });
 
