@@ -114,9 +114,10 @@
   border-radius: 8px;
   padding: 5px;
   margin: 0 0 1rem;
-  width: 100%;
-  display: inline-block;
-  break-inside: avoid;
+  display: block;
+  width: auto;
+  break-inside: avoid-column;
+  page-break-inside: avoid;
   -webkit-column-break-inside: avoid;
   box-sizing: border-box;
 }
