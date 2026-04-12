@@ -24,6 +24,7 @@
   let lastDistance = null;
   let isMobile = false;
   let hasUserZoomed = false;
+  let isCanvasReady = false;
 
 
 
@@ -126,6 +127,8 @@
       userZoom = 1;
       hasUserZoomed = false;
     }
+
+    isCanvasReady = true;
   });
 </script>
 
@@ -139,6 +142,10 @@
   bottom: 0;
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
+}
+
+.canvas.loading {
+  visibility: hidden;
 }
 
 
@@ -174,6 +181,7 @@
 
 <div
   class="canvas"
+  class:loading={!isCanvasReady}
   class:simple-note={mode === 'simple'}
   bind:this={canvasRef}
   style={canvasCssVars}
