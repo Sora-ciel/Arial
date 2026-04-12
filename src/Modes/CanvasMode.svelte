@@ -24,6 +24,7 @@
   let lastDistance = null;
   let isMobile = false;
   let hasUserZoomed = false;
+  let lastViewportWidth = 0;
 
 
 
@@ -90,14 +91,22 @@
 
     const scaleX = availableWidth / 1920;
     const scaleY = availableHeight / 1080;
+    const previousScale = scale;
     baseScale = Math.min(scaleX, scaleY);
 
     if (resetUserZoom) {
       userZoom = 1;
       hasUserZoomed = false;
+      scale = baseScale;
+    } else if (hasUserZoomed) {
+      const nextUserZoom = previousScale / baseScale;
+      userZoom = Math.max(0.5, Math.min(3, nextUserZoom));
+      scale = baseScale * userZoom;
+    } else {
+      userZoom = 1;
+      scale = baseScale;
     }
 
-    scale = baseScale * userZoom;
     inner.style.transformOrigin = "top left";
   }
 
@@ -108,16 +117,23 @@
   }
 
   function checkIsMobile() {
+    const viewportWidth = window.innerWidth;
     const wasMobile = isMobile;
-    isMobile = window.innerWidth <= 1024;
+    const hasTouchInput = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+    const nextIsMobile = viewportWidth <= 1024 || (wasMobile && hasTouchInput);
+    const widthChanged = Math.abs(viewportWidth - lastViewportWidth) > 2;
 
-    if (isMobile) {
+    isMobile = nextIsMobile;
+
+    if (isMobile && (!wasMobile || widthChanged)) {
       fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
     } else if (!isMobile) {
       scale = 1; // reset scale on desktop
       userZoom = 1;
       hasUserZoomed = false;
     }
+
+    lastViewportWidth = viewportWidth;
   }
 
   const defaultCanvasColors = {
@@ -130,6 +146,7 @@
   $: innerScale = isMobile ? scale : 1;
 
   onMount(() => {
+    lastViewportWidth = window.innerWidth;
     checkIsMobile();
     window.addEventListener("resize", checkIsMobile);
     return () => {
@@ -148,6 +165,7 @@
   bottom: 0;
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
+  touch-action: pan-x pan-y;
 }
 
 
