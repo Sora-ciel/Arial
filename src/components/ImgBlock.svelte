@@ -14,6 +14,10 @@
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
   const MAX_VIDEO_BYTES = 100 * 1024 * 1024;
+  const DEFAULT_BLOCK_WIDTH = 300;
+  const DEFAULT_BLOCK_HEIGHT = 200;
+  const MAX_MEDIA_WIDTH = 400;
+  const MAX_MEDIA_HEIGHT = 300;
   
 
   let position = { ...initialPosition };
@@ -36,6 +40,7 @@
   let suppressClick = false;
   let hasDragged = false;
   let hasResized = false;
+  let attemptedInitialAutoFit = false;
 
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
@@ -65,29 +70,18 @@
       src = reader.result;
       resolvedSrc = null;
       attachmentRequiresAuth = false;
+      attemptedInitialAutoFit = true;
 
       const isVideo = file.type.startsWith('video/');
-
-      const maxWidth = 400;
-      const maxHeight = 300;
 
       if (!isVideo) {
         const img = new Image();
         img.src = src;
         img.onload = () => {
-          const naturalRatio = img.width / img.height;
-
-          let targetWidth = maxWidth;
-          let targetHeight = targetWidth / naturalRatio;
-
-          if (targetHeight > maxHeight) {
-            targetHeight = maxHeight;
-            targetWidth = targetHeight * naturalRatio;
-          }
-
+          const { width: targetWidth, height: targetHeight } = getFittedMediaSize(img.width, img.height);
           size.width = targetWidth;
-          size.height = targetHeight + HEADER_HEIGHT;  // add header height
-          aspectRatio = targetWidth / targetHeight;   // media content ratio only
+          size.height = targetHeight + HEADER_HEIGHT;
+          aspectRatio = targetWidth / targetHeight;
 
 
           sendUpdate(['src', 'size']);
@@ -96,17 +90,8 @@
         const videoEl = document.createElement('video');
         videoEl.src = src;
         videoEl.onloadedmetadata = () => {
-          const naturalRatio = videoEl.videoWidth / videoEl.videoHeight;
-
-          let targetWidth = maxWidth;
-          let targetHeight = targetWidth / naturalRatio;
-
-          if (targetHeight > maxHeight) {
-            targetHeight = maxHeight;
-            targetWidth = targetHeight * naturalRatio;
-          }
-
-          aspectRatio = naturalRatio;
+          const { width: targetWidth, height: targetHeight } = getFittedMediaSize(videoEl.videoWidth, videoEl.videoHeight);
+          aspectRatio = targetWidth / targetHeight;
           size.width = targetWidth;
           size.height = targetHeight + HEADER_HEIGHT;
 
@@ -118,6 +103,62 @@
     reader.readAsDataURL(file);
     e.target.value = '';
   }
+
+  function getFittedMediaSize(width, height) {
+    if (!width || !height) {
+      return { width: DEFAULT_BLOCK_WIDTH, height: DEFAULT_BLOCK_HEIGHT - HEADER_HEIGHT };
+    }
+
+    const naturalRatio = width / height;
+    let targetWidth = MAX_MEDIA_WIDTH;
+    let targetHeight = targetWidth / naturalRatio;
+
+    if (targetHeight > MAX_MEDIA_HEIGHT) {
+      targetHeight = MAX_MEDIA_HEIGHT;
+      targetWidth = targetHeight * naturalRatio;
+    }
+
+    return { width: targetWidth, height: targetHeight };
+  }
+
+  function isAtDefaultSize() {
+    return (
+      Math.abs(size.width - DEFAULT_BLOCK_WIDTH) < 0.5 &&
+      Math.abs(size.height - DEFAULT_BLOCK_HEIGHT) < 0.5
+    );
+  }
+
+  function autoFitFromExistingSource() {
+    if (!mediaSrc || attemptedInitialAutoFit || !isAtDefaultSize()) return;
+
+    attemptedInitialAutoFit = true;
+    const mediaLooksLikeVideo = mediaSrc.startsWith('data:video') || mediaSrc.endsWith('.mp4');
+
+    if (mediaLooksLikeVideo) {
+      const videoEl = document.createElement('video');
+      videoEl.src = mediaSrc;
+      videoEl.onloadedmetadata = () => {
+        const { width: targetWidth, height: targetHeight } = getFittedMediaSize(videoEl.videoWidth, videoEl.videoHeight);
+        size.width = targetWidth;
+        size.height = targetHeight + HEADER_HEIGHT;
+        aspectRatio = targetWidth / targetHeight;
+        sendUpdate(['size'], { pushToHistory: false });
+      };
+      return;
+    }
+
+    const img = new Image();
+    img.src = mediaSrc;
+    img.onload = () => {
+      const { width: targetWidth, height: targetHeight } = getFittedMediaSize(img.width, img.height);
+      size.width = targetWidth;
+      size.height = targetHeight + HEADER_HEIGHT;
+      aspectRatio = targetWidth / targetHeight;
+      sendUpdate(['size'], { pushToHistory: false });
+    };
+  }
+
+  $: autoFitFromExistingSource();
 
 
 
