@@ -1,11 +1,12 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { afterUpdate, createEventDispatcher, onMount } from 'svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
   export let canvasColors = {};
   export let canvasRef;
   const dispatch = createEventDispatcher();
+  let isMobile = false;
 
   const defaultCanvasColors = {
     outerBg: '#000000',
@@ -69,6 +70,11 @@
     textarea.style.height = textarea.scrollHeight + "px";
   }
 
+  function resizeAllTextareas() {
+    const textareas = canvasRef?.querySelectorAll?.('textarea') ?? [];
+    textareas.forEach(autoResize);
+  }
+
 
 
 
@@ -77,14 +83,38 @@
       if (window.innerWidth <= 1024)
     el.scrollIntoView({ behavior: "smooth", block: "center" });
   }
+
+  function blockKey(block) {
+    return block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : '');
+  }
+
+  function updateViewportMode() {
+    if (typeof window === 'undefined') return;
+    isMobile = window.innerWidth < 1024;
+  }
+
+  $: mobileColumns = [
+    blocks.filter((_, index) => index % 2 === 0),
+    blocks.filter((_, index) => index % 2 === 1)
+  ];
   
 
 
 
   // Resize all textareas when component mounts
   onMount(() => {
-    const textareas = document.querySelectorAll("textarea");
-    textareas.forEach(autoResize);
+    updateViewportMode();
+    window.addEventListener('resize', updateViewportMode);
+
+    resizeAllTextareas();
+
+    return () => {
+      window.removeEventListener('resize', updateViewportMode);
+    };
+  });
+
+  afterUpdate(() => {
+    resizeAllTextareas();
   });
 </script>
 
@@ -96,27 +126,34 @@
 <style>
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
   gap: 1rem;
-  justify-content: center;
+  align-items: flex-start;
   padding: clamp(12px, 2vw, 24px);
   overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  flex: 1 1 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+.simple-column {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .canvas {
   background: var(--canvas-outer-bg, #00000041);
   border-radius: 8px;
   padding: 5px;
-  margin-bottom: 0;
-  width: 100%;
+  margin: 0 0 1rem;
+  display: block;
+  width: auto;
+  break-inside: avoid-column;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
   box-sizing: border-box;
 }
 
@@ -210,22 +247,38 @@ li {
 }
 
 .footer {
-  height: 600px;
-  width: 100%;
-  background: #000;
+  display: none;
 }
 
 
 /* ========== PC (desktop) ========== */
 @media (min-width: 1024px) {
   .simple-wrapper {
+    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    column-count: auto;
+    column-gap: 0;
+    gap: 1rem;
     justify-content: stretch;
     max-width: 1400px;
   }
 
   .canvas {
+    display: block;
     margin-bottom: 0;
+  }
+
+  .simple-column {
+    display: contents;
+  }
+
+  .footer {
+    display: block;
+    height: 600px;
+    width: 100%;
+    background: #000;
+    grid-column: 1 / -1;
+    column-span: none;
   }
 
   .container img {
@@ -253,80 +306,159 @@ li {
 
 
 <div class="simple-wrapper" bind:this={canvasRef} style={canvasCssVars}>
-  {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
-    <div class="canvas">
-      <div
-        class="container"
-        class:focused={block.id === focusedBlockId}
-        style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
-        on:click={(event) => handleBlockClick(event, block.id)}
-        role="button"
-        tabindex="0"
-        aria-pressed={block.id === focusedBlockId}
-        on:keydown={(event) => handleBlockKeydown(event, block.id)}
-      >
-        {#if block.type === 'text' || block.type === 'cleantext'}
-          <textarea
-            bind:value={block.content}
-            spellcheck="false"
-            rows="1"
-            style="overflow:hidden;"
-            on:input={(e) => {
-              autoResize(e.target);
-              updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-            }}
-            on:focus={(e) => {
-              focusScroll(e.target);
-              ensureFocus(block.id);
-            }}
-            data-focus-guard
-            placeholder="Type your note here..."
-          ></textarea>
-          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-           ×
-          </button>
-        {:else if block.type === 'image'}
-          <img src={block.src} alt="" />
-          <li>
-            <button
-              class="edit-button"
-              data-focus-guard
-              on:click={() =>
-                updateBlock(block.id, { editing: !block.editing })
-              }
+  {#if isMobile}
+    {#each mobileColumns as column}
+      <div class="simple-column">
+        {#each column as block (blockKey(block))}
+          <div class="canvas">
+            <div
+              class="container"
+              class:focused={block.id === focusedBlockId}
+              style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
+              on:click={(event) => handleBlockClick(event, block.id)}
+              role="button"
+              tabindex="0"
+              aria-pressed={block.id === focusedBlockId}
+              on:keydown={(event) => handleBlockKeydown(event, block.id)}
             >
-              {block.editing ? 'Done' : 'Edit'}
-            </button>
-            {#if block.editing}
-              <input
-                type="text"
-                placeholder="Image URL"
-                value={block.src}
-                on:input={(e) => updateBlock(block.id, { src: e.target.value })}
-                on:focus={() => ensureFocus(block.id)}
-                data-focus-guard
-              />
-            {/if}
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-              ×
-            </button>
-          </li>
+              {#if block.type === 'text' || block.type === 'cleantext'}
+                <textarea
+                  bind:value={block.content}
+                  spellcheck="false"
+                  rows="1"
+                  style="overflow:hidden;"
+                  on:input={(e) => {
+                    updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
+                  }}
+                  on:focus={(e) => {
+                    focusScroll(e.target);
+                    ensureFocus(block.id);
+                  }}
+                  data-focus-guard
+                  placeholder="Type your note here..."
+                ></textarea>
+                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                ×
+                </button>
+              {:else if block.type === 'image'}
+                <img src={block.src} alt="" />
+                <li>
+                  <button
+                    class="edit-button"
+                    data-focus-guard
+                    on:click={() =>
+                      updateBlock(block.id, { editing: !block.editing })
+                    }
+                  >
+                    {block.editing ? 'Done' : 'Edit'}
+                  </button>
+                  {#if block.editing}
+                    <input
+                      type="text"
+                      placeholder="Image URL"
+                      value={block.src}
+                      on:input={(e) => updateBlock(block.id, { src: e.target.value })}
+                      on:focus={() => ensureFocus(block.id)}
+                      data-focus-guard
+                    />
+                  {/if}
+                  <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                    ×
+                  </button>
+                </li>
 
-        {:else if block.type === 'music'}
-          <p>🎵 {block.content}</p>
-          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-           ×
-          </button>
-        {:else if block.type === 'embed'}
-          <p>[Embed: {block.content}]</p>
-          <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-           ×
-          </button>
-        {/if}
+              {:else if block.type === 'music'}
+                <p>🎵 {block.content}</p>
+                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                ×
+                </button>
+              {:else if block.type === 'embed'}
+                <p>[Embed: {block.content}]</p>
+                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                ×
+                </button>
+              {/if}
 
-
+            </div>
+          </div>
+        {/each}
       </div>
-    </div>
-  {/each}
-  <div class="footer"></div>
+    {/each}
+  {:else}
+    {#each blocks as block (blockKey(block))}
+      <div class="canvas">
+        <div
+          class="container"
+          class:focused={block.id === focusedBlockId}
+          style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
+          on:click={(event) => handleBlockClick(event, block.id)}
+          role="button"
+          tabindex="0"
+          aria-pressed={block.id === focusedBlockId}
+          on:keydown={(event) => handleBlockKeydown(event, block.id)}
+        >
+          {#if block.type === 'text' || block.type === 'cleantext'}
+            <textarea
+              bind:value={block.content}
+              spellcheck="false"
+              rows="1"
+              style="overflow:hidden;"
+              on:input={(e) => {
+                updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
+              }}
+              on:focus={(e) => {
+                focusScroll(e.target);
+                ensureFocus(block.id);
+              }}
+              data-focus-guard
+              placeholder="Type your note here..."
+            ></textarea>
+            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+            ×
+            </button>
+          {:else if block.type === 'image'}
+            <img src={block.src} alt="" />
+            <li>
+              <button
+                class="edit-button"
+                data-focus-guard
+                on:click={() =>
+                  updateBlock(block.id, { editing: !block.editing })
+                }
+              >
+                {block.editing ? 'Done' : 'Edit'}
+              </button>
+              {#if block.editing}
+                <input
+                  type="text"
+                  placeholder="Image URL"
+                  value={block.src}
+                  on:input={(e) => updateBlock(block.id, { src: e.target.value })}
+                  on:focus={() => ensureFocus(block.id)}
+                  data-focus-guard
+                />
+              {/if}
+              <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                ×
+              </button>
+            </li>
+
+          {:else if block.type === 'music'}
+            <p>🎵 {block.content}</p>
+            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+            ×
+            </button>
+          {:else if block.type === 'embed'}
+            <p>[Embed: {block.content}]</p>
+            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+            ×
+            </button>
+          {/if}
+
+
+        </div>
+      </div>
+    {/each}
+    <div class="footer"></div>
+  {/if}
 </div>
