@@ -147,7 +147,6 @@
         size.width = targetWidth;
         size.height = targetHeight + getHeaderHeight();
         aspectRatio = targetWidth / targetHeight;
-        sendUpdate(['size'], { pushToHistory: false });
       };
       return;
     }
@@ -159,7 +158,6 @@
       size.width = targetWidth;
       size.height = targetHeight + getHeaderHeight();
       aspectRatio = targetWidth / targetHeight;
-      sendUpdate(['size'], { pushToHistory: false });
     };
   }
 
