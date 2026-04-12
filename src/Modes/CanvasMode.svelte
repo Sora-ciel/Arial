@@ -20,6 +20,7 @@
 
   let scale = 1;
   let baseScale = 1; 
+  let userZoom = 1;
   let lastDistance = null;
   let isMobile = false;
   let hasUserZoomed = false;
@@ -66,6 +67,7 @@
       newScale = Math.max(baseScale * 0.5, Math.min(baseScale * 3, newScale)); 
 
       scale = newScale;
+      userZoom = scale / baseScale;
       hasUserZoomed = true;
       lastDistance = newDistance;
 
@@ -77,7 +79,7 @@
     lastDistance = null;
   }
 
-  function fitCanvasToScreen() {
+  function fitCanvasToScreen({ resetUserZoom = false } = {}) {
     if (!canvasRef) return;
     const inner = canvasRef.querySelector(".canvas-inner");
     if (!inner) return;
@@ -90,14 +92,18 @@
     const scaleY = availableHeight / 1080;
     baseScale = Math.min(scaleX, scaleY);
 
-    scale = baseScale;
-    hasUserZoomed = false;
+    if (resetUserZoom) {
+      userZoom = 1;
+      hasUserZoomed = false;
+    }
+
+    scale = baseScale * userZoom;
     inner.style.transformOrigin = "top left";
   }
 
   export function refitCanvas() {
     tick().then(() => {
-      fitCanvasToScreen();
+      fitCanvasToScreen({ resetUserZoom: true });
     });
   }
 
@@ -105,10 +111,11 @@
     const wasMobile = isMobile;
     isMobile = window.innerWidth <= 1024;
 
-    if (isMobile && (!hasUserZoomed || !wasMobile)) {
-      fitCanvasToScreen();
+    if (isMobile) {
+      fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
     } else if (!isMobile) {
       scale = 1; // reset scale on desktop
+      userZoom = 1;
       hasUserZoomed = false;
     }
   }
