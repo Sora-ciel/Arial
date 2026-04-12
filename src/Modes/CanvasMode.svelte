@@ -119,7 +119,8 @@
   function checkIsMobile() {
     const viewportWidth = window.innerWidth;
     const wasMobile = isMobile;
-    const nextIsMobile = viewportWidth <= 1024;
+    const hasTouchInput = typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0;
+    const nextIsMobile = viewportWidth <= 1024 || (wasMobile && hasTouchInput);
     const widthChanged = Math.abs(viewportWidth - lastViewportWidth) > 2;
 
     isMobile = nextIsMobile;
@@ -164,6 +165,7 @@
   bottom: 0;
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
+  touch-action: pan-x pan-y;
 }
 
 
