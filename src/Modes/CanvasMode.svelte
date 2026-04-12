@@ -24,6 +24,7 @@
   let lastDistance = null;
   let isMobile = false;
   let hasUserZoomed = false;
+  let lastViewportWidth = 0;
 
 
 
@@ -116,16 +117,22 @@
   }
 
   function checkIsMobile() {
+    const viewportWidth = window.innerWidth;
     const wasMobile = isMobile;
-    isMobile = window.innerWidth <= 1024;
+    const nextIsMobile = viewportWidth <= 1024;
+    const widthChanged = Math.abs(viewportWidth - lastViewportWidth) > 2;
 
-    if (isMobile) {
+    isMobile = nextIsMobile;
+
+    if (isMobile && (!wasMobile || widthChanged)) {
       fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
     } else if (!isMobile) {
       scale = 1; // reset scale on desktop
       userZoom = 1;
       hasUserZoomed = false;
     }
+
+    lastViewportWidth = viewportWidth;
   }
 
   const defaultCanvasColors = {
@@ -138,6 +145,7 @@
   $: innerScale = isMobile ? scale : 1;
 
   onMount(() => {
+    lastViewportWidth = window.innerWidth;
     checkIsMobile();
     window.addEventListener("resize", checkIsMobile);
     return () => {
