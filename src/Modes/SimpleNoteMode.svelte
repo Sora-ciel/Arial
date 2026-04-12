@@ -96,27 +96,36 @@
 <style>
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 1rem;
-  justify-content: center;
+  display: block;
+  column-count: 2;
+  column-gap: 1rem;
+  column-fill: auto;
   padding: clamp(12px, 2vw, 24px);
-  overflow-y: auto;
-  overflow-x: hidden;
+  overflow: visible;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
-  flex: 1 1 100%;
   min-width: 0;
   box-sizing: border-box;
+}
+
+@media (max-width: 1023px) {
+  .simple-wrapper {
+    column-count: 2;
+    column-gap: 1rem;
+  }
 }
 
 .canvas {
   background: var(--canvas-outer-bg, #00000041);
   border-radius: 8px;
   padding: 5px;
-  margin-bottom: 0;
-  width: 100%;
+  margin: 0 0 1rem;
+  display: block;
+  width: auto;
+  break-inside: avoid-column;
+  page-break-inside: avoid;
+  -webkit-column-break-inside: avoid;
   box-sizing: border-box;
 }
 
@@ -213,19 +222,30 @@ li {
   height: 600px;
   width: 100%;
   background: #000;
+  column-span: all;
 }
 
 
 /* ========== PC (desktop) ========== */
 @media (min-width: 1024px) {
   .simple-wrapper {
+    display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    column-count: auto;
+    column-gap: 0;
+    gap: 1rem;
     justify-content: stretch;
     max-width: 1400px;
   }
 
   .canvas {
+    display: block;
     margin-bottom: 0;
+  }
+
+  .footer {
+    grid-column: 1 / -1;
+    column-span: none;
   }
 
   .container img {
