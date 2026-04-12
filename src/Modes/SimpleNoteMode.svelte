@@ -88,6 +88,86 @@
     return block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : '');
   }
 
+  let imageInputRefs = {};
+  let imageTapTracker = {};
+
+  function setImageInputRef(blockId, node) {
+    if (node) {
+      imageInputRefs[blockId] = node;
+      return;
+    }
+    delete imageInputRefs[blockId];
+  }
+
+  function imageInputRef(node, blockId) {
+    setImageInputRef(blockId, node);
+    return {
+      update(nextBlockId) {
+        if (nextBlockId === blockId) return;
+        setImageInputRef(blockId, null);
+        blockId = nextBlockId;
+        setImageInputRef(blockId, node);
+      },
+      destroy() {
+        setImageInputRef(blockId, null);
+      }
+    };
+  }
+
+  function getImageSource(block) {
+    if (!block) return '';
+    if (typeof block.src === 'string') return block.src;
+    if (block.src && typeof block.src === 'object') return block.resolvedSrc || '';
+    return '';
+  }
+
+  function hasImageSource(block) {
+    return Boolean(getImageSource(block));
+  }
+
+  function openImagePicker(blockId) {
+    const input = imageInputRefs[blockId];
+    if (!input) return;
+    ensureFocus(blockId);
+    input.click();
+  }
+
+  function handleImageChange(event, block) {
+    ensureFocus(block.id);
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      updateBlock(
+        block.id,
+        {
+          src: reader.result,
+          resolvedSrc: null,
+          attachmentRequiresAuth: false,
+          _version: (block._version || 0) + 1
+        },
+        {
+          changedKeys: ['src', 'resolvedSrc', 'attachmentRequiresAuth', '_version']
+        }
+      );
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+
+  function handleImageTouchEnd(event, block) {
+    if (!hasImageSource(block)) return;
+    const currentTap = Date.now();
+    const previousTap = imageTapTracker[block.id] || 0;
+    imageTapTracker[block.id] = currentTap;
+
+    if (currentTap - previousTap <= 300) {
+      event.preventDefault();
+      openImagePicker(block.id);
+    }
+  }
+
   function updateViewportMode() {
     if (typeof window === 'undefined') return;
     isMobile = window.innerWidth < 1024;
@@ -236,6 +316,47 @@ li {
   padding: 0;
 }
 
+.image-empty-state {
+  width: 100%;
+  min-height: 180px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px dashed color-mix(in srgb, var(--text-color) 45%, transparent);
+  border-radius: 14px;
+  margin-bottom: 8px;
+}
+
+.image-select-button {
+  border: 2px solid var(--text-color);
+  background: transparent;
+  color: var(--text-color);
+  border-radius: 12px;
+  padding: 10px 14px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.task-list {
+  width: 100%;
+  margin: 6px 0;
+  padding: 0 8px 8px;
+  box-sizing: border-box;
+}
+
+.task-list-title {
+  font-weight: 700;
+  padding: 6px 8px 2px;
+}
+
+.task-item {
+  padding: 4px 8px;
+  border-radius: 8px;
+  margin-top: 4px;
+  background: color-mix(in srgb, var(--text-color) 10%, transparent);
+  font-size: 0.95rem;
+}
+
 .edit-button,
 .delete-button {
   background: transparent;
@@ -350,8 +471,34 @@ li {
                 ×
                 </button>
               {:else if block.type === 'image'}
-                <img src={block.src} alt="" />
+                {#if hasImageSource(block)}
+                  <img
+                    src={getImageSource(block)}
+                    alt=""
+                    data-focus-guard
+                    on:dblclick|stopPropagation={() => openImagePicker(block.id)}
+                    on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
+                  />
+                {:else}
+                  <div class="image-empty-state" data-focus-guard>
+                    <button
+                      class="image-select-button"
+                      on:click|stopPropagation={() => openImagePicker(block.id)}
+                      data-focus-guard
+                    >
+                      Add image
+                    </button>
+                  </div>
+                {/if}
                 <li>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    style="display:none;"
+                    use:imageInputRef={block.id}
+                    on:change={(event) => handleImageChange(event, block)}
+                    data-focus-guard
+                  />
                   <button
                     class="edit-button"
                     data-focus-guard
@@ -383,6 +530,22 @@ li {
                 </button>
               {:else if block.type === 'embed'}
                 <p>[Embed: {block.content}]</p>
+                <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+                ×
+                </button>
+              {:else if block.type === 'task'}
+                <div class="task-list-title">{block.title || 'Task List'}</div>
+                <div class="task-list">
+                  {#if Array.isArray(block.tasks) && block.tasks.length}
+                    {#each block.tasks as task (task.id)}
+                      <div class="task-item">
+                        {task.done ? '✅' : '⬜'} {task.text}
+                      </div>
+                    {/each}
+                  {:else}
+                    <div class="task-item">No tasks yet</div>
+                  {/if}
+                </div>
                 <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
                 ×
                 </button>
@@ -426,8 +589,34 @@ li {
             ×
             </button>
           {:else if block.type === 'image'}
-            <img src={block.src} alt="" />
+            {#if hasImageSource(block)}
+              <img
+                src={getImageSource(block)}
+                alt=""
+                data-focus-guard
+                on:dblclick|stopPropagation={() => openImagePicker(block.id)}
+                on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
+              />
+            {:else}
+              <div class="image-empty-state" data-focus-guard>
+                <button
+                  class="image-select-button"
+                  on:click|stopPropagation={() => openImagePicker(block.id)}
+                  data-focus-guard
+                >
+                  Add image
+                </button>
+              </div>
+            {/if}
             <li>
+              <input
+                type="file"
+                accept="image/*"
+                style="display:none;"
+                use:imageInputRef={block.id}
+                on:change={(event) => handleImageChange(event, block)}
+                data-focus-guard
+              />
               <button
                 class="edit-button"
                 data-focus-guard
@@ -459,6 +648,22 @@ li {
             </button>
           {:else if block.type === 'embed'}
             <p>[Embed: {block.content}]</p>
+            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
+            ×
+            </button>
+          {:else if block.type === 'task'}
+            <div class="task-list-title">{block.title || 'Task List'}</div>
+            <div class="task-list">
+              {#if Array.isArray(block.tasks) && block.tasks.length}
+                {#each block.tasks as task (task.id)}
+                  <div class="task-item">
+                    {task.done ? '✅' : '⬜'} {task.text}
+                  </div>
+                {/each}
+              {:else}
+                <div class="task-item">No tasks yet</div>
+              {/if}
+            </div>
             <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
             ×
             </button>
