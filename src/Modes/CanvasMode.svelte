@@ -24,6 +24,7 @@
   let lastDistance = null;
   let isMobile = false;
   let hasUserZoomed = false;
+  let lastViewportWidth = null;
 
 
 
@@ -99,6 +100,7 @@
 
     scale = baseScale * userZoom;
     inner.style.transformOrigin = "top left";
+    lastViewportWidth = window.innerWidth;
   }
 
   export function refitCanvas() {
@@ -111,12 +113,24 @@
     const wasMobile = isMobile;
     isMobile = window.innerWidth <= 1024;
 
+    const activeTag = document.activeElement?.tagName?.toLowerCase();
+    const isEditableFocused =
+      activeTag === 'textarea' ||
+      activeTag === 'input' ||
+      document.activeElement?.isContentEditable;
+    const viewportWidthChanged =
+      lastViewportWidth === null || Math.abs(window.innerWidth - lastViewportWidth) > 1;
+
     if (isMobile) {
+      if (wasMobile && isEditableFocused && !viewportWidthChanged) {
+        return;
+      }
       fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
     } else if (!isMobile) {
       scale = 1; // reset scale on desktop
       userZoom = 1;
       hasUserZoomed = false;
+      lastViewportWidth = null;
     }
   }
 
