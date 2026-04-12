@@ -97,7 +97,7 @@
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
   display: grid;
-  grid-template-columns: 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   justify-content: center;
   padding: clamp(12px, 2vw, 24px);
@@ -213,6 +213,7 @@ li {
   height: 600px;
   width: 100%;
   background: #000;
+  grid-column: 1 / -1;
 }
 
 
