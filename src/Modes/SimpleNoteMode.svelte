@@ -96,12 +96,11 @@
 <style>
 /* ========== MOBILE (default) ========== */
 .simple-wrapper {
-  display: block;
-  column-count: 2;
-  column-gap: 1rem;
-  column-fill: balance;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1rem;
   padding: clamp(12px, 2vw, 24px);
-  overflow: visible;
+  overflow-y: auto;
   width: 100%;
   max-width: 1200px;
   margin: 0 auto;
@@ -113,12 +112,9 @@
   background: var(--canvas-outer-bg, #00000041);
   border-radius: 8px;
   padding: 5px;
-  margin: 0 0 1rem;
+  margin: 0;
   display: block;
   width: auto;
-  break-inside: avoid-column;
-  page-break-inside: avoid;
-  -webkit-column-break-inside: avoid;
   box-sizing: border-box;
 }
 
@@ -212,10 +208,9 @@ li {
 }
 
 .footer {
-  height: 600px;
+  height: 120px;
   width: 100%;
   background: #000;
-  column-span: all;
 }
 
 
@@ -224,8 +219,6 @@ li {
   .simple-wrapper {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-    column-count: auto;
-    column-gap: 0;
     gap: 1rem;
     justify-content: stretch;
     max-width: 1400px;
@@ -238,7 +231,6 @@ li {
 
   .footer {
     grid-column: 1 / -1;
-    column-span: none;
   }
 
   .container img {
