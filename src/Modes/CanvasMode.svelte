@@ -1,6 +1,5 @@
 <script>
   import { createEventDispatcher } from 'svelte';
-  import { onMount, tick } from 'svelte';
   import TexteBlock from '../components/TexteBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
   import Texteclean from '../components/TexteClean.svelte';
@@ -19,11 +18,7 @@
   
 
   let scale = 1;
-  let baseScale = 1; 
-  let userZoom = 1;
   let lastDistance = null;
-  let isMobile = false;
-  let hasUserZoomed = false;
 
 
 
@@ -51,24 +46,20 @@
   }
 
   function onTouchStart(e) {
-    if (!isMobile) return;
     if (e.touches.length === 2) {
       lastDistance = getDistance(e.touches);
     }
   }
 
   function onTouchMove(e) {
-    if (!isMobile) return;
     if (e.touches.length === 2 && lastDistance) {
       const newDistance = getDistance(e.touches);
       const diff = newDistance - lastDistance;
 
       let newScale = scale + diff * 0.005;
-      newScale = Math.max(baseScale * 0.5, Math.min(baseScale * 3, newScale)); 
+      newScale = Math.max(0.5, Math.min(3, newScale));
 
       scale = newScale;
-      userZoom = scale / baseScale;
-      hasUserZoomed = true;
       lastDistance = newDistance;
 
       e.preventDefault();
@@ -79,47 +70,6 @@
     lastDistance = null;
   }
 
-  function fitCanvasToScreen({ resetUserZoom = false } = {}) {
-    if (!canvasRef) return;
-    const inner = canvasRef.querySelector(".canvas-inner");
-    if (!inner) return;
-
-    const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--controls-height")) || 56;
-    const availableWidth = window.innerWidth;
-    const availableHeight = window.innerHeight - controlsHeight;
-
-    const scaleX = availableWidth / 1920;
-    const scaleY = availableHeight / 1080;
-    baseScale = Math.min(scaleX, scaleY);
-
-    if (resetUserZoom) {
-      userZoom = 1;
-      hasUserZoomed = false;
-    }
-
-    scale = baseScale * userZoom;
-    inner.style.transformOrigin = "top left";
-  }
-
-  export function refitCanvas() {
-    tick().then(() => {
-      fitCanvasToScreen({ resetUserZoom: true });
-    });
-  }
-
-  function checkIsMobile() {
-    const wasMobile = isMobile;
-    isMobile = window.innerWidth <= 1024;
-
-    if (isMobile) {
-      fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
-    } else if (!isMobile) {
-      scale = 1; // reset scale on desktop
-      userZoom = 1;
-      hasUserZoomed = false;
-    }
-  }
-
   const defaultCanvasColors = {
     outerBg: '#000000',
     innerBg: '#000000'
@@ -127,15 +77,7 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
-  $: innerScale = isMobile ? scale : 1;
-
-  onMount(() => {
-    checkIsMobile();
-    window.addEventListener("resize", checkIsMobile);
-    return () => {
-      window.removeEventListener("resize", checkIsMobile);
-    };
-  });
+  $: innerScale = scale;
 </script>
 
 
@@ -149,8 +91,6 @@
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
 }
-
-
 
 .canvas-inner {
   width: 1800px;
