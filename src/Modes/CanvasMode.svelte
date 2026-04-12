@@ -107,22 +107,6 @@
     });
   }
 
-  function checkIsMobile() {
-    const wasMobile = isMobile;
-    isMobile = window.innerWidth <= 1024;
-
-    if (isMobile) {
-      if (wasMobile) {
-        return;
-      }
-      fitCanvasToScreen({ resetUserZoom: true });
-    } else if (!isMobile) {
-      scale = 1; // reset scale on desktop
-      userZoom = 1;
-      hasUserZoomed = false;
-    }
-  }
-
   const defaultCanvasColors = {
     outerBg: '#000000',
     innerBg: '#000000'
@@ -133,11 +117,15 @@
   $: innerScale = isMobile ? scale : 1;
 
   onMount(() => {
-    checkIsMobile();
-    window.addEventListener("resize", checkIsMobile);
-    return () => {
-      window.removeEventListener("resize", checkIsMobile);
-    };
+    isMobile = window.innerWidth <= 1024;
+
+    if (isMobile) {
+      fitCanvasToScreen({ resetUserZoom: true });
+    } else {
+      scale = 1;
+      userZoom = 1;
+      hasUserZoomed = false;
+    }
   });
 </script>
 
