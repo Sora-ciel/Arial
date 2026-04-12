@@ -172,6 +172,11 @@
   $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
   );
+
+  function handleColumnGaugeInput(event) {
+    const next = Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1);
+    dispatch('columnCountChange', { columnCount: next });
+  }
   
 
 
@@ -220,6 +225,36 @@
   margin: 0;
   min-width: 0;
   box-sizing: border-box;
+}
+
+.simple-toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  padding: 0 0.25rem;
+}
+
+.simple-toolbar label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #ffffff;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--canvas-outer-bg, #000000) 60%, transparent);
+  border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
+  border-radius: 999px;
+  padding: 0.4rem 0.75rem;
+}
+
+.simple-toolbar input[type="range"] {
+  width: min(220px, 36vw);
+}
+
+.simple-toolbar-value {
+  min-width: 1.25rem;
+  text-align: center;
 }
 
 .simple-column {
@@ -370,6 +405,12 @@ li {
   margin-right: 10px;
 }
 
+@media (max-width: 1023px) {
+  .simple-toolbar {
+    display: none;
+  }
+}
+
 </style>
 
 
@@ -381,6 +422,20 @@ li {
 
 
 <div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
+  <div class="simple-toolbar">
+    <label>
+      Columns
+      <input
+        type="range"
+        min="1"
+        max="6"
+        step="1"
+        value={normalizedColumnCount}
+        on:input={handleColumnGaugeInput}
+      />
+      <span class="simple-toolbar-value">{normalizedColumnCount}</span>
+    </label>
+  </div>
   {#each renderColumns as column}
     <div class="simple-column">
       {#each column as block (blockKey(block))}

@@ -149,6 +149,23 @@
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
   const FALLBACK_SAVE_NAME = 'Fallback';
+  const DEFAULT_MODE_SETTINGS = {
+    simple: {
+      columnCount: 2
+    }
+  };
+
+  function normalizeModeSettings(settings) {
+    const incomingSimple = settings?.simple || {};
+    return {
+      ...DEFAULT_MODE_SETTINGS,
+      simple: {
+        ...DEFAULT_MODE_SETTINGS.simple,
+        ...incomingSimple,
+        columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount)
+      }
+    };
+  }
 
   function loadStoredCustomThemes() {
     if (typeof localStorage === 'undefined') return [];
@@ -751,7 +768,8 @@
   let observedControlsEl;
 
   let mode = getDefaultModeForViewport();
-  let simpleNoteColumnCount = 2;
+  let modeSettings = normalizeModeSettings();
+  $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -828,13 +846,14 @@
     }
   }
 
-  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders) {
+  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings) {
     if (!currentSaveName) return;
     persistLastSaveName(currentSaveName);
     const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
     await saveBlocks(currentSaveName, {
       blocks: blocksToPersist,
-      modeOrders: normalizedOrders
+      modeOrders: normalizedOrders,
+      modeSettings: normalizeModeSettings(settingsToPersist)
     });
     savedList = await listSavedBlocks();
   }
@@ -1072,6 +1091,9 @@
       const loadedOrders = !Array.isArray(loaded)
         ? loaded?.modeOrders
         : {};
+      const loadedModeSettings = !Array.isArray(loaded)
+        ? loaded?.modeSettings
+        : null;
 
       currentSaveName = name;
       persistLastSaveName(name);
@@ -1080,6 +1102,7 @@
         _version: 0
       }));
       modeOrders = ensureModeOrders(blocks, loadedOrders);
+      modeSettings = normalizeModeSettings(loadedModeSettings);
 
       history = [];
       historyIndex = -1;
@@ -1222,7 +1245,8 @@
     const dataStr = JSON.stringify(
       {
         blocks,
-        modeOrders: ensureModeOrders(blocks, modeOrders)
+        modeOrders: ensureModeOrders(blocks, modeOrders),
+        modeSettings: normalizeModeSettings(modeSettings)
       },
       null,
       2
@@ -1252,11 +1276,15 @@
           const importedOrders = Array.isArray(imported)
             ? {}
             : imported.modeOrders;
+          const importedModeSettings = Array.isArray(imported)
+            ? null
+            : imported.modeSettings;
           blocks = importedBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, importedOrders);
+          modeSettings = normalizeModeSettings(importedModeSettings);
           focusedBlockId = null;
           history = [];
           historyIndex = -1;
@@ -1291,6 +1319,22 @@
 
     const height = controlsRef?.offsetHeight || 56;
     setControlsHeight(height);
+  }
+
+  async function handleModeSettingChange(event) {
+    const nextColumnCount = Math.max(
+      1,
+      Number.parseInt(event.detail?.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount
+    );
+    const nextModeSettings = normalizeModeSettings({
+      ...modeSettings,
+      simple: {
+        ...modeSettings.simple,
+        columnCount: nextColumnCount
+      }
+    });
+    modeSettings = nextModeSettings;
+    await persistAutosave(blocks, modeOrders, nextModeSettings);
   }
 
   function setupControlsObserver() {
@@ -1668,6 +1712,7 @@
         on:update={updateBlockHandler}
         on:delete={deleteBlockHandler}
         on:focusToggle={handleFocusToggle}
+        on:modeSettingChange={handleModeSettingChange}
       />
     {/key}
   </div>
