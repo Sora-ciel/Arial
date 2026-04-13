@@ -770,6 +770,11 @@
   let mode = getDefaultModeForViewport();
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
+  $: activeSimpleNoteColor = (() => {
+    if (mode !== 'simple') return null;
+    const focusedBlock = modeOrderedBlocks.find((block) => block.id === focusedBlockId);
+    return focusedBlock?.textColor || null;
+  })();
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -1647,6 +1652,7 @@
     <LeftControls
       bind:currentSaveName
       {mode}
+      activeModeAccent={activeSimpleNoteColor}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
