@@ -1,6 +1,9 @@
+<script context="module">
+  const canvasViewportMemory = new Map();
+</script>
+
 <script>
-  import { createEventDispatcher } from 'svelte';
-  import { onMount, tick } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount, tick } from 'svelte';
   import TexteBlock from '../components/TexteBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
   import Texteclean from '../components/TexteClean.svelte';
@@ -18,15 +21,18 @@
 
   
 
+  const MIN_CANVAS_WIDTH = 1800;
+  const MIN_CANVAS_HEIGHT = 900;
+  const BLOCK_MARGIN_RIGHT = 20;
+  const BLOCK_MARGIN_BOTTOM = 20;
+  const MIN_ZOOM = 0.2;
+  const MAX_ZOOM = 4;
+
   let scale = 1;
-  let baseScale = 1; 
-  let userZoom = 1;
   let lastDistance = null;
-  let isMobile = false;
-  let hasUserZoomed = false;
-
-
-
+  let lastMidpoint = null;
+  let canvasWidth = MIN_CANVAS_WIDTH;
+  let canvasHeight = MIN_CANVAS_HEIGHT;
 
   const dispatch = createEventDispatcher();
 
@@ -50,74 +56,87 @@
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  function onTouchStart(e) {
-    if (!isMobile) return;
-    if (e.touches.length === 2) {
-      lastDistance = getDistance(e.touches);
+  function getMidpoint(touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    };
+  }
+
+  function measureCanvasFromBlocks() {
+    if (!Array.isArray(blocks) || blocks.length === 0) {
+      return { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT };
     }
-  }
 
-  function onTouchMove(e) {
-    if (!isMobile) return;
-    if (e.touches.length === 2 && lastDistance) {
-      const newDistance = getDistance(e.touches);
-      const diff = newDistance - lastDistance;
-
-      let newScale = scale + diff * 0.005;
-      newScale = Math.max(baseScale * 0.5, Math.min(baseScale * 3, newScale)); 
-
-      scale = newScale;
-      userZoom = scale / baseScale;
-      hasUserZoomed = true;
-      lastDistance = newDistance;
-
-      e.preventDefault();
+    let maxX = 0;
+    let maxY = 0;
+    for (const block of blocks) {
+      const x = Number(block?.position?.x ?? 0);
+      const y = Number(block?.position?.y ?? 0);
+      const width = Number(block?.size?.width ?? 220);
+      const height = Number(block?.size?.height ?? 140);
+      maxX = Math.max(maxX, x + width);
+      maxY = Math.max(maxY, y + height);
     }
+
+    return {
+      width: Math.max(MIN_CANVAS_WIDTH, maxX + BLOCK_MARGIN_RIGHT),
+      height: Math.max(MIN_CANVAS_HEIGHT, maxY + BLOCK_MARGIN_BOTTOM)
+    };
   }
 
-  function onTouchEnd() {
-    lastDistance = null;
-  }
-
-  function fitCanvasToScreen({ resetUserZoom = false } = {}) {
+  function fitToViewport() {
     if (!canvasRef) return;
-    const inner = canvasRef.querySelector(".canvas-inner");
-    if (!inner) return;
+    const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
+    const availableWidth = Math.max(window.innerWidth, 1);
+    const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
+    scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    canvasRef.scrollLeft = 0;
+    canvasRef.scrollTop = 0;
+  }
 
-    const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue("--controls-height")) || 56;
-    const availableWidth = window.innerWidth;
-    const availableHeight = window.innerHeight - controlsHeight;
+  function onTouchStart(event) {
+    if (event.touches.length !== 2) return;
+    lastDistance = getDistance(event.touches);
+    lastMidpoint = getMidpoint(event.touches);
+  }
 
-    const scaleX = availableWidth / 1920;
-    const scaleY = availableHeight / 1080;
-    baseScale = Math.min(scaleX, scaleY);
+  function onTouchMove(event) {
+    if (event.touches.length !== 2 || !lastDistance || !canvasRef) return;
+    if (event.cancelable) event.preventDefault();
 
-    if (resetUserZoom) {
-      userZoom = 1;
-      hasUserZoomed = false;
+    const newDistance = getDistance(event.touches);
+    const newMidpoint = getMidpoint(event.touches);
+    const oldScale = scale;
+    const nextScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldScale * (newDistance / lastDistance)));
+    if (nextScale === oldScale) return;
+
+    const rect = canvasRef.getBoundingClientRect();
+    const anchorX = (lastMidpoint?.x ?? newMidpoint.x) - rect.left;
+    const anchorY = (lastMidpoint?.y ?? newMidpoint.y) - rect.top;
+    const contentX = (canvasRef.scrollLeft + anchorX) / oldScale;
+    const contentY = (canvasRef.scrollTop + anchorY) / oldScale;
+
+    scale = nextScale;
+    canvasRef.scrollLeft = Math.max(0, contentX * scale - anchorX);
+    canvasRef.scrollTop = Math.max(0, contentY * scale - anchorY);
+
+    lastDistance = newDistance;
+    lastMidpoint = newMidpoint;
+  }
+
+  function onTouchEnd(event) {
+    if (event.touches.length < 2) {
+      lastDistance = null;
+      lastMidpoint = null;
     }
-
-    scale = baseScale * userZoom;
-    inner.style.transformOrigin = "top left";
   }
 
   export function refitCanvas() {
-    tick().then(() => {
-      fitCanvasToScreen({ resetUserZoom: true });
-    });
-  }
-
-  function checkIsMobile() {
-    const wasMobile = isMobile;
-    isMobile = window.innerWidth <= 1024;
-
-    if (isMobile) {
-      fitCanvasToScreen({ resetUserZoom: !hasUserZoomed || !wasMobile });
-    } else if (!isMobile) {
-      scale = 1; // reset scale on desktop
-      userZoom = 1;
-      hasUserZoomed = false;
-    }
+    const measured = measureCanvasFromBlocks();
+    canvasWidth = measured.width;
+    canvasHeight = measured.height;
+    fitToViewport();
   }
 
   const defaultCanvasColors = {
@@ -127,14 +146,43 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
-  $: innerScale = isMobile ? scale : 1;
+
+  function saveViewportState() {
+    if (!canvasRef) return;
+    canvasViewportMemory.set(mode, {
+      scale,
+      scrollLeft: canvasRef.scrollLeft,
+      scrollTop: canvasRef.scrollTop,
+      canvasWidth,
+      canvasHeight
+    });
+  }
+
+  async function initializeViewportState() {
+    const measured = measureCanvasFromBlocks();
+    const saved = canvasViewportMemory.get(mode);
+
+    canvasWidth = Math.max(saved?.canvasWidth ?? 0, measured.width);
+    canvasHeight = Math.max(saved?.canvasHeight ?? 0, measured.height);
+
+    if (!saved) {
+      fitToViewport();
+      return;
+    }
+
+    scale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Number(saved.scale) || 1));
+    await tick();
+    if (!canvasRef) return;
+    canvasRef.scrollLeft = Math.max(0, Number(saved.scrollLeft) || 0);
+    canvasRef.scrollTop = Math.max(0, Number(saved.scrollTop) || 0);
+  }
 
   onMount(() => {
-    checkIsMobile();
-    window.addEventListener("resize", checkIsMobile);
-    return () => {
-      window.removeEventListener("resize", checkIsMobile);
-    };
+    initializeViewportState();
+  });
+
+  onDestroy(() => {
+    saveViewportState();
   });
 </script>
 
@@ -153,11 +201,14 @@
 
 
 .canvas-inner {
-  width: 1800px;
-  height: 900px;
+  position: absolute;
+  inset: 0 auto auto 0;
   transform-origin: top left;
-  transition: transform 0.05s linear;
   background: var(--canvas-inner-bg, #000000);
+}
+
+.canvas-zoom-shell {
+  position: relative;
 }
 
 
@@ -191,10 +242,17 @@
   on:touchend={onTouchEnd}
 >
     <div
-      class="canvas-inner"
-      style:transform={`scale(${innerScale})`}
-      style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
-    >
+      class="canvas-zoom-shell"
+      style:width={`${canvasWidth * scale}px`}
+      style:height={`${canvasHeight * scale}px`}
+      >
+      <div
+        class="canvas-inner"
+        style:width={`${canvasWidth}px`}
+        style:height={`${canvasHeight}px`}
+        style:transform={`scale(${scale})`}
+        style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
+      >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}
           <TexteBlock
@@ -281,5 +339,6 @@
           />
         {/if}
       {/each}
+      </div>
     </div>
 </div>
