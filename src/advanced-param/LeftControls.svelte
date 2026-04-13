@@ -287,6 +287,19 @@ onMount(() => {
     width: 100%;
   }
 
+  .birthday-unlock-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: auto;
+  }
+
+  .birthday-unlock-row button {
+    flex: 0 0 auto;
+    width: auto;
+    white-space: nowrap;
+    padding-inline: 10px;
+  }
+
   .birthday-unlock small {
     opacity: 0.85;
   }
@@ -426,15 +439,6 @@ onMount(() => {
       min-width: 120px;
     }
 
-    .birthday-unlock-row input {
-      flex: 1 1 0;
-      min-width: 0;
-    }
-
-    .birthday-unlock-row button {
-      flex: 0 0 auto;
-      white-space: nowrap;
-    }
   }
 </style>
 
