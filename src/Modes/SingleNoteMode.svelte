@@ -151,7 +151,7 @@
   .note-tabs {
     display: flex;
     gap: 8px;
-    padding: 10px 12px 0;
+    padding: 4px 6px 4px;
     overflow-x: auto;
   }
 
@@ -160,14 +160,14 @@
     background: color-mix(in srgb, var(--tab-bg, #000000) 88%, #000000 12%);
     color: var(--tab-text, inherit);
     padding: 6px 12px;
-    border-radius: 999px;
+    border-radius: 9px;
     font-size: 0.85rem;
     cursor: pointer;
     white-space: nowrap;
   }
 
   .note-tab[aria-selected='true'] {
-    border-color: var(--tab-text, rgba(255, 255, 255, 0.8));
+    border-color: var(--tab-text);
     background: var(--tab-bg, rgba(255, 255, 255, 0.12));
     box-shadow: 0 0 0 1px color-mix(in srgb, var(--tab-text, #ffffff) 55%, transparent);
   }
@@ -186,7 +186,7 @@
     width: 100%;
     padding: 8px 12px;
     box-sizing: border-box;
-    background: color-mix(in srgb, var(--active-note-bg, #000000) 38%, transparent);
+    background: var(--active-note-bg);
     color: var(--active-note-text, inherit);
   }
 
@@ -304,12 +304,7 @@
       </button>
     </div>
 
-    {#if hasHiddenBlocks}
-      <div class="note-warning">
-        Only text notes appear here. Other block types remain hidden until you
-        return to Canvas or Simple Note mode.
-      </div>
-    {/if}
+
   {:else}
     <div class="empty-state">
       No text note found yet. Add a text or clean text block to start a note
