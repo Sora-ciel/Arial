@@ -36,6 +36,9 @@ async function getFirebaseContext() {
       const firebaseAuth = auth.getAuth(firebaseApp);
       auth.setPersistence(firebaseAuth, auth.browserLocalPersistence).catch(() => {});
       const firebaseDb = database.getDatabase(firebaseApp);
+      database.onValue(database.ref(firebaseDb, '.info/connected'), snap => {
+        console.log('RTDB .info/connected =', snap.val(), Date.now());
+      });
       return { app: firebaseApp, auth: firebaseAuth, db: firebaseDb, authApi: auth, dbApi: database };
     });
   }
