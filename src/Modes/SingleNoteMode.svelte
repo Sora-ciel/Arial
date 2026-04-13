@@ -228,6 +228,7 @@
     display: flex;
     justify-content: flex-end;
     padding: 6px 12px 10px;
+    background: var(--active-note-bg, var(--canvas-inner-bg, #000000));
   }
 
   .note-footer button {
