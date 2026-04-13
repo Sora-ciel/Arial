@@ -169,6 +169,8 @@
     border: 1px solid var(--right-border-color, #444444);
     font-weight: bold;
     transition: background 0.2s ease;
+    min-height: 42px;
+    box-sizing: border-box;
   }
 
   .right-controls details[open] .dropdown-content {
@@ -208,24 +210,25 @@
   /* Optional: make it more mobile-friendly */
   @media (max-width: 1024px) {
   .right-controls {
-    position: fixed;
-    top: 29px;
-    right: 10px;
-    z-index: 1000; /* make sure it stays above the canvas */
+    position: static;
+    z-index: 1003;
   }
 
     .dropdown-content {
     display: none;
     position: fixed;
-    top: 71px;
-    right: 0;
-    bottom: 0;
-    max-width: fit-content;
+    top: calc(var(--controls-height, 56px) + 8px);
+    right: 8px;
+    bottom: auto;
+    width: min(92vw, 360px);
+    max-width: 92vw;
+    max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
     background: var(--right-panel-bg, #222222);
-    border-left: 1px solid var(--right-border-color, #444444);
+    border: 1px solid var(--right-border-color, #444444);
+    border-radius: 12px;
     padding: 0;
     overflow-y: auto;
-    z-index: 999;
+    z-index: 1002;
     box-shadow: -2px 0 10px rgba(0,0,0,0.4);
   }
 

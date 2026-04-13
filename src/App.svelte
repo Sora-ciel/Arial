@@ -1590,6 +1590,10 @@
   border-bottom: 1px solid var(--controls-border, #333);
 }
 
+.right-controls {
+  margin-left: auto;
+}
+
 .startup-warning {
   display: flex;
   align-items: center;
@@ -1627,13 +1631,15 @@
 @media (max-width: 1024px) {
   .controls {
     min-height: 55px;
-    flex-wrap: nowrap;
-    top: 0;
-    left: 0;
-    right: 0;
-    padding: 8px 10px;
+    flex-wrap: wrap;
+    padding: 8px 10px 10px;
     justify-content: space-between;
-    align-items: center;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .right-controls {
+    margin-left: 0;
   }
 }
 

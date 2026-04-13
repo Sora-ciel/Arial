@@ -294,6 +294,7 @@ onMount(() => {
     background: var(--left-button-bg, #333333);
     color: var(--left-button-text, #ffffff);
     padding: 8px 12px;
+    min-height: 42px;
     cursor: pointer;
   }
 
@@ -315,12 +316,10 @@ onMount(() => {
 
   .mobile-quick-actions {
     display: none;
-    position: fixed;
-    top: 29px;
-    left: 94px;
-    z-index: 1000;
+    position: static;
     align-items: center;
-    gap: 6px;
+    flex-wrap: wrap;
+    gap: 8px;
   }
 
   .mobile-block-actions {
@@ -332,14 +331,17 @@ onMount(() => {
       display: none;
       flex-direction: column;
       align-items: flex-start;
-      gap: 6px;
-      background: var(--left-panel-bg, #111111b0);
-      padding: 10px;
-      border-radius: 0 0 8px 0;
-      position: absolute;
-      top: 71px;
-      left: 0px;
-      z-index: 999;
+      gap: 8px;
+      background: var(--left-panel-bg, #111111f0);
+      padding: 12px;
+      border-radius: 12px;
+      position: fixed;
+      top: calc(var(--controls-height, 56px) + 8px);
+      left: 8px;
+      right: 8px;
+      max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
+      overflow: auto;
+      z-index: 1002;
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
     }
     .left-controls.show {
@@ -351,7 +353,7 @@ onMount(() => {
 
     .mobile-quick-actions {
       display: inline-flex;
-      left: 10px;
+      width: 100%;
     }
 
     .mobile-only {
@@ -359,9 +361,31 @@ onMount(() => {
     }
 
     .mobile-block-actions {
-      display: flex;
-      flex-direction: column;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
       gap: 6px;
+      width: 100%;
+    }
+
+    .mobile-quick-actions > button,
+    .mobile-quick-actions .mode-switcher > button {
+      flex: 1 1 150px;
+    }
+
+    .left-controls input,
+    .left-controls > button {
+      width: 100%;
+    }
+
+    .mode-ladder,
+    .add-block-list {
+      position: fixed;
+      top: calc(var(--controls-height, 56px) + 8px);
+      left: 8px;
+      right: 8px;
+      min-width: 0;
+      max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
+      overflow: auto;
 
     }
   }
