@@ -775,9 +775,7 @@
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
   let modeOrderedBlocks = [];
   let focusedBlockId = null;
-  let blocksRenderNonce = 0;
   $: normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
-  $: blocksKey = `${blocksRenderNonce}:${(normalizedModeOrders[mode] || []).join('|')}`;
   $: modeOrderedBlocks = (() => {
     const order = normalizedModeOrders[mode] || [];
     const blockMap = new Map(blocks.map(block => [block.id, block]));
@@ -862,7 +860,6 @@
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = stateSnapshot.blocks;
       modeOrders = stateSnapshot.modeOrders;
-      blocksRenderNonce += 1;
       await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
       hasUnsnapshottedChanges = false;
       return;
@@ -877,8 +874,6 @@
 
     blocks = stateSnapshot.blocks;
     modeOrders = stateSnapshot.modeOrders;
-    blocksRenderNonce += 1;
-
     await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
     hasUnsnapshottedChanges = false;
   }
@@ -901,7 +896,6 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks, snapshotOrders);
     }
   }
@@ -922,7 +916,6 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      blocksRenderNonce += 1;
       await persistAutosave(snapshotBlocks, snapshotOrders);
     }
   }
@@ -1703,22 +1696,20 @@
   {/if}
 
   <div class="modes">
-    {#key blocksKey}
-      <ModeArea
-        {mode}
-        blocks={modeOrderedBlocks}
-        {simpleNoteColumnCount}
-        {groupedBlocks}
-        {focusedBlockId}
-        modeLabels={MODE_LABELS}
-        bind:canvasRef
-        canvasColors={canvasTheme}
-        on:update={updateBlockHandler}
-        on:delete={deleteBlockHandler}
-        on:focusToggle={handleFocusToggle}
-        on:modeSettingChange={handleModeSettingChange}
-      />
-    {/key}
+    <ModeArea
+      {mode}
+      blocks={modeOrderedBlocks}
+      {simpleNoteColumnCount}
+      {groupedBlocks}
+      {focusedBlockId}
+      modeLabels={MODE_LABELS}
+      bind:canvasRef
+      canvasColors={canvasTheme}
+      on:update={updateBlockHandler}
+      on:delete={deleteBlockHandler}
+      on:focusToggle={handleFocusToggle}
+      on:modeSettingChange={handleModeSettingChange}
+    />
   </div>
 </div>
 
