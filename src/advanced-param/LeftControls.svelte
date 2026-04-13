@@ -284,6 +284,7 @@ onMount(() => {
   .birthday-unlock-row {
     display: flex;
     gap: 6px;
+    width: 100%;
   }
 
   .birthday-unlock small {
@@ -423,6 +424,16 @@ onMount(() => {
     .add-block-list {
       width: min(140px, calc(100vw - 16px));
       min-width: 120px;
+    }
+
+    .birthday-unlock-row input {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .birthday-unlock-row button {
+      flex: 0 0 auto;
+      white-space: nowrap;
     }
   }
 </style>
