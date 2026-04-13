@@ -15,7 +15,9 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
+  $: activeNoteBg = noteBlock?.bgColor || canvasTheme.innerBg;
+  $: activeNoteText = noteBlock?.textColor || getReadableTextColor(activeNoteBg);
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor}; --active-note-bg: ${activeNoteBg}; --active-note-text: ${activeNoteText};`;
 
   $: noteBlocks = blocks.filter(
     block => block.type === 'text' || block.type === 'cleantext'
@@ -127,6 +129,12 @@
     }
     return `Note ${index + 1}`;
   }
+
+  function getTabStyle(block) {
+    const bg = block?.bgColor || canvasTheme.outerBg;
+    const text = block?.textColor || getReadableTextColor(bg);
+    return `--tab-bg: ${bg}; --tab-text: ${text};`;
+  }
 </script>
 
 <style>
@@ -148,9 +156,9 @@
   }
 
   .note-tab {
-    border: 1px solid rgba(255, 255, 255, 0.25);
-    background: transparent;
-    color: inherit;
+    border: 1px solid color-mix(in srgb, var(--tab-text, #ffffff) 50%, transparent);
+    background: color-mix(in srgb, var(--tab-bg, #000000) 88%, #000000 12%);
+    color: var(--tab-text, inherit);
     padding: 6px 12px;
     border-radius: 999px;
     font-size: 0.85rem;
@@ -159,8 +167,9 @@
   }
 
   .note-tab[aria-selected='true'] {
-    border-color: rgba(255, 255, 255, 0.8);
-    background: rgba(255, 255, 255, 0.12);
+    border-color: var(--tab-text, rgba(255, 255, 255, 0.8));
+    background: var(--tab-bg, rgba(255, 255, 255, 0.12));
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--tab-text, #ffffff) 55%, transparent);
   }
 
   .note-tab:focus-visible {
@@ -177,6 +186,8 @@
     width: 100%;
     padding: 8px 12px;
     box-sizing: border-box;
+    background: color-mix(in srgb, var(--active-note-bg, #000000) 38%, transparent);
+    color: var(--active-note-text, inherit);
   }
 
   .note-stats {
@@ -199,8 +210,8 @@
     border: none;
     resize: none;
     padding: 12px;
-    background: var(--canvas-inner-bg, #000000);
-    color: var(--mode-text-color, #ffffff);
+    background: var(--active-note-bg, var(--canvas-inner-bg, #000000));
+    color: var(--active-note-text, var(--mode-text-color, #ffffff));
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;
     line-height: 1.6;
@@ -222,7 +233,7 @@
   .note-footer button {
     background: transparent;
     border: none;
-    color: var(--mode-text-color, #ffffff);
+    color: var(--active-note-text, var(--mode-text-color, #ffffff));
     font-size: 1.1rem;
     cursor: pointer;
   }
@@ -255,6 +266,7 @@
             class="note-tab"
             role="tab"
             aria-selected={block.id === selectedNoteId}
+            style={getTabStyle(block)}
             on:click={() => {
               selectedNoteId = block.id;
             }}

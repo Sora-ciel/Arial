@@ -214,10 +214,10 @@
 .simple-wrapper {
   display: grid;
   grid-template-columns: repeat(var(--simple-note-columns, 2), minmax(0, 1fr));
-  gap: 1rem;
+  gap: 0.55rem;
   align-items: flex-start;
   background: var(--canvas-inner-bg, #000000);
-  padding: clamp(12px, 2vw, 24px);
+  padding: clamp(6px, 1.1vw, 12px);
   overflow-y: auto;
   overflow-x: hidden;
   width: 100%;
@@ -266,7 +266,7 @@
   background: var(--canvas-outer-bg, #00000041);
   border-radius: 8px;
   padding: 5px;
-  margin: 0 0 1rem;
+  margin: 0 0 0.45rem;
   display: block;
   width: auto;
   break-inside: avoid-column;
