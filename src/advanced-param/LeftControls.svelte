@@ -410,11 +410,19 @@ onMount(() => {
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
       right: auto;
-      width: min(140px, calc(100vw - 16px));
-      min-width: 120px;
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
 
+    }
+
+    .mode-ladder {
+      width: min(220px, calc(100vw - 16px));
+      min-width: 200px;
+    }
+
+    .add-block-list {
+      width: min(140px, calc(100vw - 16px));
+      min-width: 120px;
     }
   }
 </style>
