@@ -777,10 +777,7 @@
   let focusedBlockId = null;
   let blocksRenderNonce = 0;
   $: normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
-  $: blocksKey = `${blocksRenderNonce}:${(normalizedModeOrders[mode] || [])
-    .join('|')}:${blocks
-    .map(b => `${b.id}:${b._version ?? 0}`)
-    .join('|')}`;
+  $: blocksKey = `${blocksRenderNonce}:${(normalizedModeOrders[mode] || []).join('|')}`;
   $: modeOrderedBlocks = (() => {
     const order = normalizedModeOrders[mode] || [];
     const blockMap = new Map(blocks.map(block => [block.id, block]));
