@@ -9,6 +9,7 @@
   export let initialTrackUrl = '';
   export let initialTitle = 'Music Player';
   export let focused = false;
+  export let canvasScale = 1;
 
   const dispatch = createEventDispatcher();
 
@@ -21,6 +22,15 @@
 
   let dragging = false, resizing = false;
   let offset = { x: 0, y: 0 }, resizeStart = {};
+
+  function getCanvasPoint(event) {
+    const source = event.touches ? event.touches[0] : event;
+    const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    return {
+      x: source.clientX / safeScale,
+      y: source.clientY / safeScale
+    };
+  }
   let suppressClick = false;
   let hasDragged = false;
   let hasResized = false;
@@ -59,9 +69,8 @@
     ensureFocus();
     dragging = true;
     hasDragged = false;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    offset = { x: clientX - position.x, y: clientY - position.y };
+    const point = getCanvasPoint(e);
+    offset = { x: point.x - position.x, y: point.y - position.y };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -71,9 +80,8 @@
 
   function onMouseMove(e) {
     if (!dragging) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    position = { x: clientX - offset.x, y: clientY - offset.y };
+    const point = getCanvasPoint(e);
+    position = { x: point.x - offset.x, y: point.y - offset.y };
     hasDragged = true;
     if (e.cancelable) e.preventDefault();
   }
@@ -101,9 +109,8 @@
     resizing = true;
     hasResized = false;
     document.body.style.userSelect = 'none';
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    resizeStart = { x: clientX, y: clientY, ...size };
+    const point = getCanvasPoint(e);
+    resizeStart = { x: point.x, y: point.y, ...size };
 
     window.addEventListener('mousemove', onResizing);
     window.addEventListener('mouseup', onResizeEnd);
@@ -113,10 +120,9 @@
 
   function onResizing(e) {
     if (!resizing) return;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    size.width = Math.max(200, resizeStart.width + (clientX - resizeStart.x));
-    size.height = Math.max(100, resizeStart.height + (clientY - resizeStart.y));
+    const point = getCanvasPoint(e);
+    size.width = Math.max(200, resizeStart.width + (point.x - resizeStart.x));
+    size.height = Math.max(100, resizeStart.height + (point.y - resizeStart.y));
     hasResized = true;
     if (e.cancelable) e.preventDefault();
   }
@@ -195,6 +201,7 @@
     color: var(--block-header-text, var(--text));
     font-size: 0.85rem;
     cursor: move;
+    touch-action: none;
     display: flex;
     justify-content: space-between;
     align-items: center;
@@ -232,6 +239,7 @@
     width: 30px;
     height: 30px;
     cursor: se-resize;
+    touch-action: none;
     z-index: 10;
   }
   .delete-btn {

@@ -10,6 +10,7 @@
   export let initialResolvedSrc = null;
   export let initialAttachmentRequiresAuth = false;
   export let focused = false;
+  export let canvasScale = 1;
 
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
@@ -35,6 +36,15 @@
   let resizing = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+
+  function getCanvasPoint(event) {
+    const source = event.touches ? event.touches[0] : event;
+    const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    return {
+      x: source.clientX / safeScale,
+      y: source.clientY / safeScale
+    };
+  }
 
   $: mediaSrc = typeof src === 'string' ? src : resolvedSrc || '';
   $: hasStorageAttachment = src && typeof src === 'object' && src.type === 'storage';
@@ -172,10 +182,9 @@ function onDragStart(e) {
   dragging = true;
   hasDragged = false;
 
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const point = getCanvasPoint(e);
 
-  offset = { x: clientX - position.x, y: clientY - position.y };
+  offset = { x: point.x - position.x, y: point.y - position.y };
 
   window.addEventListener('mousemove', onMouseMove);
   window.addEventListener('mouseup', onMouseUp);
@@ -186,11 +195,10 @@ function onDragStart(e) {
 function onMouseMove(e) {
   if (!dragging) return;
 
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const point = getCanvasPoint(e);
 
-  position.x = clientX - offset.x;
-  position.y = clientY - offset.y;
+  position.x = point.x - offset.x;
+  position.y = point.y - offset.y;
   hasDragged = true;
 
   // Prevent scrolling when dragging on mobile
@@ -219,12 +227,11 @@ function onResizeStart(e) {
   hasResized = false;
   document.body.style.userSelect = 'none';
 
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  const point = getCanvasPoint(e);
 
   resizeStart = {
-    x: clientX,
-    y: clientY,
+    x: point.x,
+    y: point.y,
     width: size.width,
     height: size.height
   };
@@ -238,8 +245,8 @@ function onResizeStart(e) {
 function onResizing(e) {
   if (!resizing) return;
 
-  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-  const deltaX = clientX - resizeStart.x;
+  const point = getCanvasPoint(e);
+  const deltaX = point.x - resizeStart.x;
 
   const newWidth = Math.max(50, resizeStart.width + deltaX);
   const contentHeight = newWidth / aspectRatio;
@@ -334,6 +341,7 @@ function onResizeEnd() {
     box-sizing: border-box;
     padding: 4px 8px;
     cursor: move;
+    touch-action: none;
     user-select: none;
     font-size: 0.8rem;
     color: var(--block-header-text, var(--text));
@@ -412,6 +420,7 @@ function onResizeEnd() {
     right: 0;
     bottom: 0;
     cursor: se-resize;
+    touch-action: none;
     z-index: 10;
   }
   

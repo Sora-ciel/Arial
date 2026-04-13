@@ -9,6 +9,7 @@
   export let initialTasks = [];
   export let initialTitle = 'Task List';
   export let focused = false;
+  export let canvasScale = 1;
 
   const dispatch = createEventDispatcher();
 
@@ -27,6 +28,15 @@
   let hasResized = false;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+
+  function getCanvasPoint(event) {
+    const source = event.touches ? event.touches[0] : event;
+    const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    return {
+      x: source.clientX / safeScale,
+      y: source.clientY / safeScale
+    };
+  }
 
   const todoTasks = () => tasks.filter(task => !task.done);
 
@@ -53,10 +63,9 @@
     dragging = true;
     hasDragged = false;
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const point = getCanvasPoint(e);
 
-    offset = { x: clientX - position.x, y: clientY - position.y };
+    offset = { x: point.x - position.x, y: point.y - position.y };
 
     window.addEventListener('mousemove', onMouseMove);
     window.addEventListener('mouseup', onMouseUp);
@@ -67,11 +76,10 @@
   function onMouseMove(e) {
     if (!dragging) return;
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const point = getCanvasPoint(e);
 
-    position.x = clientX - offset.x;
-    position.y = clientY - offset.y;
+    position.x = point.x - offset.x;
+    position.y = point.y - offset.y;
     hasDragged = true;
 
     if (e.cancelable) e.preventDefault();
@@ -98,12 +106,11 @@
     hasResized = false;
     document.body.style.userSelect = 'none';
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const point = getCanvasPoint(e);
 
     resizeStart = {
-      x: clientX,
-      y: clientY,
+      x: point.x,
+      y: point.y,
       width: size.width,
       height: size.height
     };
@@ -117,11 +124,10 @@
   function onResizing(e) {
     if (!resizing) return;
 
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const point = getCanvasPoint(e);
 
-    const deltaX = clientX - resizeStart.x;
-    const deltaY = clientY - resizeStart.y;
+    const deltaX = point.x - resizeStart.x;
+    const deltaY = point.y - resizeStart.y;
 
     size.width = Math.max(220, resizeStart.width + deltaX);
     size.height = Math.max(200, resizeStart.height + deltaY);
@@ -240,6 +246,7 @@
     height: 30px;
     padding: 4px 8px;
     cursor: move;
+    touch-action: none;
     user-select: none;
     font-size: 0.8rem;
     color: var(--block-header-text, var(--text));
@@ -369,6 +376,7 @@
     right: 0;
     bottom: 0;
     cursor: se-resize;
+    touch-action: none;
   }
 </style>
 

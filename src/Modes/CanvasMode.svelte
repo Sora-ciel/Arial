@@ -158,6 +158,7 @@
   bottom: 0;
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
+  touch-action: pan-x pan-y;
 }
 
 
@@ -225,6 +226,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -241,6 +243,7 @@
             initialResolvedSrc={block.resolvedSrc}
             initialAttachmentRequiresAuth={block.attachmentRequiresAuth}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -254,6 +257,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -268,6 +272,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -281,6 +286,7 @@
             initialTextColor={block.textColor}
             initialContent={block.content}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -295,6 +301,7 @@
             initialTasks={block.tasks}
             initialTitle={block.title}
             focused={block.id === focusedBlockId}
+            canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
