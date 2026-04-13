@@ -6,6 +6,7 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let colors = {};
+  export let activeModeAccent = null;
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
 
@@ -61,6 +62,7 @@
   })
     .map(([name, value]) => `${name}: ${value}`)
     .join("; ");
+  $: modeAccentColor = activeModeAccent || theme.buttonText || '#ffffff';
 
 
   $: isSingleNoteMode = mode === "single";
@@ -239,8 +241,10 @@ onMount(() => {
   }
 
   .mode-ladder button.active {
-    background: rgba(127, 211, 255, 0.2);
-    border-color: rgba(127, 211, 255, 0.5);
+    background: transparent;
+    border-color: var(--mode-active-outline, currentColor);
+    color: var(--mode-active-outline, currentColor);
+    border-width: 2px;
   }
 
 
@@ -315,12 +319,13 @@ onMount(() => {
 
   .mobile-quick-actions {
     display: none;
-    position: fixed;
-    top: 29px;
-    left: 94px;
-    z-index: 1000;
+    position: relative;
+    z-index: 1001;
     align-items: center;
     gap: 6px;
+    margin-left: auto;
+    flex-wrap: nowrap;
+    max-width: 100%;
   }
 
   .mobile-block-actions {
@@ -335,12 +340,15 @@ onMount(() => {
       gap: 6px;
       background: var(--left-panel-bg, #111111b0);
       padding: 10px;
-      border-radius: 0 0 8px 0;
+      border-radius: 12px;
       position: absolute;
-      top: 71px;
-      left: 0px;
-      z-index: 999;
+      top: calc(100% + 8px);
+      left: 8px;
+      right: 8px;
+      z-index: 1002;
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+      max-height: min(70vh, 540px);
+      overflow-y: auto;
     }
     .left-controls.show {
       display: flex;
@@ -351,7 +359,7 @@ onMount(() => {
 
     .mobile-quick-actions {
       display: inline-flex;
-      left: 10px;
+      justify-content: flex-end;
     }
 
     .mobile-only {
@@ -364,10 +372,26 @@ onMount(() => {
       gap: 6px;
 
     }
+
+    .left-controls-wrapper button,
+    .left-controls-wrapper input {
+      min-height: 40px;
+    }
+
+    .mode-switcher,
+    .add-block-menu {
+      width: 100%;
+    }
+
+    .mode-switcher > button,
+    .add-block-menu > button {
+      width: 100%;
+      justify-content: center;
+    }
   }
 </style>
 
-<div class="left-controls-wrapper" style={leftCssVars}>
+<div class="left-controls-wrapper" style={`${leftCssVars}; --mode-active-outline: ${modeAccentColor};`}>
   <!-- Toggle button for <= 1024px -->
   {#if compactUI}
 
