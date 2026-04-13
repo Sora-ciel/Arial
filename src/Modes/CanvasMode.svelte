@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
   import TexteBlock from '../components/TexteBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
   import Texteclean from '../components/TexteClean.svelte';
@@ -17,6 +17,19 @@
 
   
 
+  const MIN_CANVAS_WIDTH = 1800;
+  const MIN_CANVAS_HEIGHT = 900;
+  const BLOCK_MARGIN_RIGHT = 20;
+  const BLOCK_MARGIN_BOTTOM = 20;
+  const MIN_ZOOM = 0.2;
+  const MAX_ZOOM = 4;
+
+  let scale = 1;
+  let lastDistance = null;
+  let lastMidpoint = null;
+  let canvasWidth = MIN_CANVAS_WIDTH;
+  let canvasHeight = MIN_CANVAS_HEIGHT;
+
   const dispatch = createEventDispatcher();
 
 
@@ -33,8 +46,93 @@
   }
 
 
+  function getDistance(touches) {
+    const dx = touches[0].clientX - touches[1].clientX;
+    const dy = touches[0].clientY - touches[1].clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  }
+
+  function getMidpoint(touches) {
+    return {
+      x: (touches[0].clientX + touches[1].clientX) / 2,
+      y: (touches[0].clientY + touches[1].clientY) / 2
+    };
+  }
+
+  function measureCanvasFromBlocks() {
+    if (!Array.isArray(blocks) || blocks.length === 0) {
+      return { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT };
+    }
+
+    let maxX = 0;
+    let maxY = 0;
+    for (const block of blocks) {
+      const x = Number(block?.position?.x ?? 0);
+      const y = Number(block?.position?.y ?? 0);
+      const width = Number(block?.size?.width ?? 220);
+      const height = Number(block?.size?.height ?? 140);
+      maxX = Math.max(maxX, x + width);
+      maxY = Math.max(maxY, y + height);
+    }
+
+    return {
+      width: Math.max(MIN_CANVAS_WIDTH, maxX + BLOCK_MARGIN_RIGHT),
+      height: Math.max(MIN_CANVAS_HEIGHT, maxY + BLOCK_MARGIN_BOTTOM)
+    };
+  }
+
+  function fitToViewport() {
+    if (!canvasRef) return;
+    const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
+    const availableWidth = Math.max(window.innerWidth, 1);
+    const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
+    scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    canvasRef.scrollLeft = 0;
+    canvasRef.scrollTop = 0;
+  }
+
+  function onTouchStart(event) {
+    if (event.touches.length !== 2) return;
+    lastDistance = getDistance(event.touches);
+    lastMidpoint = getMidpoint(event.touches);
+  }
+
+  function onTouchMove(event) {
+    if (event.touches.length !== 2 || !lastDistance || !canvasRef) return;
+    if (event.cancelable) event.preventDefault();
+
+    const newDistance = getDistance(event.touches);
+    const newMidpoint = getMidpoint(event.touches);
+    const oldScale = scale;
+    const nextScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldScale * (newDistance / lastDistance)));
+    if (nextScale === oldScale) return;
+
+    const rect = canvasRef.getBoundingClientRect();
+    const anchorX = (lastMidpoint?.x ?? newMidpoint.x) - rect.left;
+    const anchorY = (lastMidpoint?.y ?? newMidpoint.y) - rect.top;
+    const contentX = (canvasRef.scrollLeft + anchorX) / oldScale;
+    const contentY = (canvasRef.scrollTop + anchorY) / oldScale;
+
+    scale = nextScale;
+    canvasRef.scrollLeft = Math.max(0, contentX * scale - anchorX);
+    canvasRef.scrollTop = Math.max(0, contentY * scale - anchorY);
+
+    lastDistance = newDistance;
+    lastMidpoint = newMidpoint;
+  }
+
+  function onTouchEnd(event) {
+    if (event.touches.length < 2) {
+      lastDistance = null;
+      lastMidpoint = null;
+    }
+  }
+
   export function refitCanvas() {
-    // Intentionally no-op for now: canvas auto-resizing/auto-scaling is disabled.
+    const measured = measureCanvasFromBlocks();
+    canvasWidth = measured.width;
+    canvasHeight = measured.height;
+    fitToViewport();
   }
 
   const defaultCanvasColors = {
@@ -44,6 +142,10 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+
+  onMount(() => {
+    refitCanvas();
+  });
 </script>
 
 
@@ -61,10 +163,14 @@
 
 
 .canvas-inner {
-  width: 1800px;
-  height: 900px;
+  position: absolute;
+  inset: 0 auto auto 0;
   transform-origin: top left;
   background: var(--canvas-inner-bg, #000000);
+}
+
+.canvas-zoom-shell {
+  position: relative;
 }
 
 
@@ -93,11 +199,22 @@
   class:simple-note={mode === 'simple'}
   bind:this={canvasRef}
   style={canvasCssVars}
+  on:touchstart={onTouchStart}
+  on:touchmove={onTouchMove}
+  on:touchend={onTouchEnd}
 >
     <div
-      class="canvas-inner"
-      style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
-    >
+      class="canvas-zoom-shell"
+      style:width={`${canvasWidth * scale}px`}
+      style:height={`${canvasHeight * scale}px`}
+      >
+      <div
+        class="canvas-inner"
+        style:width={`${canvasWidth}px`}
+        style:height={`${canvasHeight}px`}
+        style:transform={`scale(${scale})`}
+        style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
+      >
       {#each blocks as block (block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : ''))}
         {#if block.type === 'text'}
           <TexteBlock
@@ -184,5 +301,6 @@
           />
         {/if}
       {/each}
+      </div>
     </div>
 </div>
