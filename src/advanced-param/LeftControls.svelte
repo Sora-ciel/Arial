@@ -310,6 +310,18 @@ onMount(() => {
   }
 
 
+  .thin-button-row {
+    display: inline-flex;
+    gap: 8px;
+  }
+
+  .thin-action-btn {
+    width: 54px;
+    min-width: 54px;
+    padding-inline: 0;
+    justify-content: center;
+  }
+
   .compact-toggle-btn {
     display: none;
   }
@@ -331,7 +343,7 @@ onMount(() => {
     .left-controls {
       display: none;
       flex-direction: column;
-      align-items: flex-start;
+      align-items: stretch;
       gap: 8px;
       background: var(--left-panel-bg, #111111f0);
       padding: 12px;
@@ -340,11 +352,35 @@ onMount(() => {
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
       right: auto;
-      width: min(320px, calc(100vw - 16px));
+      width: min(260px, calc(100vw - 16px));
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
       z-index: 1002;
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
+    }
+
+    .left-controls > button,
+    .left-controls > input,
+    .left-controls > .mode-switcher,
+    .left-controls > .add-block-menu {
+      width: 100%;
+    }
+
+    .left-controls > input {
+      max-width: 100%;
+      box-sizing: border-box;
+    }
+
+    .left-controls .thin-button-row {
+      width: 100%;
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .left-controls .thin-action-btn {
+      width: 100%;
+      min-width: 0;
     }
     .left-controls.show {
       display: flex;
@@ -501,22 +537,26 @@ onMount(() => {
         </div>
       {/if}
     </div>
-    <button
-      on:click={moveUp}
-      disabled={!focusedBlockId}
-      aria-label="Move block down"
-      title="Move block down"
-    >
-      ⬇
-    </button>
-    <button
-      on:click={moveDown}
-      disabled={!focusedBlockId}
-      aria-label="Move block up"
-      title="Move block up"
-    >
-      ⬆
-    </button>
+    <div class="thin-button-row">
+      <button
+        class="thin-action-btn"
+        on:click={moveUp}
+        disabled={!focusedBlockId}
+        aria-label="Move block down"
+        title="Move block down"
+      >
+        ⬇
+      </button>
+      <button
+        class="thin-action-btn"
+        on:click={moveDown}
+        disabled={!focusedBlockId}
+        aria-label="Move block up"
+        title="Move block up"
+      >
+        ⬆
+      </button>
+    </div>
     <button on:click={clear}>🗑️ Clear</button>
     <button on:click={exportJSON}>⬇ Export</button>
     <button on:click={triggerFileInput}>📁 Import JSON</button>
