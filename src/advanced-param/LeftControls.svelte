@@ -352,7 +352,7 @@ onMount(() => {
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
       right: auto;
-      width: min(200px, calc(100vw - 16px));
+      width: min(120px, calc(100vw - 16px));
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
       z-index: 1002;
@@ -410,8 +410,8 @@ onMount(() => {
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
       right: auto;
-      width: min(220px, calc(100vw - 16px));
-      min-width: 180px;
+      width: min(140px, calc(100vw - 16px));
+      min-width: 120px;
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
 
