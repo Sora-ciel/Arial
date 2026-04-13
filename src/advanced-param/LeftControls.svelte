@@ -358,7 +358,7 @@ onMount(() => {
       display: none;
       flex-direction: column;
       align-items: stretch;
-      gap: 8px;
+      gap: 3px;
       background: var(--left-panel-bg, #111111f0);
       padding: 12px;
       border-radius: 12px;
@@ -414,7 +414,7 @@ onMount(() => {
     .mobile-block-actions {
       display: grid;
       grid-template-columns: 1fr;
-      gap: 6px;
+      gap: 3px;
       width: 100%;
     }
 
