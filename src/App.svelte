@@ -1631,11 +1631,12 @@
 @media (max-width: 1024px) {
   .controls {
     min-height: 55px;
-    flex-wrap: wrap;
-    padding: 8px 10px 10px;
+    flex-wrap: nowrap;
+    padding: 8px 10px;
     justify-content: space-between;
-    align-items: flex-start;
+    align-items: center;
     gap: 8px;
+    overflow-x: auto;
   }
 
   .right-controls {

@@ -318,8 +318,9 @@ onMount(() => {
     display: none;
     position: static;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     gap: 8px;
+    white-space: nowrap;
   }
 
   .mobile-block-actions {
@@ -338,7 +339,8 @@ onMount(() => {
       position: fixed;
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
-      right: 8px;
+      right: auto;
+      width: min(320px, calc(100vw - 16px));
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
       z-index: 1002;
@@ -353,7 +355,6 @@ onMount(() => {
 
     .mobile-quick-actions {
       display: inline-flex;
-      width: 100%;
     }
 
     .mobile-only {
@@ -367,23 +368,14 @@ onMount(() => {
       width: 100%;
     }
 
-    .mobile-quick-actions > button,
-    .mobile-quick-actions .mode-switcher > button {
-      flex: 1 1 150px;
-    }
-
-    .left-controls input,
-    .left-controls > button {
-      width: 100%;
-    }
-
     .mode-ladder,
     .add-block-list {
       position: fixed;
       top: calc(var(--controls-height, 56px) + 8px);
       left: 8px;
-      right: 8px;
-      min-width: 0;
+      right: auto;
+      width: min(300px, calc(100vw - 16px));
+      min-width: 220px;
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
 
@@ -411,7 +403,7 @@ onMount(() => {
           aria-haspopup="listbox"
           aria-expanded={showModeLadder}
         >
-          📝 {modeLabels?.[mode] ?? mode}
+          📝 Mode
         </button>
         {#if showModeLadder}
           <div class="mode-ladder" bind:this={modeMenuRef} role="listbox">
