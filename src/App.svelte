@@ -894,6 +894,28 @@
     hasUnsnapshottedChanges = false;
   }
 
+  function updatedBlockValueForKey(key, existingBlock, blockUpdates) {
+    if (key === 'position') {
+      return { ...existingBlock.position, ...(blockUpdates.position || {}) };
+    }
+    if (key === 'size') {
+      return { ...existingBlock.size, ...(blockUpdates.size || {}) };
+    }
+    return blockUpdates[key];
+  }
+
+  function areHistoryValuesEqual(previousValue, nextValue) {
+    if (
+      previousValue &&
+      nextValue &&
+      typeof previousValue === 'object' &&
+      typeof nextValue === 'object'
+    ) {
+      return JSON.stringify(previousValue) === JSON.stringify(nextValue);
+    }
+    return previousValue === nextValue;
+  }
+
   async function undo() {
     await ensureCurrentHistorySnapshot();
 
@@ -1018,11 +1040,21 @@
         ? changedKeys
         : Object.keys(updates);
 
+    const actualChangedKeys = normalizedChangedKeys.filter(key => {
+      const previousValue = existing[key];
+      const nextValue = updatedBlockValueForKey(key, existing, updates);
+      return !areHistoryValuesEqual(previousValue, nextValue);
+    });
+
+    if (!actualChangedKeys.length) {
+      return;
+    }
+
     let shouldSnapshot;
     if (typeof pushToHistory === "boolean") {
       shouldSnapshot = pushToHistory;
-    } else if (normalizedChangedKeys.length) {
-      shouldSnapshot = normalizedChangedKeys.some(key =>
+    } else if (actualChangedKeys.length) {
+      shouldSnapshot = actualChangedKeys.some(key =>
         historyTriggers.includes(key)
       );
     } else {
