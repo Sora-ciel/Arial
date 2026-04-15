@@ -283,7 +283,7 @@
   box-sizing: border-box;
   border-radius: 20px;
   overflow: hidden;
-  border: 2px solid var(--text-color);
+  border: 2px solid var(--simple-note-border-color, var(--text-color));
   box-shadow: var(--simple-note-block-shadow, 0 0 2px 1px var(--text-color),
               0 0 6px 2px var(--text-color));
   display: flex;

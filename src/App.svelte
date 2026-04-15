@@ -676,11 +676,15 @@
   $: simpleNoteBlockShadow = themeShadowIsDisabled(blockTheme?.shadow)
     ? 'none'
     : '0 0 2px 1px var(--text-color), 0 0 6px 2px var(--text-color)';
+  $: simpleNoteBorderColor = themeShadowIsDisabled(blockTheme?.shadow)
+    ? 'var(--bg-color)'
+    : 'var(--text-color)';
 
   $: blockThemeCssVars = [
     ...Object.entries(blockTheme || {})
       .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`),
-    `--simple-note-block-shadow: ${simpleNoteBlockShadow}`
+    `--simple-note-block-shadow: ${simpleNoteBlockShadow}`,
+    `--simple-note-border-color: ${simpleNoteBorderColor}`
   ].join('; ');
 
   function handleThemeSelect(event) {
