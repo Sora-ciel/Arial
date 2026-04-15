@@ -23,8 +23,6 @@
   let suppressClick = false;
   let hasDragged = false;
   let hasResized = false;
-  let isEditing = false;
-  let editStartContent = content;
   let offset = { x: 0, y: 0 };
   let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
 
@@ -180,22 +178,6 @@
     handleWrapperClick(event);
   }
 
-  function handleTextFocus() {
-    ensureFocus();
-    if (!isEditing) {
-      isEditing = true;
-      editStartContent = content;
-    }
-  }
-
-  function handleTextBlur() {
-    if (!isEditing) return;
-    isEditing = false;
-
-    if (content !== editStartContent) {
-      sendUpdate(['content'], { pushToHistory: true });
-    }
-  }
 </script>
 
 <style>
@@ -337,8 +319,7 @@
       spellcheck="false"
       bind:value={content}
       on:input={() => sendUpdate(['content'], { pushToHistory: false })}
-      on:focus={handleTextFocus}
-      on:blur={handleTextBlur}
+      on:focus={ensureFocus}
       data-focus-guard
     ></textarea>
   </div>
