@@ -294,9 +294,9 @@
 }
 
 .container.focused {
-  outline: 2px solid var(--bg-color);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--bg-color) 55%, transparent),
-              0 0 12px color-mix(in srgb, var(--bg-color) 75%, transparent);
+  outline: 4px solid var(--bg-color);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--bg-color) 55%, transparent),
+              0 0 14px color-mix(in srgb, var(--bg-color) 75%, transparent);
 }
 
 textarea {
@@ -316,9 +316,9 @@ textarea {
 }
 
 textarea:focus {
-  color: var(--text-color);
+  color: var(--bg-color);
   outline: none;
-  background: var(--bg-color);
+  background: var(--text-color);
 }
 
 textarea::selection {
