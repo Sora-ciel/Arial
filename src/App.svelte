@@ -831,14 +831,23 @@
   let history = [];
   let historyIndex = -1;
   let hasUnsnapshottedChanges = false;
+  let historyOperationQueue = Promise.resolve();
 
-  async function ensureCurrentHistorySnapshot() {
+  function queueHistoryOperation(operation) {
+    const nextOperation = historyOperationQueue.then(operation);
+    historyOperationQueue = nextOperation.catch(error => {
+      console.error("History operation failed:", error);
+    });
+    return nextOperation;
+  }
+
+  async function ensureCurrentHistorySnapshotInternal() {
     if (!blocks.length && history.length) return;
 
     if (!hasUnsnapshottedChanges) return;
 
     if (!history.length) {
-      await pushHistory(blocks, modeOrders);
+      await pushHistoryInternal(blocks, modeOrders);
       return;
     }
 
@@ -851,7 +860,7 @@
     const latestHistorySnapshot = history[historyIndex];
 
     if (latestHistorySnapshot !== currentSnapshot) {
-      await pushHistory(blocks, modeOrders);
+      await pushHistoryInternal(blocks, modeOrders);
     } else {
       hasUnsnapshottedChanges = false;
     }
@@ -869,7 +878,7 @@
     savedList = await listSavedBlocks();
   }
 
-  async function pushHistory(newBlocks, newOrders = modeOrders) {
+  async function pushHistoryInternal(newBlocks, newOrders = modeOrders) {
     const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
     const snapshot = JSON.stringify(stateSnapshot);
 
@@ -894,8 +903,14 @@
     hasUnsnapshottedChanges = false;
   }
 
-  async function undo() {
-    await ensureCurrentHistorySnapshot();
+  function pushHistory(newBlocks, newOrders = modeOrders) {
+    return queueHistoryOperation(() =>
+      pushHistoryInternal(newBlocks, newOrders)
+    );
+  }
+
+  async function undoInternal() {
+    await ensureCurrentHistorySnapshotInternal();
 
     if (historyIndex > 0) {
       historyIndex--;
@@ -913,10 +928,15 @@
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
       await persistAutosave(snapshotBlocks, snapshotOrders);
+      hasUnsnapshottedChanges = false;
     }
   }
 
-  async function redo() {
+  async function undo() {
+    await queueHistoryOperation(() => undoInternal());
+  }
+
+  async function redoInternal() {
     if (historyIndex < history.length - 1) {
       historyIndex++;
       const snapshotState = JSON.parse(history[historyIndex]) || {};
@@ -933,20 +953,30 @@
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
       await persistAutosave(snapshotBlocks, snapshotOrders);
+      hasUnsnapshottedChanges = false;
     }
+  }
+
+  async function redo() {
+    await queueHistoryOperation(() => redoInternal());
   }
 
   function handleUndoRedoShortcut(event) {
     const key = event.key?.toLowerCase();
     const hasCommand = event.ctrlKey || event.metaKey;
-    if (!hasCommand || key !== "z") return;
+    const isUndo = hasCommand && key === "z" && !event.shiftKey;
+    const isRedoShortcut =
+      hasCommand && key === "z" && event.shiftKey;
+    const isCtrlYRedo =
+      event.ctrlKey && !event.metaKey && key === "y";
+    if (!isUndo && !isRedoShortcut && !isCtrlYRedo) return;
 
     event.preventDefault();
 
-    if (event.shiftKey) {
-      redo();
+    if (isRedoShortcut || isCtrlYRedo) {
+      void redo();
     } else {
-      undo();
+      void undo();
     }
   }
 
