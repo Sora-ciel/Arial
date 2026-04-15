@@ -406,6 +406,27 @@ li {
 }
 
 @media (max-width: 1023px) {
+  .simple-wrapper {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.35rem;
+    padding: 2px;
+  }
+
+  .canvas {
+    margin-bottom: 0.3rem;
+    padding: 3px;
+    border-radius: 6px;
+  }
+
+  .container {
+    padding: 3px;
+    border-radius: 14px;
+  }
+
+  textarea {
+    padding: 8px;
+  }
+
   .simple-toolbar {
     display: none;
   }
