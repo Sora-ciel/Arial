@@ -916,18 +916,30 @@
     return previousValue === nextValue;
   }
 
+  function restoreSnapshotBlocks(snapshotBlocksRaw) {
+    const currentVersionById = new Map(
+      blocks.map(block => [block.id, block._version || 0])
+    );
+
+    return snapshotBlocksRaw.map(block => {
+      const currentVersion = currentVersionById.get(block.id) || 0;
+      const restoredVersion = Math.max((block._version || 0) + 1, currentVersion + 1);
+      return {
+        ...block,
+        _version: restoredVersion,
+        position: { ...block.position },
+        size: { ...block.size }
+      };
+    });
+  }
+
   async function undo() {
     await ensureCurrentHistorySnapshot();
 
     if (historyIndex > 0) {
       historyIndex--;
       const snapshotState = JSON.parse(history[historyIndex]) || {};
-      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
-        ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
-      }));
+      const snapshotBlocks = restoreSnapshotBlocks(snapshotState.blocks || []);
       const snapshotOrders = ensureModeOrders(
         snapshotBlocks,
         snapshotState.modeOrders
@@ -942,12 +954,7 @@
     if (historyIndex < history.length - 1) {
       historyIndex++;
       const snapshotState = JSON.parse(history[historyIndex]) || {};
-      const snapshotBlocks = (snapshotState.blocks || []).map(b => ({
-        ...b,
-        _version: (b._version || 0) + 1,
-        position: { ...b.position },
-        size: { ...b.size }
-      }));
+      const snapshotBlocks = restoreSnapshotBlocks(snapshotState.blocks || []);
       const snapshotOrders = ensureModeOrders(
         snapshotBlocks,
         snapshotState.modeOrders
