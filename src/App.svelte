@@ -667,9 +667,21 @@
     }
   });
 
-  $: blockThemeCssVars = Object.entries(blockTheme || {})
-    .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`)
-    .join('; ');
+  function themeShadowIsDisabled(shadow) {
+    if (shadow == null) return false;
+    const normalized = String(shadow).trim().toLowerCase();
+    return normalized === 'none' || normalized === '0' || normalized === '0px' || normalized === '0 0';
+  }
+
+  $: simpleNoteBlockShadow = themeShadowIsDisabled(blockTheme?.shadow)
+    ? 'none'
+    : '0 0 2px 1px var(--text-color), 0 0 6px 2px var(--text-color)';
+
+  $: blockThemeCssVars = [
+    ...Object.entries(blockTheme || {})
+      .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`),
+    `--simple-note-block-shadow: ${simpleNoteBlockShadow}`
+  ].join('; ');
 
   function handleThemeSelect(event) {
     const themeId = event.detail?.id;
