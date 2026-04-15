@@ -409,6 +409,32 @@ li {
   .simple-toolbar {
     display: none;
   }
+
+  .simple-wrapper {
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+    padding: 2px;
+  }
+
+  .simple-column {
+    width: 100%;
+  }
+
+  .canvas {
+    width: 100%;
+    margin: 0 0 0.25rem;
+    padding: 3px;
+  }
+
+  .container {
+    width: 100%;
+    border-radius: 14px;
+    padding: 2px;
+  }
+
+  textarea {
+    padding: 8px;
+  }
 }
 
 </style>
