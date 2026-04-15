@@ -85,7 +85,7 @@
   }
 
   function blockKey(block) {
-    return block.id + (block.type !== 'text' && block.type !== 'cleantext' ? '-' + (block._version || 0) : '');
+    return `${block.id}-${block._version || 0}`;
   }
 
   let imageInputRefs = {};
