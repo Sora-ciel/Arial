@@ -294,16 +294,15 @@
 }
 
 .container.focused {
-  outline: 2px solid transparent;
-  box-shadow: 0 0 2px 1px var(--text-color),
-              0 0 6px 2px var(--text-color);
+  outline: 4px solid transparent;
+
 }
 
 textarea {
   width: 100%;
   min-height: 50px;
   border: none;
-  border-radius: 20px;
+  border-radius: 10px;
   resize: none;
   margin: 0;
   padding: 10px;
@@ -319,6 +318,11 @@ textarea:focus {
   color: var(--bg-color);
   outline: none;
   background: var(--text-color);
+}
+
+textarea::selection {
+  background: var(--bg-color);
+  color: var(--text-color);
 }
 
 .container img {
