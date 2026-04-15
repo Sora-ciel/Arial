@@ -284,8 +284,8 @@
   border-radius: 20px;
   overflow: hidden;
   border: 2px solid var(--text-color);
-  box-shadow: 0 0 2px 1px var(--text-color),
-              0 0 6px 2px var(--text-color);
+  box-shadow: var(--block-shadow, 0 0 2px 1px var(--text-color),
+              0 0 6px 2px var(--text-color));
   display: flex;
   flex-direction: column;
   align-items: center;

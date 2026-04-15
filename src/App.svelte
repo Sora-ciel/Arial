@@ -101,7 +101,7 @@
     {
       id: 'paper-notebook',
       name: 'Paper Notebook',
-      description: 'Warm stationery palette with serif typography and soft shadows.',
+      description: 'Warm stationery palette with serif typography and clean no-shadow blocks.',
       controlColors: {
         left: {
           panelBg: '#f6f0e8',
@@ -127,7 +127,7 @@
         borderColor: '#d3c2b4',
         borderWidth: '2px',
         borderRadius: '16px',
-        shadow: '0 18px 40px rgba(116, 94, 72, 0.28)',
+        shadow: 'none',
         focusOutline: '#b5835a',
         focusShadow: '0 0 0 2px rgba(181, 131, 90, 0.35), 0 0 14px rgba(181, 131, 90, 0.45)',
         headerBg: 'linear-gradient(120deg, #f9f2e8, #f0e2d2)',
