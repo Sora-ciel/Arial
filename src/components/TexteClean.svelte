@@ -33,6 +33,8 @@
   let hasDragged = false;
   let hasResized = false;
   let showSettings = false;
+  let isEditing = false;
+  let editStartContent = content;
 
   let editableDiv;
 
@@ -176,6 +178,24 @@
 
     event.preventDefault();
     handleWrapperClick(event);
+  }
+
+  function handleTextFocus() {
+    ensureFocus();
+    if (!isEditing) {
+      isEditing = true;
+      editStartContent = editableDiv?.innerText ?? content;
+    }
+  }
+
+  function handleTextBlur() {
+    if (!isEditing) return;
+    isEditing = false;
+
+    const latestContent = editableDiv?.innerText ?? content;
+    if (latestContent !== editStartContent) {
+      sendUpdate(['content'], { pushToHistory: true });
+    }
   }
 </script>
 
@@ -333,7 +353,8 @@
     class="editable"
     spellcheck="false"
     on:input={() => sendUpdate(['content'], { pushToHistory: false })}
-    on:focus={ensureFocus}
+    on:focus={handleTextFocus}
+    on:blur={handleTextBlur}
     data-focus-guard
   ></div>
 
