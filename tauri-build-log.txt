@@ -1,0 +1,52 @@
+==== START 17/04/2026 17:11:12,24 ==== 
+Working dir: C:\My programs\codex-pwa-main
+=== Checking deps (vite) ===
+=== Building Tauri (MSI + NSIS) ===
+npm warn config production Use `--omit=dev` instead.
+        Info Looking up installed tauri packages to check mismatched versions...
+     Running beforeBuildCommand `npm run build`
+npm warn config production Use `--omit=dev` instead.
+
+> codex-pwa@0.0.0 build
+> vite build
+
+[36mvite v6.3.5 [32mbuilding for production...[36m[39m
+transforming...
+17:11:19 [vite-plugin-svelte] src/Modes/SingleNoteMode.svelte:242:2 Unused CSS selector ".note-warning"
+https://svelte.dev/e/css_unused_selector
+240:   }
+241: 
+242:   .note-warning {
+                    ^
+243:     font-size: 0.85rem;
+244:     color: rgba(255, 255, 255, 0.7);
+[32m✓[39m 140 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m  0.46 kB[22m[1m[22m[2m │ gzip:   0.30 kB[22m
+[2mdist/[22m[35massets/index-CTMKfr-R.css  [39m[1m[2m 53.65 kB[22m[1m[22m[2m │ gzip:   8.52 kB[22m
+[2mdist/[22m[36massets/index-9ESb56Ef.js   [39m[1m[33m753.09 kB[39m[22m[2m │ gzip: 475.61 kB[22m
+[33m
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rollupOptions.output.manualChunks to improve chunking: https://rollupjs.org/configuration-options/#output-manualchunks
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.[39m
+[32m✓ built in 2.61s[39m
+   Compiling app v0.1.0 (C:\My programs\codex-pwa-main\src-tauri)
+    Finished `release` profile [optimized] target(s) in 1m 44s
+       Built application at: C:\My programs\codex-pwa-main\src-tauri\target\release\app.exe
+        Info Patching binary "C:\\My programs\\codex-pwa-main\\src-tauri\\target\\release\\app.exe" for type msi
+        Warn Failed to add bundler type to the binary: __TAURI_BUNDLE_TYPE variable not found in binary. Make sure tauri crate and tauri-cli are up to date. Updater plugin may not be able to update this package. This shouldn't normally happen, please report it to https://github.com/tauri-apps/tauri/issues
+        Info Target: x64
+     Running candle for "main.wxs"
+     Running light to produce C:\My programs\codex-pwa-main\src-tauri\target\release\bundle\msi\Arial_0.8.32_x64_en-US.msi
+        Info Patching binary "C:\\My programs\\codex-pwa-main\\src-tauri\\target\\release\\app.exe" for type nsis
+        Warn Failed to add bundler type to the binary: __TAURI_BUNDLE_TYPE variable not found in binary. Make sure tauri crate and tauri-cli are up to date. Updater plugin may not be able to update this package. This shouldn't normally happen, please report it to https://github.com/tauri-apps/tauri/issues
+        Info Target: x64
+     Running makensis to produce C:\My programs\codex-pwa-main\src-tauri\target\release\bundle\nsis\Arial_0.8.32_x64-setup.exe
+    Finished 2 bundles at:
+        C:\My programs\codex-pwa-main\src-tauri\target\release\bundle\msi\Arial_0.8.32_x64_en-US.msi
+        C:\My programs\codex-pwa-main\src-tauri\target\release\bundle\nsis\Arial_0.8.32_x64-setup.exe
+
+=== DONE ===
+Output folder: src-tauri\target\release\bundle\
