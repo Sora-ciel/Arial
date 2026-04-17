@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Arial",
-  "version": "0.8.26",
+  "version": "0.8.32",
   "identifier": "com.sora.codex",
   "build": {
     "frontendDist": "../dist",
