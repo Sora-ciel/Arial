@@ -1402,14 +1402,20 @@
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
   };
 
-  function handleFocusToggle(event) {
+  async function handleFocusToggle(event) {
     const { id } = event.detail || {};
+    const nextFocusedId = id && focusedBlockId !== id ? id : null;
+
+    if (focusedBlockId !== nextFocusedId) {
+      await ensureCurrentHistorySnapshot();
+    }
+
     if (!id) {
       focusedBlockId = null;
       return;
     }
 
-    focusedBlockId = focusedBlockId === id ? null : id;
+    focusedBlockId = nextFocusedId;
   }
 
   async function moveFocusedBlock(offset) {
