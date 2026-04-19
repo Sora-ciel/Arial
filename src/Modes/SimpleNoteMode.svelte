@@ -240,16 +240,49 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: #ffffff;
+  color: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, #ffffff);
   font-weight: 700;
   background: color-mix(in srgb, var(--canvas-outer-bg, #000000) 60%, transparent);
-  border: 1px solid color-mix(in srgb, #ffffff 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 35%, transparent);
   border-radius: 999px;
   padding: 0.4rem 0.75rem;
 }
 
 .simple-toolbar input[type="range"] {
   width: min(220px, 36vw);
+  accent-color: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 65%, #ffffff);
+  cursor: pointer;
+}
+
+.simple-toolbar input[type="range"]::-webkit-slider-runnable-track {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, transparent);
+}
+
+.simple-toolbar input[type="range"]::-moz-range-track {
+  height: 0.35rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, transparent);
+}
+
+.simple-toolbar input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 0.9rem;
+  height: 0.9rem;
+  margin-top: -0.275rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--canvas-outer-bg, #000000) 70%, #ffffff);
+  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 70%, #ffffff);
+}
+
+.simple-toolbar input[type="range"]::-moz-range-thumb {
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 50%;
+  border: 2px solid color-mix(in srgb, var(--canvas-outer-bg, #000000) 70%, #ffffff);
+  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 70%, #ffffff);
 }
 
 .simple-toolbar-value {
