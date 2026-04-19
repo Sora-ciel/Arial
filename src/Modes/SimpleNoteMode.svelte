@@ -14,7 +14,47 @@
   };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
+
+  function getReadableTextColor(color) {
+    if (!color) return '#f5f5f5';
+    const parsed = parseColor(color);
+    if (!parsed) return '#f5f5f5';
+    const [r, g, b] = parsed;
+    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+    return luminance > 0.6 ? '#121212' : '#f5f5f5';
+  }
+
+  function parseColor(color) {
+    const trimmed = color.trim();
+    if (trimmed.startsWith('#')) {
+      const hex = trimmed.slice(1);
+      if (hex.length === 3) {
+        return [
+          parseInt(hex[0] + hex[0], 16),
+          parseInt(hex[1] + hex[1], 16),
+          parseInt(hex[2] + hex[2], 16)
+        ];
+      }
+      if (hex.length === 6) {
+        return [
+          parseInt(hex.slice(0, 2), 16),
+          parseInt(hex.slice(2, 4), 16),
+          parseInt(hex.slice(4, 6), 16)
+        ];
+      }
+    }
+    const rgbMatch = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+    if (rgbMatch) {
+      return [
+        Number(rgbMatch[1]),
+        Number(rgbMatch[2]),
+        Number(rgbMatch[3])
+      ];
+    }
+    return null;
+  }
 
   function deleteBlock(id) {
     dispatch('delete', { id });
@@ -240,30 +280,30 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, #ffffff);
+  color: var(--mode-text-color, #f5f5f5);
   font-weight: 700;
-  background: color-mix(in srgb, var(--canvas-outer-bg, #000000) 60%, transparent);
-  border: 1px solid color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 35%, transparent);
+  background: var(--canvas-outer-bg, #000000);
+  border: 1px solid var(--mode-text-color, #f5f5f5);
   border-radius: 999px;
   padding: 0.4rem 0.75rem;
 }
 
 .simple-toolbar input[type="range"] {
   width: min(220px, 36vw);
-  accent-color: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 65%, #ffffff);
+  accent-color: var(--mode-text-color, #f5f5f5);
   cursor: pointer;
 }
 
 .simple-toolbar input[type="range"]::-webkit-slider-runnable-track {
   height: 0.35rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, transparent);
+  background: var(--canvas-inner-bg, #000000);
 }
 
 .simple-toolbar input[type="range"]::-moz-range-track {
   height: 0.35rem;
   border-radius: 999px;
-  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 25%, transparent);
+  background: var(--canvas-inner-bg, #000000);
 }
 
 .simple-toolbar input[type="range"]::-webkit-slider-thumb {
@@ -273,16 +313,16 @@
   height: 0.9rem;
   margin-top: -0.275rem;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--canvas-outer-bg, #000000) 70%, #ffffff);
-  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 70%, #ffffff);
+  border: 2px solid var(--canvas-outer-bg, #000000);
+  background: var(--mode-text-color, #f5f5f5);
 }
 
 .simple-toolbar input[type="range"]::-moz-range-thumb {
   width: 0.9rem;
   height: 0.9rem;
   border-radius: 50%;
-  border: 2px solid color-mix(in srgb, var(--canvas-outer-bg, #000000) 70%, #ffffff);
-  background: color-mix(in srgb, var(--canvas-inner-bg, #ffffff) 70%, #ffffff);
+  border: 2px solid var(--canvas-outer-bg, #000000);
+  background: var(--mode-text-color, #f5f5f5);
 }
 
 .simple-toolbar-value {
