@@ -315,9 +315,7 @@ textarea {
 }
 
 textarea:focus {
-  color: var(--bg-color);
   outline: none;
-  background: var(--text-color);
 }
 
 textarea::selection {
