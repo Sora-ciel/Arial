@@ -4,6 +4,7 @@
   export let blocks = [];
   export let focusedBlockId = null;
   export let canvasColors = {};
+  export let leftControlColors = {};
   export let canvasRef;
   export let columnCount = 2;
   const dispatch = createEventDispatcher();
@@ -12,10 +13,15 @@
     outerBg: '#000000',
     innerBg: '#000000'
   };
+  const defaultLeftControlColors = {
+    textColor: '#f5f5f5',
+    buttonBg: '#121212'
+  };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
+  $: leftTheme = { ...defaultLeftControlColors, ...(leftControlColors || {}) };
   $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
+  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor}; --left-text-color: ${leftTheme.textColor}; --left-button-bg: ${leftTheme.buttonBg};`;
 
   function getReadableTextColor(color) {
     if (!color) return '#f5f5f5';
@@ -280,30 +286,30 @@
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  color: var(--mode-text-color, #f5f5f5);
+  color: var(--left-text-color, var(--mode-text-color, #f5f5f5));
   font-weight: 700;
-  background: var(--canvas-outer-bg, #000000);
-  border: 1px solid var(--mode-text-color, #f5f5f5);
+  background: var(--left-button-bg, var(--canvas-outer-bg, #000000));
+  border: 1px solid var(--left-text-color, var(--mode-text-color, #f5f5f5));
   border-radius: 999px;
   padding: 0.4rem 0.75rem;
 }
 
 .simple-toolbar input[type="range"] {
   width: min(220px, 36vw);
-  accent-color: var(--mode-text-color, #f5f5f5);
+  accent-color: var(--left-text-color, var(--mode-text-color, #f5f5f5));
   cursor: pointer;
 }
 
 .simple-toolbar input[type="range"]::-webkit-slider-runnable-track {
   height: 0.35rem;
   border-radius: 999px;
-  background: var(--canvas-inner-bg, #000000);
+  background: var(--left-button-bg, var(--canvas-inner-bg, #000000));
 }
 
 .simple-toolbar input[type="range"]::-moz-range-track {
   height: 0.35rem;
   border-radius: 999px;
-  background: var(--canvas-inner-bg, #000000);
+  background: var(--left-button-bg, var(--canvas-inner-bg, #000000));
 }
 
 .simple-toolbar input[type="range"]::-webkit-slider-thumb {
@@ -313,16 +319,16 @@
   height: 0.9rem;
   margin-top: -0.275rem;
   border-radius: 50%;
-  border: 2px solid var(--canvas-outer-bg, #000000);
-  background: var(--mode-text-color, #f5f5f5);
+  border: 2px solid var(--left-button-bg, var(--canvas-outer-bg, #000000));
+  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
 }
 
 .simple-toolbar input[type="range"]::-moz-range-thumb {
   width: 0.9rem;
   height: 0.9rem;
   border-radius: 50%;
-  border: 2px solid var(--canvas-outer-bg, #000000);
-  background: var(--mode-text-color, #f5f5f5);
+  border: 2px solid var(--left-button-bg, var(--canvas-outer-bg, #000000));
+  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
 }
 
 .simple-toolbar-value {

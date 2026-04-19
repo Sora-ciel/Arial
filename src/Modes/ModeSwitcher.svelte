@@ -15,6 +15,7 @@
   export let onTouchEnd;
   export let focusedBlockId;
   export let canvasColors = {};
+  export let leftControlColors = {};
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
 
@@ -72,6 +73,7 @@
       columnCount={simpleNoteColumnCount}
       bind:canvasRef
       {canvasColors}
+      {leftControlColors}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}
