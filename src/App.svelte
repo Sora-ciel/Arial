@@ -1760,6 +1760,7 @@
       modeLabels={MODE_LABELS}
       bind:canvasRef
       canvasColors={canvasTheme}
+      leftControlColors={leftTheme}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
