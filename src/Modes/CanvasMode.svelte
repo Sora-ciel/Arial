@@ -15,30 +15,52 @@
   export let focusedBlockId;
   export let canvasColors = {};
 
-  
-
-  const MIN_CANVAS_WIDTH = 1800;
-  const MIN_CANVAS_HEIGHT = 900;
-  const BLOCK_MARGIN_RIGHT = 20;
-  const BLOCK_MARGIN_BOTTOM = 20;
+  const CANVAS_BASE_HEIGHT = 900;
+  const CANVAS_ASPECT_RATIO = 16 / 9;
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 4;
 
   let scale = 1;
   let lastDistance = null;
   let lastMidpoint = null;
-  let canvasWidth = MIN_CANVAS_WIDTH;
-  let canvasHeight = MIN_CANVAS_HEIGHT;
+  let canvasWidth = CANVAS_BASE_HEIGHT * CANVAS_ASPECT_RATIO;
+  let canvasHeight = CANVAS_BASE_HEIGHT;
 
   const dispatch = createEventDispatcher();
 
+  function clamp(value, min, max) {
+    return Math.min(max, Math.max(min, value));
+  }
+
+  function normalizeBlockForCanvas(detail) {
+    if (!detail || typeof detail !== 'object') return detail;
+
+    const nextSize = { ...(detail.size || {}) };
+    const nextPosition = { ...(detail.position || {}) };
+
+    const width = clamp(Number(nextSize.width || 0), 1, canvasWidth);
+    const height = clamp(Number(nextSize.height || 0), 1, canvasHeight);
+
+    nextSize.width = width;
+    nextSize.height = height;
+
+    nextPosition.x = clamp(Number(nextPosition.x || 0), 0, Math.max(0, canvasWidth - width));
+    nextPosition.y = clamp(Number(nextPosition.y || 0), 0, Math.max(0, canvasHeight - height));
+
+    return {
+      ...detail,
+      size: nextSize,
+      position: nextPosition
+    };
+  }
 
   function deleteBlockHandler(event) {
-   dispatch ('delete', event.detail);
+    dispatch('delete', event.detail);
   }
 
   function updateBlockHandler(event) {
-   dispatch('update', { ...event.detail });
+    const normalizedDetail = normalizeBlockForCanvas(event.detail);
+    dispatch('update', { ...normalizedDetail });
   }
 
   function focusToggleHandler(event) {
@@ -59,34 +81,17 @@
     };
   }
 
-  function measureCanvasFromBlocks() {
-    if (!Array.isArray(blocks) || blocks.length === 0) {
-      return { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT };
-    }
-
-    let maxX = 0;
-    let maxY = 0;
-    for (const block of blocks) {
-      const x = Number(block?.position?.x ?? 0);
-      const y = Number(block?.position?.y ?? 0);
-      const width = Number(block?.size?.width ?? 220);
-      const height = Number(block?.size?.height ?? 140);
-      maxX = Math.max(maxX, x + width);
-      maxY = Math.max(maxY, y + height);
-    }
-
-    return {
-      width: Math.max(MIN_CANVAS_WIDTH, maxX + BLOCK_MARGIN_RIGHT),
-      height: Math.max(MIN_CANVAS_HEIGHT, maxY + BLOCK_MARGIN_BOTTOM)
-    };
-  }
-
   function fitToViewport() {
     if (!canvasRef) return;
     const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
     const availableWidth = Math.max(window.innerWidth, 1);
     const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
-    scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    const isMobile = window.matchMedia('(max-width: 768px)').matches;
+
+    scale = isMobile
+      ? Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, availableHeight / canvasHeight))
+      : Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight)));
+
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
@@ -129,9 +134,8 @@
   }
 
   export function refitCanvas() {
-    const measured = measureCanvasFromBlocks();
-    canvasWidth = measured.width;
-    canvasHeight = measured.height;
+    canvasWidth = CANVAS_BASE_HEIGHT * CANVAS_ASPECT_RATIO;
+    canvasHeight = CANVAS_BASE_HEIGHT;
     fitToViewport();
   }
 
@@ -145,6 +149,11 @@
 
   onMount(() => {
     refitCanvas();
+    window.addEventListener('resize', fitToViewport);
+
+    return () => {
+      window.removeEventListener('resize', fitToViewport);
+    };
   });
 </script>
 
@@ -159,21 +168,22 @@
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
   touch-action: pan-x pan-y;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
 }
-
-
 
 .canvas-inner {
   position: absolute;
   inset: 0 auto auto 0;
   transform-origin: top left;
   background: var(--canvas-inner-bg, #000000);
+  overflow: hidden;
 }
 
 .canvas-zoom-shell {
   position: relative;
 }
-
 
 
 
