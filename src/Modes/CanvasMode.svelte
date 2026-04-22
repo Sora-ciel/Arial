@@ -40,7 +40,17 @@
   }
 
   function updateBlockHandler(event) {
-   dispatch('update', { ...event.detail });
+    const detail = { ...event.detail };
+    const nextPosition = detail?.position;
+
+    if (nextPosition && Number.isFinite(Number(nextPosition.x))) {
+      detail.position = {
+        ...nextPosition,
+        x: Math.max(0, Number(nextPosition.x))
+      };
+    }
+
+    dispatch('update', detail);
   }
 
   function focusToggleHandler(event) {
