@@ -209,6 +209,7 @@
 
  .canvas-zoom-shell {
   position: relative;
+  background: var(--canvas-inner-bg, #000000);
 }
 
 .canvas-content {
@@ -227,6 +228,10 @@
   bottom: 0;
   background: var(--canvas-outer-bg, #141414);
   overflow: auto;
+  }
+
+  .canvas-zoom-shell {
+    min-width: 100%;
   }
 }
 
