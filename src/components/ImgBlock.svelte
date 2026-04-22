@@ -197,8 +197,8 @@ function onMouseMove(e) {
 
   const point = getCanvasPoint(e);
 
-  position.x = point.x - offset.x;
-  position.y = point.y - offset.y;
+  position.x = Math.max(0, point.x - offset.x);
+  position.y = Math.max(0, point.y - offset.y);
   hasDragged = true;
 
   // Prevent scrolling when dragging on mobile

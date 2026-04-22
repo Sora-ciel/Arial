@@ -74,7 +74,10 @@
 
     const point = getCanvasPoint(e);
 
-    position = { x: point.x - offset.x, y: point.y - offset.y };
+    position = {
+      x: Math.max(0, point.x - offset.x),
+      y: Math.max(0, point.y - offset.y)
+    };
     hasDragged = true;
 
     if (e.cancelable) e.preventDefault(); // stop scrolling on mobile
