@@ -66,6 +66,16 @@
     dispatch('delete', { id });
   }
 
+  let contextMenu = {
+    visible: false,
+    blockId: null,
+    x: 0,
+    y: 0
+  };
+  let longPressTimer = null;
+  let longPressTriggered = false;
+  const LONG_PRESS_DELAY = 500;
+
   function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
     const detail = { id, ...updates };
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
@@ -89,6 +99,10 @@
   }
 
   function handleBlockClick(event, id) {
+    if (longPressTriggered) {
+      longPressTriggered = false;
+      return;
+    }
     if (event.defaultPrevented) return;
     if (event.target.closest('[data-focus-guard]')) {
       ensureFocus(id);
@@ -108,6 +122,66 @@
 
     event.preventDefault();
     handleBlockClick(event, id);
+  }
+
+  function closeContextMenu() {
+    contextMenu = { ...contextMenu, visible: false, blockId: null };
+  }
+
+  function openContextMenu(id, x, y) {
+    ensureFocus(id);
+    contextMenu = {
+      visible: true,
+      blockId: id,
+      x,
+      y
+    };
+  }
+
+  function clampMenuPosition(x, y) {
+    const horizontalPadding = 8;
+    const verticalPadding = 8;
+    const estimatedMenuWidth = 132;
+    const estimatedMenuHeight = 52;
+    const maxX = Math.max(horizontalPadding, window.innerWidth - estimatedMenuWidth - horizontalPadding);
+    const maxY = Math.max(verticalPadding, window.innerHeight - estimatedMenuHeight - verticalPadding);
+    return {
+      x: Math.min(Math.max(horizontalPadding, x), maxX),
+      y: Math.min(Math.max(verticalPadding, y), maxY)
+    };
+  }
+
+  function handleBlockContextMenu(event, id) {
+    event.preventDefault();
+    event.stopPropagation();
+    const { x, y } = clampMenuPosition(event.clientX, event.clientY);
+    openContextMenu(id, x, y);
+  }
+
+  function startLongPress(event, id) {
+    if (event.touches?.length !== 1) return;
+    const target = event.target;
+    if (target?.closest?.('textarea, input, button, a')) return;
+    clearLongPress();
+    const touch = event.touches[0];
+    const { x, y } = clampMenuPosition(touch.clientX, touch.clientY);
+    longPressTimer = setTimeout(() => {
+      longPressTriggered = true;
+      openContextMenu(id, x, y);
+    }, LONG_PRESS_DELAY);
+  }
+
+  function clearLongPress() {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  }
+
+  function handleContextDelete() {
+    if (!contextMenu.blockId) return;
+    deleteBlock(contextMenu.blockId);
+    closeContextMenu();
   }
 
   function autoResize(textarea) {
@@ -232,8 +306,30 @@
     };
     initializeLayout();
 
+    const handleGlobalPointer = (event) => {
+      if (!contextMenu.visible) return;
+      if (event.target?.closest?.('.context-menu')) return;
+      closeContextMenu();
+    };
+
+    const handleEscape = (event) => {
+      if (event.key === 'Escape') {
+        closeContextMenu();
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGlobalPointer);
+    window.addEventListener('scroll', closeContextMenu, true);
+    window.addEventListener('keydown', handleEscape);
+    window.addEventListener('contextmenu', handleGlobalPointer);
+
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
+      clearLongPress();
+      window.removeEventListener('pointerdown', handleGlobalPointer);
+      window.removeEventListener('scroll', closeContextMenu, true);
+      window.removeEventListener('keydown', handleEscape);
+      window.removeEventListener('contextmenu', handleGlobalPointer);
     };
   });
 
@@ -396,8 +492,7 @@ li {
   font-size: 0.95rem;
 }
 
-.edit-button,
-.delete-button {
+.edit-button {
   background: transparent;
   color: var(--text-color);
   border: none;
@@ -410,9 +505,33 @@ li {
   align-self: flex-start;
 }
 
-.delete-button {
-  align-self: flex-end;
-  margin-right: 10px;
+.context-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 120px;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--mode-text-color) 30%, transparent);
+  background: color-mix(in srgb, var(--canvas-inner-bg, #000) 88%, black 12%);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+  padding: 0.3rem;
+}
+
+.context-delete-button {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  padding: 0.5rem 0.6rem;
+  background: color-mix(in srgb, #ff4d4f 28%, transparent);
+  color: #ffd9d9;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.context-delete-button:hover,
+.context-delete-button:focus-visible {
+  background: color-mix(in srgb, #ff4d4f 44%, transparent);
+  outline: none;
 }
 
 @media (max-width: 1023px) {
@@ -459,6 +578,11 @@ li {
           class:focused={block.id === focusedBlockId}
           style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
           on:click={(event) => handleBlockClick(event, block.id)}
+          on:contextmenu={(event) => handleBlockContextMenu(event, block.id)}
+          on:touchstart={(event) => startLongPress(event, block.id)}
+          on:touchend={clearLongPress}
+          on:touchmove={clearLongPress}
+          on:touchcancel={clearLongPress}
           role="button"
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}
@@ -480,9 +604,6 @@ li {
               data-focus-guard
               placeholder="Type your note here..."
             ></textarea>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'image'}
             {#if hasImageSource(block)}
               <img
@@ -531,21 +652,12 @@ li {
                   data-focus-guard
                 />
               {/if}
-              <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-              </button>
             </li>
 
           {:else if block.type === 'music'}
             <p>🎵 {block.content}</p>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'embed'}
             <p>[Embed: {block.content}]</p>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'task'}
             <div class="task-list-title">{block.title || 'Task List'}</div>
             <div class="task-list">
@@ -559,9 +671,6 @@ li {
                 <div class="task-item">No tasks yet</div>
               {/if}
             </div>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {/if}
 
 
@@ -571,3 +680,14 @@ li {
     </div>
   {/each}
 </div>
+
+{#if contextMenu.visible}
+  <div
+    class="context-menu"
+    style="left: {contextMenu.x}px; top: {contextMenu.y}px;"
+  >
+    <button class="context-delete-button" on:click={handleContextDelete}>
+      Delete block
+    </button>
+  </div>
+{/if}
