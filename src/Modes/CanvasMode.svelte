@@ -17,9 +17,10 @@
 
   
 
-  const MIN_CANVAS_WIDTH = 1800;
-  const MIN_CANVAS_HEIGHT = 900;
-  const BLOCK_MARGIN_RIGHT = 20;
+  const MIN_CANVAS_WIDTH = 1080;
+  const MIN_CANVAS_HEIGHT = 320;
+  const BLOCK_MARGIN_LEFT = 5;
+  const BLOCK_MARGIN_RIGHT = 5;
   const BLOCK_MARGIN_BOTTOM = 20;
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 4;
@@ -29,6 +30,7 @@
   let lastMidpoint = null;
   let canvasWidth = MIN_CANVAS_WIDTH;
   let canvasHeight = MIN_CANVAS_HEIGHT;
+  let contentOffsetX = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -38,7 +40,21 @@
   }
 
   function updateBlockHandler(event) {
-   dispatch('update', { ...event.detail });
+    const detail = { ...event.detail };
+    const nextPosition = detail?.position;
+
+    if (nextPosition) {
+      const x = Number(nextPosition.x);
+      const y = Number(nextPosition.y);
+
+      detail.position = {
+        ...nextPosition,
+        ...(Number.isFinite(x) ? { x: Math.max(0, x) } : {}),
+        ...(Number.isFinite(y) ? { y: Math.max(0, y) } : {})
+      };
+    }
+
+    dispatch('update', detail);
   }
 
   function focusToggleHandler(event) {
@@ -61,23 +77,32 @@
 
   function measureCanvasFromBlocks() {
     if (!Array.isArray(blocks) || blocks.length === 0) {
-      return { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT };
+      return { width: MIN_CANVAS_WIDTH, height: MIN_CANVAS_HEIGHT, offsetX: 0 };
     }
 
-    let maxX = 0;
+    let minX = Number.POSITIVE_INFINITY;
+    let maxX = Number.NEGATIVE_INFINITY;
     let maxY = 0;
+
     for (const block of blocks) {
       const x = Number(block?.position?.x ?? 0);
       const y = Number(block?.position?.y ?? 0);
       const width = Number(block?.size?.width ?? 220);
       const height = Number(block?.size?.height ?? 140);
+
+      minX = Math.min(minX, x);
       maxX = Math.max(maxX, x + width);
       maxY = Math.max(maxY, y + height);
     }
 
+    const safeMinX = Number.isFinite(minX) ? minX : 0;
+    const safeMaxX = Number.isFinite(maxX) ? maxX : 0;
+    const contentWidth = Math.max(0, safeMaxX - safeMinX);
+
     return {
-      width: Math.max(MIN_CANVAS_WIDTH, maxX + BLOCK_MARGIN_RIGHT),
-      height: Math.max(MIN_CANVAS_HEIGHT, maxY + BLOCK_MARGIN_BOTTOM)
+      width: Math.max(MIN_CANVAS_WIDTH, contentWidth + BLOCK_MARGIN_LEFT + BLOCK_MARGIN_RIGHT),
+      height: Math.max(MIN_CANVAS_HEIGHT, maxY + BLOCK_MARGIN_BOTTOM),
+      offsetX: BLOCK_MARGIN_LEFT - safeMinX
     };
   }
 
@@ -86,7 +111,8 @@
     const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
     const availableWidth = Math.max(window.innerWidth, 1);
     const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
-    scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    const fittedScale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    scale = Math.min(1, fittedScale);
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
@@ -132,6 +158,7 @@
     const measured = measureCanvasFromBlocks();
     canvasWidth = measured.width;
     canvasHeight = measured.height;
+    contentOffsetX = measured.offsetX ?? 0;
     fitToViewport();
   }
 
@@ -170,11 +197,14 @@
   background: var(--canvas-inner-bg, #000000);
 }
 
-.canvas-zoom-shell {
+ .canvas-zoom-shell {
   position: relative;
 }
 
-
+.canvas-content {
+  width: 100%;
+  height: 100%;
+}
 
 
 
@@ -216,6 +246,7 @@
         style:transform={`scale(${scale})`}
         style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
       >
+      <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
       {#each blocks as block (`${block.id}-${block._version || 0}`)}
         {#if block.type === 'text'}
           <TexteBlock
@@ -308,6 +339,7 @@
           />
         {/if}
       {/each}
+      </div>
       </div>
     </div>
 </div>
