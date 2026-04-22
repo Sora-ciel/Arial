@@ -17,7 +17,7 @@
 
   
 
-  const MIN_CANVAS_WIDTH = 320;
+  const MIN_CANVAS_WIDTH = 1080;
   const MIN_CANVAS_HEIGHT = 320;
   const BLOCK_MARGIN_LEFT = 5;
   const BLOCK_MARGIN_RIGHT = 5;
@@ -97,7 +97,8 @@
     const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
     const availableWidth = Math.max(window.innerWidth, 1);
     const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
-    scale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    const fittedScale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
+    scale = Math.min(1, fittedScale);
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
