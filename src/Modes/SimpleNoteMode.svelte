@@ -219,14 +219,6 @@
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
   );
 
-  function handleColumnGaugeInput(event) {
-    const next = Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1);
-    dispatch('columnCountChange', { columnCount: next });
-  }
-  
-
-
-
   // Resize all textareas when component mounts
   onMount(() => {
     let rafId;
@@ -271,69 +263,6 @@
   margin: 0;
   min-width: 0;
   box-sizing: border-box;
-}
-
-.simple-toolbar {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 0.75rem;
-  padding: 0 0.25rem;
-}
-
-.simple-toolbar label {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  color: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-  font-weight: 700;
-  background: var(--left-button-bg, var(--canvas-outer-bg, #000000));
-  border: 1px solid var(--left-text-color, var(--mode-text-color, #f5f5f5));
-  border-radius: 999px;
-  padding: 0.4rem 0.75rem;
-}
-
-.simple-toolbar input[type="range"] {
-  width: min(220px, 36vw);
-  accent-color: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-  cursor: pointer;
-}
-
-.simple-toolbar input[type="range"]::-webkit-slider-runnable-track {
-  height: 0.35rem;
-  border-radius: 999px;
-  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-}
-
-.simple-toolbar input[type="range"]::-moz-range-track {
-  height: 0.35rem;
-  border-radius: 999px;
-  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-}
-
-.simple-toolbar input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 0.9rem;
-  height: 0.9rem;
-  margin-top: -0.275rem;
-  border-radius: 50%;
-  border: 2px solid var(--left-button-bg, var(--canvas-outer-bg, #000000));
-  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-}
-
-.simple-toolbar input[type="range"]::-moz-range-thumb {
-  width: 0.9rem;
-  height: 0.9rem;
-  border-radius: 50%;
-  border: 2px solid var(--left-button-bg, var(--canvas-outer-bg, #000000));
-  background: var(--left-text-color, var(--mode-text-color, #f5f5f5));
-}
-
-.simple-toolbar-value {
-  min-width: 1.25rem;
-  text-align: center;
 }
 
 .simple-column {
@@ -508,9 +437,6 @@ li {
     padding: 8px;
   }
 
-  .simple-toolbar {
-    display: none;
-  }
 }
 
 </style>
@@ -524,20 +450,6 @@ li {
 
 
 <div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
-  <div class="simple-toolbar">
-    <label>
-      Columns
-      <input
-        type="range"
-        min="1"
-        max="6"
-        step="1"
-        value={normalizedColumnCount}
-        on:input={handleColumnGaugeInput}
-      />
-      <span class="simple-toolbar-value">{normalizedColumnCount}</span>
-    </label>
-  </div>
   {#each renderColumns as column}
     <div class="simple-column">
       {#each column as block (blockKey(block))}

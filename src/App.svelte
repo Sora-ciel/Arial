@@ -1699,6 +1699,7 @@
     <LeftControls
       bind:currentSaveName
       {mode}
+      {simpleNoteColumnCount}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
@@ -1717,6 +1718,7 @@
       on:redo={redo}
       on:moveUp={moveFocusedBlockUp}
       on:moveDown={moveFocusedBlockDown}
+      on:modeSettingChange={handleModeSettingChange}
     />
     <div class="right-controls">
       <RightControls

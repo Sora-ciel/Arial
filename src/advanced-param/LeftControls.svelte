@@ -5,6 +5,7 @@
   export let modeLabels = {};
   export let currentSaveName;
   export let focusedBlockId = null;
+  export let simpleNoteColumnCount = 2;
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
@@ -65,6 +66,7 @@
 
   $: isSingleNoteMode = mode === "single";
   $: isTaskMode = mode === "task";
+  $: isSimpleNoteMode = mode === "simple";
 
   function addBlock(type) {
     if (isSingleNoteMode && type !== "text" && type !== "cleantext") return;
@@ -122,6 +124,11 @@
   function moveDown() {
     if (!focusedBlockId) return;
     dispatch("moveDown");
+  }
+
+  function handleSimpleColumnInput(event) {
+    const next = Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1);
+    dispatch("modeSettingChange", { columnCount: next });
   }
 
   function checkWidth() {
@@ -353,6 +360,31 @@ onMount(() => {
     display: none;
   }
 
+  .simple-columns-control {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--left-text-color, #ffffff);
+    font-weight: 700;
+    background: var(--left-button-bg, #333333);
+    border: 1px solid var(--left-border-color, #444444);
+    border-radius: 6px;
+    padding: 8px 10px;
+    min-height: 42px;
+    box-sizing: border-box;
+  }
+
+  .simple-columns-control input[type="range"] {
+    width: min(150px, 18vw);
+    accent-color: var(--left-text-color, #ffffff);
+    cursor: pointer;
+  }
+
+  .simple-columns-value {
+    min-width: 1.25rem;
+    text-align: center;
+  }
+
   @media (max-width: 1024px) {
     .left-controls {
       display: none;
@@ -416,6 +448,10 @@ onMount(() => {
       grid-template-columns: 1fr;
       gap: 3px;
       width: 100%;
+    }
+
+    .simple-columns-control {
+      display: none;
     }
 
     .mode-ladder,
@@ -606,6 +642,20 @@ onMount(() => {
     />
     <input bind:value={currentSaveName} placeholder="File name" />
     <button on:click={save}>💾 Save</button>
+    {#if isSimpleNoteMode}
+      <label class="simple-columns-control mobile-only">
+        Columns
+        <input
+          type="range"
+          min="1"
+          max="6"
+          step="1"
+          value={simpleNoteColumnCount}
+          on:input={handleSimpleColumnInput}
+        />
+        <span class="simple-columns-value">{simpleNoteColumnCount}</span>
+      </label>
+    {/if}
 
   </div>
 </div>

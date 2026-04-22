@@ -35,10 +35,6 @@
     dispatch('focusToggle', event.detail);
   }
 
-  function modeSettingChangeHandler(event) {
-    dispatch('modeSettingChange', event.detail);
-  }
-
   function updateWidth() {
     width = window.innerWidth;
   }
@@ -80,7 +76,6 @@
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
-      on:columnCountChange={modeSettingChangeHandler}
     />
 
   {:else if mode === 'habit'}
