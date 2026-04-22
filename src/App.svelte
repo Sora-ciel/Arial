@@ -1388,12 +1388,8 @@
   function adjustCanvasPadding() {
     if (typeof window === "undefined") return;
 
-    if (window.innerWidth <= MOBILE_BREAKPOINT) {
-      setControlsHeight(75);
-      return;
-    }
-
-    const height = controlsRef?.offsetHeight || 56;
+    const fallbackHeight = window.innerWidth <= MOBILE_BREAKPOINT ? 55 : 56;
+    const height = controlsRef?.offsetHeight || fallbackHeight;
     setControlsHeight(height);
   }
 
