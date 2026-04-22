@@ -1111,6 +1111,37 @@
     }
   }
 
+  async function createNewFile() {
+    const proposedName = window.prompt('Enter a name for the new file:');
+    if (proposedName === null) {
+      return;
+    }
+
+    const trimmedName = proposedName.trim();
+    if (!trimmedName) {
+      alert('File name cannot be empty.');
+      return;
+    }
+
+    if (savedList.includes(trimmedName)) {
+      const shouldOverwrite = window.confirm(`"${trimmedName}" already exists. Overwrite it with a blank file?`);
+      if (!shouldOverwrite) {
+        return;
+      }
+    }
+
+    currentSaveName = trimmedName;
+    persistLastSaveName(trimmedName);
+    blocks = [];
+    focusedBlockId = null;
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    history = [];
+    historyIndex = -1;
+    await pushHistory(blocks, modeOrders);
+    hasUnsnapshottedChanges = false;
+    savedList = await listSavedBlocks();
+  }
+
   async function clear() {
     blocks = [];
     focusedBlockId = null;
@@ -1725,6 +1756,7 @@
         {savedList}
         {load}
         {deleteSave}
+        {createNewFile}
         {controlColors}
         themes={availableThemes}
         {selectedThemeId}

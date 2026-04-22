@@ -2,6 +2,7 @@
   export let savedList = [];
   export let load;
   export let deleteSave;
+  export let createNewFile;
   export let controlColors = {};
   export let themes = [];
   export let selectedThemeId = 'default-dark';
@@ -105,6 +106,13 @@
   function handleSelect(name) {
     load(name);
     // Auto-close dropdown only on mobile
+    if (!pc) {
+      isOpen = false;
+    }
+  }
+
+  function handleCreateNewFile() {
+    createNewFile?.();
     if (!pc) {
       isOpen = false;
     }
@@ -316,6 +324,9 @@
       <div class="controls-scroll">
         <div class="tab-section">
           <h4>📂 Saved Files</h4>
+          <button class="create-theme-btn" type="button" on:click={handleCreateNewFile}>
+            ➕ New File
+          </button>
           {#if savedList.length}
             <ul>
               {#each savedList as name}
