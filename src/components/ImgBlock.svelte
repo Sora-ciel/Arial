@@ -178,6 +178,7 @@
 
 
 function onDragStart(e) {
+  if (dragging) return;
   ensureFocus();
   dragging = true;
   hasDragged = false;
@@ -190,6 +191,12 @@ function onDragStart(e) {
   window.addEventListener('mouseup', onMouseUp);
   window.addEventListener('touchmove', onMouseMove, { passive: false });
   window.addEventListener('touchend', onMouseUp);
+  window.addEventListener('pointermove', onMouseMove);
+  window.addEventListener('pointerup', onMouseUp);
+
+  if (typeof e.pointerId === 'number' && e.currentTarget?.setPointerCapture) {
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
 }
 
 function onMouseMove(e) {
@@ -197,8 +204,8 @@ function onMouseMove(e) {
 
   const point = getCanvasPoint(e);
 
-  position.x = point.x - offset.x;
-  position.y = point.y - offset.y;
+  position.x = Math.max(0, point.x - offset.x);
+  position.y = Math.max(0, point.y - offset.y);
   hasDragged = true;
 
   // Prevent scrolling when dragging on mobile
@@ -211,6 +218,8 @@ function onMouseUp() {
   window.removeEventListener('mouseup', onMouseUp);
   window.removeEventListener('touchmove', onMouseMove);
   window.removeEventListener('touchend', onMouseUp);
+  window.removeEventListener('pointermove', onMouseMove);
+  window.removeEventListener('pointerup', onMouseUp);
   sendUpdate(['position']);
   if (hasDragged) {
     suppressClick = true;
@@ -436,7 +445,8 @@ function onResizeEnd() {
   on:click={handleWrapperClick}
   on:keydown={handleWrapperKeydown}
 >
-  <div class="header" bind:this={headerRef} role="presentation" on:mousedown={onDragStart} on:touchstart={onDragStart}>
+  <div class="header" bind:this={headerRef} role="presentation" on:mousedown={onDragStart}
+    on:pointerdown={onDragStart} on:touchstart={onDragStart}>
     <div>image</div>
     <div class="header-controls" on:mousedown|stopPropagation role="presentation">
 

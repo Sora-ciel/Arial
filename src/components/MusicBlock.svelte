@@ -66,6 +66,7 @@
 
   // Drag start
   function onDragStart(e) {
+    if (dragging) return;
     ensureFocus();
     dragging = true;
     hasDragged = false;
@@ -76,12 +77,21 @@
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('touchmove', onMouseMove, { passive: false });
     window.addEventListener('touchend', onMouseUp);
+    window.addEventListener('pointermove', onMouseMove);
+    window.addEventListener('pointerup', onMouseUp);
+
+    if (typeof e.pointerId === 'number' && e.currentTarget?.setPointerCapture) {
+      e.currentTarget.setPointerCapture(e.pointerId);
+    }
   }
 
   function onMouseMove(e) {
     if (!dragging) return;
     const point = getCanvasPoint(e);
-    position = { x: point.x - offset.x, y: point.y - offset.y };
+    position = {
+      x: Math.max(0, point.x - offset.x),
+      y: Math.max(0, point.y - offset.y)
+    };
     hasDragged = true;
     if (e.cancelable) e.preventDefault();
   }
@@ -94,6 +104,8 @@
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
+    window.removeEventListener('pointermove', onMouseMove);
+    window.removeEventListener('pointerup', onMouseUp);
     sendUpdate(['position']);
     if (hasDragged) {
       suppressClick = true;
@@ -290,6 +302,7 @@
   <div
     class="header"
     on:mousedown={onDragStart}
+    on:pointerdown={onDragStart}
     on:touchstart={onDragStart}
     role="presentation"
   >
