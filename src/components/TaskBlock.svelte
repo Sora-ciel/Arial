@@ -72,12 +72,6 @@
     window.addEventListener('mouseup', onMouseUp);
     window.addEventListener('touchmove', onMouseMove, { passive: false });
     window.addEventListener('touchend', onMouseUp);
-    window.addEventListener('pointermove', onMouseMove);
-    window.addEventListener('pointerup', onMouseUp);
-
-    if (typeof e.pointerId === 'number' && e.currentTarget?.setPointerCapture) {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
   }
 
   function onMouseMove(e) {
@@ -98,8 +92,6 @@
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
     window.removeEventListener('touchend', onMouseUp);
-    window.removeEventListener('pointermove', onMouseMove);
-    window.removeEventListener('pointerup', onMouseUp);
     sendUpdate(['position']);
     if (hasDragged) {
       suppressClick = true;
@@ -402,7 +394,6 @@
   <div
     class="header"
     on:mousedown={onDragStart}
-    on:pointerdown={onDragStart}
     on:touchstart={onDragStart}
     role="presentation"
   >
