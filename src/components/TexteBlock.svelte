@@ -186,6 +186,7 @@
     event.preventDefault();
     handleWrapperClick(event);
   }
+
 </script>
 
 <style>
