@@ -376,6 +376,7 @@ onMount(() => {
 
   .simple-columns-control input[type="range"] {
     width: min(150px, 18vw);
+    max-height:0.2em;
     accent-color: var(--left-text-color, #ffffff);
     cursor: pointer;
   }
