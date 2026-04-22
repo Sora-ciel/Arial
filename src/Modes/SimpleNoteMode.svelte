@@ -74,7 +74,9 @@
   };
   let longPressTimer = null;
   let longPressTriggered = false;
+  let longPressStartPoint = null;
   const LONG_PRESS_DELAY = 500;
+  const LONG_PRESS_MOVE_TOLERANCE = 12;
 
   function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
     const detail = { id, ...updates };
@@ -161,9 +163,10 @@
   function startLongPress(event, id) {
     if (event.touches?.length !== 1) return;
     const target = event.target;
-    if (target?.closest?.('textarea, input, button, a')) return;
+    if (target?.closest?.('textarea, input, button, a, img')) return;
     clearLongPress();
     const touch = event.touches[0];
+    longPressStartPoint = { x: touch.clientX, y: touch.clientY };
     const { x, y } = clampMenuPosition(touch.clientX, touch.clientY);
     longPressTimer = setTimeout(() => {
       longPressTriggered = true;
@@ -175,6 +178,17 @@
     if (longPressTimer) {
       clearTimeout(longPressTimer);
       longPressTimer = null;
+    }
+    longPressStartPoint = null;
+  }
+
+  function handleLongPressMove(event) {
+    if (!longPressTimer || !longPressStartPoint || event.touches?.length !== 1) return;
+    const touch = event.touches[0];
+    const deltaX = Math.abs(touch.clientX - longPressStartPoint.x);
+    const deltaY = Math.abs(touch.clientY - longPressStartPoint.y);
+    if (deltaX > LONG_PRESS_MOVE_TOLERANCE || deltaY > LONG_PRESS_MOVE_TOLERANCE) {
+      clearLongPress();
     }
   }
 
@@ -321,7 +335,6 @@
     window.addEventListener('pointerdown', handleGlobalPointer);
     window.addEventListener('scroll', closeContextMenu, true);
     window.addEventListener('keydown', handleEscape);
-    window.addEventListener('contextmenu', handleGlobalPointer);
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
@@ -329,7 +342,6 @@
       window.removeEventListener('pointerdown', handleGlobalPointer);
       window.removeEventListener('scroll', closeContextMenu, true);
       window.removeEventListener('keydown', handleEscape);
-      window.removeEventListener('contextmenu', handleGlobalPointer);
     };
   });
 
@@ -581,7 +593,7 @@ li {
           on:contextmenu={(event) => handleBlockContextMenu(event, block.id)}
           on:touchstart={(event) => startLongPress(event, block.id)}
           on:touchend={clearLongPress}
-          on:touchmove={clearLongPress}
+          on:touchmove={handleLongPressMove}
           on:touchcancel={clearLongPress}
           role="button"
           tabindex="0"
