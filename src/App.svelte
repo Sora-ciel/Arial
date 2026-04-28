@@ -1642,13 +1642,15 @@
 
 <style>
 
-  .app {
+.app {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* full app height */
+  height: 100dvh; /* full app height (mobile-safe) */
+  overflow: hidden;
 }
 .controls {
   flex: 0 0 auto;  /* only as tall as needed */
+  position: sticky;
   top: 0;
   left: 0;
   right: 0;
@@ -1692,6 +1694,7 @@
 
 .modes {
   flex: 1 1 auto;  /* take the rest of the height */
+  min-height: 0;
   display: flex;
   width: 100%;
   overflow: hidden; /* so canvas doesn’t spill */
