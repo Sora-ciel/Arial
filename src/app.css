@@ -50,9 +50,11 @@ body {
   display: flex;
   align-items: center;     /* vertical */
   justify-content: center; /* horizontal */
-  height: 100vh;           /* exact viewport height */
+  height: 100dvh;          /* exact viewport height */
   margin: 0;
   background: #161616;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 
@@ -71,6 +73,7 @@ h1 {
   height: 100%;   /* fill viewport */
   width: 100%;
   background: #000000;
+  overflow: hidden;
 }
 
 

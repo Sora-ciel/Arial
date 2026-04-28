@@ -1645,10 +1645,12 @@
   .app {
   display: flex;
   flex-direction: column;
-  height: 100vh; /* full app height */
+  height: 100dvh; /* full app height (stable on mobile browsers) */
+  overflow: hidden;
 }
 .controls {
   flex: 0 0 auto;  /* only as tall as needed */
+  position: sticky;
   top: 0;
   left: 0;
   right: 0;
@@ -1660,6 +1662,7 @@
   padding: 8px 10px;
   background: var(--controls-bg, #111);
   border-bottom: 1px solid var(--controls-border, #333);
+  overscroll-behavior: contain;
 }
 
 .right-controls {
