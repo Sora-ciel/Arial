@@ -66,6 +66,55 @@
     dispatch('delete', { id });
   }
 
+  let blockMenu = {
+    blockId: null,
+    x: 0,
+    y: 0
+  };
+  let touchHoldTimer;
+  let touchHoldTriggered = false;
+
+  function openBlockMenu(blockId, x, y) {
+    blockMenu = { blockId, x, y };
+  }
+
+  function closeBlockMenu() {
+    blockMenu = { blockId: null, x: 0, y: 0 };
+  }
+
+  function handleContextMenu(event, blockId) {
+    event.preventDefault();
+    ensureFocus(blockId);
+    openBlockMenu(blockId, event.clientX, event.clientY);
+  }
+
+  function startTouchHold(event, blockId) {
+    if (event.touches?.length !== 1) return;
+    touchHoldTriggered = false;
+    clearTimeout(touchHoldTimer);
+    const touch = event.touches[0];
+    touchHoldTimer = setTimeout(() => {
+      touchHoldTriggered = true;
+      ensureFocus(blockId);
+      openBlockMenu(blockId, touch.clientX, touch.clientY);
+    }, 550);
+  }
+
+  function cancelTouchHold() {
+    clearTimeout(touchHoldTimer);
+  }
+
+  function handleTouchEndForMenu(event) {
+    cancelTouchHold();
+    if (!touchHoldTriggered) return;
+    event.preventDefault();
+  }
+
+  function deleteFromMenu(blockId) {
+    deleteBlock(blockId);
+    closeBlockMenu();
+  }
+
   function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
     const detail = { id, ...updates };
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
@@ -222,6 +271,13 @@
   // Resize all textareas when component mounts
   onMount(() => {
     let rafId;
+    const handleGlobalPointerDown = (event) => {
+      if (event.target?.closest?.('.block-menu')) return;
+      if (blockMenu.blockId) closeBlockMenu();
+    };
+    const handleEsc = (event) => {
+      if (event.key === 'Escape' && blockMenu.blockId) closeBlockMenu();
+    };
     
     const initializeLayout = async () => {
       await tick();
@@ -231,9 +287,14 @@
       });
     };
     initializeLayout();
+    window.addEventListener('pointerdown', handleGlobalPointerDown);
+    window.addEventListener('keydown', handleEsc);
 
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
+      cancelTouchHold();
+      window.removeEventListener('pointerdown', handleGlobalPointerDown);
+      window.removeEventListener('keydown', handleEsc);
     };
   });
 
@@ -281,6 +342,7 @@
   page-break-inside: avoid;
   -webkit-column-break-inside: avoid;
   box-sizing: border-box;
+  position: relative;
 }
 
 .container {
@@ -396,8 +458,7 @@ li {
   font-size: 0.95rem;
 }
 
-.edit-button,
-.delete-button {
+.edit-button {
   background: transparent;
   color: var(--text-color);
   border: none;
@@ -410,9 +471,31 @@ li {
   align-self: flex-start;
 }
 
-.delete-button {
-  align-self: flex-end;
-  margin-right: 10px;
+.block-menu {
+  position: fixed;
+  z-index: 1200;
+  min-width: 110px;
+  background: #101010;
+  border: 1px solid #2a2a2a;
+  border-radius: 10px;
+  padding: 6px;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+}
+
+.block-menu button {
+  width: 100%;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 0.9rem;
+  text-align: left;
+  color: #ff8b8b;
+  background: transparent;
+  cursor: pointer;
+}
+
+.block-menu button:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 1023px) {
@@ -459,6 +542,11 @@ li {
           class:focused={block.id === focusedBlockId}
           style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
           on:click={(event) => handleBlockClick(event, block.id)}
+          on:contextmenu={(event) => handleContextMenu(event, block.id)}
+          on:touchstart={(event) => startTouchHold(event, block.id)}
+          on:touchend={(event) => handleTouchEndForMenu(event)}
+          on:touchmove={() => cancelTouchHold()}
+          on:touchcancel={() => cancelTouchHold()}
           role="button"
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}
@@ -480,9 +568,6 @@ li {
               data-focus-guard
               placeholder="Type your note here..."
             ></textarea>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'image'}
             {#if hasImageSource(block)}
               <img
@@ -531,21 +616,12 @@ li {
                   data-focus-guard
                 />
               {/if}
-              <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-                ×
-              </button>
             </li>
 
           {:else if block.type === 'music'}
             <p>🎵 {block.content}</p>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'embed'}
             <p>[Embed: {block.content}]</p>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {:else if block.type === 'task'}
             <div class="task-list-title">{block.title || 'Task List'}</div>
             <div class="task-list">
@@ -559,9 +635,6 @@ li {
                 <div class="task-item">No tasks yet</div>
               {/if}
             </div>
-            <button class="delete-button" on:click|stopPropagation={() => deleteBlock(block.id)} data-focus-guard>
-            ×
-            </button>
           {/if}
 
 
@@ -571,3 +644,9 @@ li {
     </div>
   {/each}
 </div>
+
+{#if blockMenu.blockId}
+  <div class="block-menu" style={`left:${blockMenu.x}px; top:${blockMenu.y}px;`}>
+    <button on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
+  </div>
+{/if}
