@@ -402,6 +402,9 @@ onMount(() => {
       width: min(120px, calc(100vw - 16px));
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
       z-index: 1002;
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
     }
@@ -463,6 +466,9 @@ onMount(() => {
       right: auto;
       max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
       overflow: auto;
+      overscroll-behavior: contain;
+      touch-action: pan-y;
+      -webkit-overflow-scrolling: touch;
 
     }
 
