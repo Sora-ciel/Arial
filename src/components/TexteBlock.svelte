@@ -302,7 +302,7 @@
     role="presentation"
   >
     <div>text</div>
-    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
+    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
       <label title="Background Color">
         <input
           type="color"

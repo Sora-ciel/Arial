@@ -313,7 +313,7 @@
     role="presentation"
   >
     <span>Note</span>
-    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
+    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
       <button
         on:click={() => { ensureFocus(); showSettings = !showSettings; }}
         class="gear-btn"

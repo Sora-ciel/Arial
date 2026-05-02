@@ -407,7 +407,7 @@
     role="presentation"
   >
     <div class="header-title">{title || 'Task List'}</div>
-    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation role="presentation">
+    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
       <label title="Background Color">
         <input
           type="color"
