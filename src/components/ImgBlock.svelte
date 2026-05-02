@@ -448,7 +448,7 @@ function onResizeEnd() {
   <div class="header" bind:this={headerRef} role="presentation" on:mousedown={onDragStart}
     on:pointerdown={onDragStart} on:touchstart={onDragStart}>
     <div>image</div>
-    <div class="header-controls" on:mousedown|stopPropagation role="presentation">
+    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
 
         <input
           type="color"
@@ -463,7 +463,7 @@ function onResizeEnd() {
           data-focus-guard
         />
 
-      <label title="Change Image" class="media-btn" data-focus-guard>
+      <label title="Change Image" class="media-btn" data-focus-guard on:click|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation>
         <input type="file" accept="image/*,video/mp4" on:change={onMediaChange} data-focus-guard />
         <span class="emoji" data-focus-guard>⏏</span>
       </label>
