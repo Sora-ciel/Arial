@@ -263,6 +263,31 @@
     }
   }
 
+  let draggedBlockId = null;
+
+  function handleBlockDragStart(event, blockId) {
+    draggedBlockId = blockId;
+    event.dataTransfer?.setData('text/plain', blockId);
+    if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+    ensureFocus(blockId);
+  }
+
+  function handleBlockDragOver(event) {
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleBlockDrop(event, targetBlockId) {
+    event.preventDefault();
+    const draggedId = draggedBlockId || event.dataTransfer?.getData('text/plain');
+    if (!draggedId || draggedId === targetBlockId) return;
+    dispatch('reorderBlocks', { draggedId, targetId: targetBlockId });
+  }
+
+  function handleBlockDragEnd() {
+    draggedBlockId = null;
+  }
+
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
   $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
@@ -551,6 +576,11 @@ li {
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
+          draggable="true"
+          on:dragstart={(event) => handleBlockDragStart(event, block.id)}
+          on:dragover={handleBlockDragOver}
+          on:drop={(event) => handleBlockDrop(event, block.id)}
+          on:dragend={handleBlockDragEnd}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
             <textarea
