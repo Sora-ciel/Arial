@@ -1091,6 +1091,57 @@
     }
   }
 
+
+
+  function readFileAsDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function addImageBlockFromFile(file) {
+    if (!file) return;
+    if (!file.type?.startsWith('image/') && !file.type?.startsWith('video/')) return;
+
+    const src = await readFileAsDataUrl(file);
+    if (typeof src !== 'string') return;
+
+    const mediaBlock = applyHistoryTriggers({
+      id: crypto.randomUUID(),
+      type: 'image',
+      content: '',
+      src,
+      position: { x: 100, y: 100 },
+      size: { width: 300, height: 220 },
+      bgColor: '#000000',
+      textColor: '#ffffff',
+      _version: 0
+    });
+
+    blocks = [...blocks, mediaBlock];
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    await pushHistory(blocks, modeOrders);
+  }
+
+  async function handleModeDrop(event) {
+    event.preventDefault();
+    const files = Array.from(event.dataTransfer?.files || []);
+    const mediaFile = files.find(file => file.type?.startsWith('image/') || file.type?.startsWith('video/'));
+    if (!mediaFile) return;
+
+    try {
+      await addImageBlockFromFile(mediaFile);
+    } catch (error) {
+      console.error('Failed to import dropped media:', error);
+    }
+  }
+
+  function handleModeDragOver(event) {
+    event.preventDefault();
+  }
   async function save() {
     const trimmedName = currentSaveName.trim();
     if (!trimmedName) {
@@ -1783,7 +1834,7 @@
     </div>
   {/if}
 
-  <div class="modes">
+  <div class="modes" role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
     <ModeArea
       {mode}
       blocks={modeOrderedBlocks}
