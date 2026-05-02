@@ -174,7 +174,7 @@
       ensureFocus();
       return;
     }
-    dispatch('focusToggle', { id });
+    ensureFocus();
   }
 
   function handleWrapperKeydown(event) {
