@@ -35,6 +35,10 @@
     dispatch('focusToggle', event.detail);
   }
 
+  function reorderBlocksHandler(event) {
+    dispatch('reorderBlocks', event.detail);
+  }
+
   function updateWidth() {
     width = window.innerWidth;
   }
@@ -76,6 +80,7 @@
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:reorderBlocks={reorderBlocksHandler}
     />
 
   {:else if mode === 'habit'}
