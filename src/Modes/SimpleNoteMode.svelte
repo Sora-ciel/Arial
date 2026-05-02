@@ -185,6 +185,7 @@
 
   let imageInputRefs = {};
   let imageTapTracker = {};
+  let draggedBlockId = null;
 
   function setImageInputRef(blockId, node) {
     if (node) {
@@ -263,10 +264,45 @@
     }
   }
 
+  function handleDragStart(event, blockId) {
+    draggedBlockId = blockId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', blockId);
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleDrop(event, targetBlockId, targetColumn, placement = 'before') {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceBlockId = event.dataTransfer.getData('text/plain') || draggedBlockId;
+    draggedBlockId = null;
+    if (!sourceBlockId) return;
+    if (targetBlockId && sourceBlockId === targetBlockId) return;
+    dispatch('reorderBlocks', { sourceBlockId, targetBlockId, targetColumn, placement });
+  }
+
+  function handleDragEnd() {
+    draggedBlockId = null;
+  }
+
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
-  $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
-    blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
-  );
+  $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) => ({ columnIndex, blocks: [] }));
+  $: {
+    renderColumns.forEach((column) => {
+      column.blocks = [];
+    });
+    blocks.forEach((block, blockIndex) => {
+      const savedColumn = Number.parseInt(block.simpleColumn, 10);
+      const normalizedColumn = Number.isInteger(savedColumn) && savedColumn >= 0
+        ? Math.min(savedColumn, normalizedColumnCount - 1)
+        : blockIndex % normalizedColumnCount;
+      renderColumns[normalizedColumn].blocks.push(block);
+    });
+  }
 
   // Resize all textareas when component mounts
   onMount(() => {
@@ -366,6 +402,27 @@
 .container.focused {
   outline: 4px solid transparent;
 
+}
+
+.drag-handle {
+  align-self: flex-end;
+  border: 1px solid var(--text-color);
+  background: transparent;
+  color: var(--text-color);
+  border-radius: 8px;
+  padding: 3px 7px;
+  cursor: grab;
+  margin-bottom: 4px;
+}
+
+.drop-slot {
+  height: 12px;
+  border-radius: 8px;
+  margin: 2px 0;
+}
+
+.drop-slot:hover {
+  background: color-mix(in srgb, var(--mode-text-color) 22%, transparent);
 }
 
 textarea {
@@ -534,8 +591,13 @@ li {
 
 <div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
   {#each renderColumns as column}
-    <div class="simple-column">
-      {#each column as block (blockKey(block))}
+    <div
+      class="simple-column"
+      on:dragover={handleDragOver}
+      on:drop={(event) => handleDrop(event, null, column.columnIndex, 'end')}
+    >
+      {#each column.blocks as block (blockKey(block))}
+      <div class="drop-slot" on:dragover={handleDragOver} on:drop={(event) => handleDrop(event, block.id, column.columnIndex, 'before')}></div>
       <div class="canvas">
         <div
           class="container"
@@ -552,6 +614,16 @@ li {
           aria-pressed={block.id === focusedBlockId}
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
         >
+          <button
+            class="drag-handle"
+            draggable="true"
+            on:dragstart={(event) => handleDragStart(event, block.id)}
+            on:dragend={handleDragEnd}
+            data-focus-guard
+            aria-label="Drag block"
+          >
+            ↕ Drag
+          </button>
           {#if block.type === 'text' || block.type === 'cleantext'}
             <textarea
               bind:value={block.content}
@@ -641,6 +713,7 @@ li {
         </div>
       </div>
       {/each}
+      <div class="drop-slot" on:dragover={handleDragOver} on:drop={(event) => handleDrop(event, null, column.columnIndex, 'endInColumn')}></div>
     </div>
   {/each}
 </div>
