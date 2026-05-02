@@ -823,6 +823,10 @@
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
   let deferredLastSaveReason = '';
+  let cloudSyncTimeoutId = null;
+  let cloudSyncInFlight = false;
+  let cloudSyncPending = false;
+  let cloudNeedsAttachmentUpload = false;
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -865,6 +869,49 @@
       modeSettings: normalizeModeSettings(settingsToPersist)
     });
     savedList = await listSavedBlocks();
+    scheduleCloudSync();
+  }
+
+  function markCloudAttachmentDirty() {
+    cloudNeedsAttachmentUpload = true;
+  }
+
+  function scheduleCloudSync() {
+    if (!firebaseReady || !authUser || !currentSaveName) return;
+    cloudSyncPending = true;
+    if (cloudSyncTimeoutId !== null) return;
+    cloudSyncTimeoutId = window.setTimeout(() => {
+      cloudSyncTimeoutId = null;
+      syncCurrentFileToCloud();
+    }, 10_000);
+  }
+
+  async function syncCurrentFileToCloud() {
+    if (cloudSyncInFlight || !cloudSyncPending) return;
+    if (!firebaseReady || !authUser || !currentSaveName) return;
+
+    cloudSyncInFlight = true;
+    cloudSyncPending = false;
+    const shouldUploadAttachments = cloudNeedsAttachmentUpload;
+    cloudNeedsAttachmentUpload = false;
+
+    try {
+      const payload = normalizeLoadedData(await loadBlocks(currentSaveName), currentSaveName);
+      await saveRemoteFile(currentSaveName, payload, {
+        uploadAttachments: shouldUploadAttachments
+      });
+    } catch (error) {
+      console.error('Auto cloud sync failed:', error);
+      cloudSyncPending = true;
+    } finally {
+      cloudSyncInFlight = false;
+      if (cloudSyncPending && cloudSyncTimeoutId === null) {
+        cloudSyncTimeoutId = window.setTimeout(() => {
+          cloudSyncTimeoutId = null;
+          syncCurrentFileToCloud();
+        }, 10_000);
+      }
+    }
   }
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
@@ -1017,6 +1064,9 @@
     if (focusedBlockId === id) {
       focusedBlockId = null;
     }
+    if (blocks.some(block => block.id === id && block.type === 'image')) {
+      markCloudAttachmentDirty();
+    }
     pushHistory(blocks, modeOrders);
   }
 
@@ -1053,6 +1103,9 @@
 
     if (!actualChangedKeys.length) {
       return;
+    }
+    if (existing.type === 'image' && actualChangedKeys.includes('src')) {
+      markCloudAttachmentDirty();
     }
 
     let shouldSnapshot;
@@ -1123,6 +1176,7 @@
 
     blocks = [...blocks, mediaBlock];
     modeOrders = ensureModeOrders(blocks, modeOrders);
+    markCloudAttachmentDirty();
     await pushHistory(blocks, modeOrders);
   }
 
@@ -1651,6 +1705,10 @@
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
+    if (cloudSyncTimeoutId !== null) {
+      window.clearTimeout(cloudSyncTimeoutId);
+      cloudSyncTimeoutId = null;
+    }
   });
 
   $: if (controlsRef) {
