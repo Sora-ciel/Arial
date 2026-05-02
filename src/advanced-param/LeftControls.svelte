@@ -1,5 +1,7 @@
 <script>
   import { createEventDispatcher, onMount } from "svelte";
+  import { getModeDefinition, getModeOptions } from "../Modes/modeRegistry.js";
+  import { getBlockDefinitions } from "../components/blockRegistry.js";
 
   export let mode;
   export let modeLabels = {};
@@ -30,17 +32,8 @@
   let showAddBlockMenu = false;
   let birthdayPassword = '';
 
-  $: modeOptions = [
-    { id: "default", label: "Canvas Mode" },
-    { id: "simple", label: "Simple Note Mode" },
-    { id: "single", label: "Single Note Mode" },
-    { id: "habit", label: "Habit Tracker Mode" },
-    { id: "task", label: "Task Mode" },
-    {
-      id: "birthday",
-      label: birthdayModeUnlocked ? "Birthday Mode" : "Birthday Mode 🔒"
-    }
-  ];
+  $: modeOptions = getModeOptions({ birthdayModeUnlocked });
+  $: activeModeDefinition = getModeDefinition(mode);
 
   const defaultColors = {
     panelBg: "#111111b0",
@@ -64,12 +57,13 @@
     .join("; ");
 
 
-  $: isSingleNoteMode = mode === "single";
-  $: isTaskMode = mode === "task";
-  $: isSimpleNoteMode = mode === "simple";
+  $: isSimpleNoteMode = Boolean(activeModeDefinition?.settings?.simpleColumns);
+  $: availableAddBlockTypes = activeModeDefinition?.addBlockTypes || [];
+  $: canAddBlock = (type) => availableAddBlockTypes.includes(type);
+  $: addBlockDefinitions = getBlockDefinitions(availableAddBlockTypes);
 
   function addBlock(type) {
-    if (isSingleNoteMode && type !== "text" && type !== "cleantext") return;
+    if (!canAddBlock(type)) return;
     dispatch("addBlock", type);
   }
 
@@ -509,7 +503,7 @@ onMount(() => {
                 on:click={() => selectMode(option.id)}
                 role="option"
                 aria-selected={option.id === mode}
-                disabled={option.id === 'birthday' && !birthdayModeUnlocked}
+                disabled={option.locked}
               >
                 {option.label}
               </button>
@@ -555,7 +549,7 @@ onMount(() => {
               on:click={() => selectMode(option.id)}
               role="option"
               aria-selected={option.id === mode}
-              disabled={option.id === 'birthday' && !birthdayModeUnlocked}
+              disabled={option.locked}
             >
               {option.label}
             </button>
@@ -586,14 +580,9 @@ onMount(() => {
       </button>
       {#if showAddBlockMenu}
         <div class="add-block-list" bind:this={addBlockMenuDesktopRef} role="listbox">
-          <button on:click={() => addBlock("text")}>+ Text</button>
-          <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
-          <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
-          <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
-          <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
-          {#if isTaskMode}
-            <button on:click={() => addBlock("task")}>+ Task List</button>
-          {/if}
+          {#each addBlockDefinitions as blockDef}
+            <button on:click={() => addBlock(blockDef.type)}>{blockDef.icon} {blockDef.label}</button>
+          {/each}
         </div>
       {/if}
     </div>
@@ -624,14 +613,9 @@ onMount(() => {
     <button on:click={() => dispatch('redo')}>↪ Redo</button>
 
     <div class="mobile-block-actions">
-      <button on:click={() => addBlock("text")}>+ Text</button>
-      <button on:click={() => addBlock("cleantext")}>+ Clean Text</button>
-      <button on:click={() => addBlock("image")} disabled={isSingleNoteMode}>+ Image</button>
-      <button on:click={() => addBlock("music")} disabled={isSingleNoteMode}>+ Music</button>
-      <button on:click={() => addBlock("embed")} disabled={isSingleNoteMode}>+ Embed</button>
-      {#if isTaskMode}
-        <button on:click={() => addBlock("task")}>+ Task List</button>
-      {/if}
+      {#each addBlockDefinitions as blockDef}
+        <button on:click={() => addBlock(blockDef.type)}>{blockDef.icon} {blockDef.label}</button>
+      {/each}
     </div>
 
     <input
