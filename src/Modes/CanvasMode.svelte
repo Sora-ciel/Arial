@@ -25,6 +25,7 @@
   const BLOCK_MARGIN_BOTTOM = 20;
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 4;
+  const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
   let scale = 1;
   let lastDistance = null;
@@ -116,13 +117,21 @@
     };
   }
 
-  function fitToViewport() {
-    if (!canvasRef) return;
+  function getViewportScaleFloor() {
     const controlsHeight = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--controls-height')) || 56;
     const availableWidth = Math.max(window.innerWidth, 1);
     const availableHeight = Math.max(window.innerHeight - controlsHeight, 1);
     const fittedScale = Math.min(availableWidth / canvasWidth, availableHeight / canvasHeight);
-    scale = Math.min(1, fittedScale);
+    return Math.min(1, fittedScale);
+  }
+
+  function getMinAllowedScale() {
+    return Math.min(MIN_ZOOM, getViewportScaleFloor());
+  }
+
+  function fitToViewport() {
+    if (!canvasRef) return;
+    scale = getViewportScaleFloor();
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
@@ -140,7 +149,7 @@
     const newDistance = getDistance(event.touches);
     const newMidpoint = getMidpoint(event.touches);
     const oldScale = scale;
-    const nextScale = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, oldScale * (newDistance / lastDistance)));
+    const nextScale = Math.max(getMinAllowedScale(), Math.min(MAX_ZOOM, oldScale * (newDistance / lastDistance)));
     if (nextScale === oldScale) return;
 
     const rect = canvasRef.getBoundingClientRect();
@@ -155,6 +164,28 @@
 
     lastDistance = newDistance;
     lastMidpoint = newMidpoint;
+  }
+
+
+  function onWheel(event) {
+    if (!event.shiftKey || !canvasRef) return;
+    if (event.cancelable) event.preventDefault();
+
+    const oldScale = scale;
+    const zoomFactor = Math.exp(-event.deltaY * WHEEL_ZOOM_SENSITIVITY);
+    const nextScale = Math.max(getMinAllowedScale(), Math.min(MAX_ZOOM, oldScale * zoomFactor));
+
+    if (nextScale === oldScale) return;
+
+    const rect = canvasRef.getBoundingClientRect();
+    const anchorX = event.clientX - rect.left;
+    const anchorY = event.clientY - rect.top;
+    const contentX = (canvasRef.scrollLeft + anchorX) / oldScale;
+    const contentY = (canvasRef.scrollTop + anchorY) / oldScale;
+
+    scale = nextScale;
+    canvasRef.scrollLeft = Math.max(0, contentX * scale - anchorX);
+    canvasRef.scrollTop = Math.max(0, contentY * scale - anchorY);
   }
 
   function onTouchEnd(event) {
@@ -248,6 +279,7 @@
   on:touchstart={onTouchStart}
   on:touchmove={onTouchMove}
   on:touchend={onTouchEnd}
+  on:wheel={onWheel}
 >
     <div
       class="canvas-zoom-shell"
