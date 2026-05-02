@@ -148,6 +148,7 @@
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
+  const MODE_SETTINGS_STORAGE_KEY = 'modeSettings';
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
   const FALLBACK_SAVE_NAME = 'Fallback';
   const DEFAULT_MODE_SETTINGS = {
@@ -222,6 +223,29 @@
       return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
     } catch (error) {
       return null;
+    }
+  }
+
+  function loadStoredModeSettings() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serialized = localStorage.getItem(MODE_SETTINGS_STORAGE_KEY);
+      if (!serialized) return null;
+      return normalizeModeSettings(JSON.parse(serialized));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistModeSettings(settings) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        MODE_SETTINGS_STORAGE_KEY,
+        JSON.stringify(normalizeModeSettings(settings))
+      );
+    } catch (error) {
+      // no-op
     }
   }
 
@@ -780,7 +804,7 @@
   let observedControlsEl;
 
   let mode = getDefaultModeForViewport();
-  let modeSettings = normalizeModeSettings();
+  let modeSettings = normalizeModeSettings(loadStoredModeSettings());
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
@@ -1455,7 +1479,27 @@
       }
     });
     modeSettings = nextModeSettings;
+    persistModeSettings(nextModeSettings);
     await persistAutosave(blocks, modeOrders, nextModeSettings);
+  }
+
+  async function handleSimpleModeReorder(event) {
+    const sourceBlockId = event.detail?.sourceBlockId;
+    const targetBlockId = event.detail?.targetBlockId;
+    const ordersForMode = normalizedModeOrders[mode] || [];
+    const sourceIndex = ordersForMode.indexOf(sourceBlockId);
+    const targetIndex = ordersForMode.indexOf(targetBlockId);
+
+    if (sourceIndex === -1 || targetIndex === -1 || sourceIndex === targetIndex) return;
+
+    const updatedOrder = [...ordersForMode];
+    updatedOrder.splice(sourceIndex, 1);
+    updatedOrder.splice(targetIndex, 0, sourceBlockId);
+    modeOrders = {
+      ...modeOrders,
+      [mode]: updatedOrder
+    };
+    await pushHistory(blocks, modeOrders);
   }
 
   function setupControlsObserver() {
@@ -1849,6 +1893,7 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
       on:modeSettingChange={handleModeSettingChange}
+      on:reorderBlocks={handleSimpleModeReorder}
     />
   </div>
 </div>

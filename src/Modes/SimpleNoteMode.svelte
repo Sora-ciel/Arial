@@ -185,6 +185,7 @@
 
   let imageInputRefs = {};
   let imageTapTracker = {};
+  let draggedBlockId = null;
 
   function setImageInputRef(blockId, node) {
     if (node) {
@@ -261,6 +262,29 @@
       event.preventDefault();
       openImagePicker(block.id);
     }
+  }
+
+  function handleDragStart(event, blockId) {
+    draggedBlockId = blockId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', blockId);
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleDrop(event, targetBlockId) {
+    event.preventDefault();
+    const sourceBlockId = event.dataTransfer.getData('text/plain') || draggedBlockId;
+    draggedBlockId = null;
+    if (!sourceBlockId || !targetBlockId || sourceBlockId === targetBlockId) return;
+    dispatch('reorderBlocks', { sourceBlockId, targetBlockId });
+  }
+
+  function handleDragEnd() {
+    draggedBlockId = null;
   }
 
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
@@ -551,6 +575,11 @@ li {
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
+          draggable="true"
+          on:dragstart={(event) => handleDragStart(event, block.id)}
+          on:dragover={handleDragOver}
+          on:drop={(event) => handleDrop(event, block.id)}
+          on:dragend={handleDragEnd}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
             <textarea
