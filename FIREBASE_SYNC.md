@@ -10,7 +10,7 @@ VITE_FIREBASE_AUTH_DOMAIN=...
 VITE_FIREBASE_PROJECT_ID=...
 VITE_FIREBASE_APP_ID=...
 VITE_FIREBASE_DB_URL=https://YOUR_DB.firebaseio.com
-VITE_FIREBASE_STORAGE_BUCKET=YOUR_PROJECT_ID.appspot.com
+VITE_FIREBASE_STORAGE_BUCKET=YOUR_BUCKET (often YOUR_PROJECT_ID.firebasestorage.app or YOUR_PROJECT_ID.appspot.com)
 VITE_FIREBASE_SYNC_NAMESPACE=default
 ```
 
@@ -61,17 +61,15 @@ Do not use open/public read or write rules.
 
 - RTDB: `/sync/{namespace}/users/{uid}/files/{fileId}`
 - RTDB: `/sync/{namespace}/users/{uid}/index/{fileId}`
-- Storage: `users/{uid}/attachments/{attachmentId}.{ext}`
+- Storage: `users/{uid}/attachments/{fileId}/{blockId}/{field}/{generatedName}.{ext}`
 
 Users only access their own `{uid}` subtree.
 
 ## Attachment behavior
 
 - On save, inline base64 media is uploaded to Cloud Storage.
-- The JSON written to RTDB stores a lightweight reference only:
-  `{ type: "storage", attachmentId, storagePath, contentType, size }`
-- `downloadURL` is never persisted to RTDB.
-- On load, storage refs are resolved at runtime via `getDownloadURL` before rendering.
+- The JSON written to RTDB stores only the Storage download URL string in the media field.
+- Media bytes are not stored in RTDB.
 - Existing inline/base64 media gets migrated during the next signed-in save.
 
 ## Billing note
