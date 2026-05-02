@@ -11,6 +11,7 @@ const REQUIRED_FIREBASE_KEYS = [
 ];
 
 const FIREBASE_SDK_VERSION = '11.7.0';
+const ATTACHMENT_FIELDS = ['src', 'content', 'trackUrl'];
 
 let firebaseModulesPromise;
 let firebaseContextPromise;
@@ -20,8 +21,9 @@ function loadFirebaseModules() {
     firebaseModulesPromise = Promise.all([
       import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-app.js`),
       import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-auth.js`),
-      import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-database.js`)
-    ]).then(([app, auth, database]) => ({ app, auth, database }));
+      import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-database.js`),
+      import(/* @vite-ignore */ `https://www.gstatic.com/firebasejs/${FIREBASE_SDK_VERSION}/firebase-storage.js`)
+    ]).then(([app, auth, database, storage]) => ({ app, auth, database, storage }));
   }
   return firebaseModulesPromise;
 }
@@ -29,17 +31,64 @@ function loadFirebaseModules() {
 async function getFirebaseContext() {
   if (!isFirebaseConfigured()) return null;
   if (!firebaseContextPromise) {
-    firebaseContextPromise = loadFirebaseModules().then(({ app, auth, database }) => {
+    firebaseContextPromise = loadFirebaseModules().then(({ app, auth, database, storage }) => {
       const firebaseApp = app.getApps().length
         ? app.getApp()
         : app.initializeApp(firebaseConfig);
       const firebaseAuth = auth.getAuth(firebaseApp);
       auth.setPersistence(firebaseAuth, auth.browserLocalPersistence).catch(() => {});
       const firebaseDb = database.getDatabase(firebaseApp);
-      return { app: firebaseApp, auth: firebaseAuth, db: firebaseDb, authApi: auth, dbApi: database };
+      const firebaseStorage = storage.getStorage(firebaseApp);
+      return { app: firebaseApp, auth: firebaseAuth, db: firebaseDb, storage: firebaseStorage, authApi: auth, dbApi: database, storageApi: storage };
     });
   }
   return firebaseContextPromise;
+}
+
+function inferExtensionFromMime(mime = '') {
+  const normalized = String(mime).toLowerCase();
+  if (normalized.includes('jpeg')) return 'jpg';
+  if (normalized.includes('png')) return 'png';
+  if (normalized.includes('gif')) return 'gif';
+  if (normalized.includes('webp')) return 'webp';
+  if (normalized.includes('svg')) return 'svg';
+  if (normalized.includes('mp4')) return 'mp4';
+  if (normalized.includes('webm')) return 'webm';
+  if (normalized.includes('ogg')) return 'ogg';
+  if (normalized.includes('mpeg')) return 'mp3';
+  return 'bin';
+}
+
+async function uploadBlockAttachments(fileId, payload, ctx, uid) {
+  if (!Array.isArray(payload?.blocks)) return payload;
+
+  const blocks = await Promise.all(payload.blocks.map(async (block, index) => {
+    const next = { ...block };
+
+    for (const field of ATTACHMENT_FIELDS) {
+      const value = next[field];
+      if (typeof value !== 'string' || !value.startsWith('data:')) continue;
+
+      const uploadedUrl = await uploadAttachmentFromDataUrl(value, {
+        fileId,
+        blockId: block?.id || `block-${index + 1}`,
+        field,
+        uid,
+        ctx
+      });
+
+      if (uploadedUrl) {
+        next[field] = uploadedUrl;
+      }
+    }
+
+    return next;
+  }));
+
+  return {
+    ...payload,
+    blocks
+  };
 }
 
 function normalizeNamespace() {
@@ -132,11 +181,12 @@ export async function saveRemoteFile(fileId, payload) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
+  const payloadWithRemoteAttachments = await uploadBlockAttachments(fileId, payload, ctx, user.uid);
   const updatedAt = payload?.updatedAt || Date.now();
 
   await ctx.dbApi.set(
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
-    { ...payload, updatedAt }
+    { ...payloadWithRemoteAttachments, updatedAt }
   );
 
   await ctx.dbApi.set(
@@ -144,7 +194,7 @@ export async function saveRemoteFile(fileId, payload) {
     {
       fileId,
       updatedAt,
-      blockCount: Array.isArray(payload?.blocks) ? payload.blocks.length : 0
+      blockCount: Array.isArray(payloadWithRemoteAttachments?.blocks) ? payloadWithRemoteAttachments.blocks.length : 0
     }
   );
 
@@ -164,8 +214,30 @@ export async function deleteRemoteFile(fileId) {
   return { fileId };
 }
 
-export async function uploadAttachmentFromDataUrl() {
-  return null;
+export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
+
+  const ctx = options.ctx || await getFirebaseContext();
+  if (!ctx) return null;
+
+  const uid = options.uid || requireUser(ctx.auth.currentUser).uid;
+  const response = await fetch(dataUrl);
+  const blob = await response.blob();
+  const mime = blob.type || 'application/octet-stream';
+  const ext = inferExtensionFromMime(mime);
+  const fileId = String(options.fileId || 'unknown-file');
+  const blockId = String(options.blockId || 'unknown-block');
+  const field = String(options.field || 'attachment');
+  const objectName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  const objectPath = `${getUserPath(uid, `attachments/${fileId}/${blockId}/${field}`)}/${objectName}`;
+  const storageRef = ctx.storageApi.ref(ctx.storage, objectPath);
+
+  await ctx.storageApi.uploadBytes(storageRef, blob, {
+    contentType: mime,
+    cacheControl: 'public,max-age=31536000'
+  });
+
+  return await ctx.storageApi.getDownloadURL(storageRef);
 }
 
 export async function resolveAttachmentUrl(value) {
