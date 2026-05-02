@@ -23,6 +23,7 @@
     normalizeControlColors
   } from './utils/themeDefaults.js';
 
+  import { MODE_DEFINITIONS, MODE_ORDER, getModeDefinition } from "./Modes/modeRegistry.js";
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -712,15 +713,10 @@
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']
   };
 
-  const KNOWN_MODES = ["default", "simple", "single", "habit", "task", "birthday"];
-  const MODE_LABELS = {
-    default: "Canvas Mode",
-    simple: "Simple Note Mode",
-    single: "Single Note Mode",
-    habit: "Habit Tracker Mode",
-    task: "Task Mode",
-    birthday: "Birthday Mode"
-  };
+  const KNOWN_MODES = [...MODE_ORDER];
+  const MODE_LABELS = Object.fromEntries(
+    Object.values(MODE_DEFINITIONS).map((definition) => [definition.id, definition.label])
+  );
 
   function applyHistoryTriggers(block) {
     const triggers =
@@ -786,6 +782,8 @@
   let mode = getDefaultModeForViewport();
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
+  $: activeModeDefinition = getModeDefinition(mode);
+  $: showRightControls = activeModeDefinition?.showRightControls !== false;
   let blocks = [];
   let modeOrders = {};
   let normalizedModeOrders = ensureModeOrders(blocks, modeOrders);
@@ -1750,6 +1748,7 @@
       on:moveDown={moveFocusedBlockDown}
       on:modeSettingChange={handleModeSettingChange}
     />
+    {#if showRightControls}
     <div class="right-controls">
       <RightControls
         {savedList}
@@ -1772,6 +1771,7 @@
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
       />
     </div>
+    {/if}
   </div>
 
   {#if deferredLastSaveName}
