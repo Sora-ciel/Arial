@@ -827,6 +827,8 @@
   let cloudSyncInFlight = false;
   let cloudSyncPending = false;
   let cloudNeedsAttachmentUpload = false;
+  let cloudBootstrapInProgress = false;
+  let cloudBootstrapComplete = false;
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -889,6 +891,7 @@
   async function syncCurrentFileToCloud() {
     if (cloudSyncInFlight || !cloudSyncPending) return;
     if (!firebaseReady || !authUser || !currentSaveName) return;
+    if (cloudBootstrapInProgress || !cloudBootstrapComplete) return;
 
     cloudSyncInFlight = true;
     cloudSyncPending = false;
@@ -1051,6 +1054,7 @@
 
   function deleteBlockHandler(event) {
     const id = event.detail?.id;
+    const deletingBlock = blocks.find(block => block.id === id);
     blocks = blocks.filter(b => b.id !== id);
     modeOrders = ensureModeOrders(
       blocks,
@@ -1064,7 +1068,7 @@
     if (focusedBlockId === id) {
       focusedBlockId = null;
     }
-    if (blocks.some(block => block.id === id && block.type === 'image')) {
+    if (deletingBlock?.type === 'image') {
       markCloudAttachmentDirty();
     }
     pushHistory(blocks, modeOrders);
@@ -1336,6 +1340,7 @@
 
     try {
       await signInWithGoogle();
+      await bootstrapCloudSync();
     } catch (error) {
       console.error(error);
       alert(`Google sign-in failed: ${error?.message || error}`);
@@ -1417,6 +1422,52 @@
       alert(`Download failed: ${error?.message || error}`);
     } finally {
       downloadInProgress = false;
+    }
+  }
+
+  async function bootstrapCloudSync() {
+    if (!firebaseReady || !authUser) return;
+    if (cloudBootstrapInProgress) return;
+
+    cloudBootstrapInProgress = true;
+    try {
+      const [localNames, remoteIndex] = await Promise.all([
+        listSavedBlocks(),
+        loadRemoteIndex()
+      ]);
+      const remoteNames = Object.keys(remoteIndex || {});
+      const localNameSet = new Set(localNames);
+      const remoteNameSet = new Set(remoteNames);
+
+      for (const remoteName of remoteNames) {
+        const remoteMeta = remoteIndex?.[remoteName] || {};
+        const localPayload = localNameSet.has(remoteName)
+          ? await loadBlocks(remoteName)
+          : null;
+        const localUpdatedAt = Number(localPayload?.updatedAt || 0);
+        const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+
+        if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+          const remotePayload = await loadRemoteFile(remoteName);
+          if (remotePayload) {
+            await saveBlocks(remoteName, remotePayload);
+          }
+        }
+      }
+
+      for (const localName of localNames) {
+        if (remoteNameSet.has(localName)) continue;
+        const localPayload = await loadBlocks(localName);
+        await saveRemoteFile(localName, localPayload, { uploadAttachments: true });
+      }
+
+      savedList = await listSavedBlocks();
+      cloudBootstrapComplete = true;
+      scheduleCloudSync();
+    } catch (error) {
+      console.error('Cloud bootstrap sync failed:', error);
+    } finally {
+      cloudBootstrapInProgress = false;
     }
   }
 
@@ -1710,6 +1761,14 @@
       cloudSyncTimeoutId = null;
     }
   });
+
+  $: if (firebaseReady && authUser && !cloudBootstrapComplete && !cloudBootstrapInProgress) {
+    bootstrapCloudSync();
+  }
+
+  $: if (!authUser) {
+    cloudBootstrapComplete = false;
+  }
 
   $: if (controlsRef) {
     setupControlsObserver();
