@@ -828,10 +828,12 @@
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
   let autoSyncEnabled = true;
-  let autoSyncIntervalId = null;
+  let autoSyncDownloadIntervalId = null;
+  let autoSyncUploadIntervalId = null;
   let autoSyncDirty = false;
   let lastAutoSyncFingerprint = '';
   let lastAutoSyncAttachmentFingerprint = '';
+  let lastRemoteSyncFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -845,7 +847,7 @@
     if (!hasUnsnapshottedChanges) return;
 
     if (!history.length) {
-      await pushHistory(blocks, modeOrders);
+      await pushHistory(blocks, modeOrders, { persist: false });
       return;
     }
 
@@ -858,7 +860,7 @@
     const latestHistorySnapshot = history[historyIndex];
 
     if (latestHistorySnapshot !== currentSnapshot) {
-      await pushHistory(blocks, modeOrders);
+      await pushHistory(blocks, modeOrders, { persist: !options.skipCloudUpload });
     } else {
       hasUnsnapshottedChanges = false;
     }
@@ -882,14 +884,16 @@
   }
 
 
-  async function pushHistory(newBlocks, newOrders = modeOrders) {
+  async function pushHistory(newBlocks, newOrders = modeOrders, options = {}) {
     const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
     const snapshot = JSON.stringify(stateSnapshot);
 
     if (historyIndex >= 0 && history[historyIndex] === snapshot) {
       blocks = stateSnapshot.blocks;
       modeOrders = stateSnapshot.modeOrders;
-      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+      if (options.persist !== false) {
+        await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+      }
       hasUnsnapshottedChanges = false;
       return;
     }
@@ -903,7 +907,9 @@
 
     blocks = stateSnapshot.blocks;
     modeOrders = stateSnapshot.modeOrders;
-    await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+    if (options.persist !== false) {
+      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+    }
     hasUnsnapshottedChanges = false;
   }
 
@@ -1221,7 +1227,7 @@
     await pushHistory(blocks, modeOrders);
   }
 
-  async function load(name) {
+  async function load(name, options = {}) {
     blocks = [];
     currentSaveName = "";
     focusedBlockId = null;
@@ -1254,7 +1260,10 @@
 
       history = [];
       historyIndex = -1;
-      await pushHistory(blocks, modeOrders);
+      await pushHistory(blocks, modeOrders, { persist: !options.skipCloudUpload });
+      if (options.skipCloudUpload) {
+        autoSyncDirty = false;
+      }
       clearBootLoadGuard();
     } catch (error) {
       console.error('Failed to load save file:', error);
@@ -1392,7 +1401,57 @@
     return { fingerprint, attachmentFingerprint };
   }
 
-  async function autoSyncTick() {
+
+  async function remountCurrentSaveIfLoaded() {
+    if (!currentSaveName || !savedList.includes(currentSaveName)) return;
+    await load(currentSaveName, { skipCloudUpload: true });
+  }
+
+  async function pullRemoteUpdatesIfNeeded(options = {}) {
+    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return false;
+
+    const remoteIndex = await loadRemoteIndex();
+    const remoteEntries = Object.entries(remoteIndex || {});
+    const remoteFingerprint = remoteEntries
+      .map(([fileName, meta]) => `${fileName}:${Number(meta?.updatedAt || 0)}`)
+      .sort()
+      .join('|');
+
+    if (remoteFingerprint === lastRemoteSyncFingerprint) return false;
+
+    let downloadedAny = false;
+    for (const [fileName, remoteMeta] of remoteEntries) {
+      const localPayload = savedList.includes(fileName) ? await loadBlocks(fileName) : null;
+      const localUpdatedAt = Number(localPayload?.updatedAt || 0);
+      const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+
+      if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+        const remotePayload = await loadRemoteFile(fileName);
+        if (!remotePayload) continue;
+        await saveBlocks(fileName, remotePayload);
+        downloadedAny = true;
+      }
+    }
+
+    lastRemoteSyncFingerprint = remoteFingerprint;
+
+    if (downloadedAny) {
+      savedList = await listSavedBlocks();
+      await remountCurrentSaveIfLoaded();
+      if (options.showInfo) {
+        alert('Cloud download complete. Newer cloud updates were applied.');
+      }
+    }
+
+    return downloadedAny;
+  }
+
+  async function autoSyncDownloadTick() {
+    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
+    await pullRemoteUpdatesIfNeeded();
+  }
+
+  async function autoSyncUploadTick() {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
     if (!autoSyncDirty) return;
     const { fingerprint, attachmentFingerprint } = await buildLocalSyncFingerprint();
@@ -1427,19 +1486,7 @@
 
     downloadInProgress = true;
     try {
-      const remoteIndex = await loadRemoteIndex();
-      const remoteNames = Object.keys(remoteIndex || {});
-      let downloadedCount = 0;
-
-      for (const fileName of remoteNames) {
-        const remotePayload = await loadRemoteFile(fileName);
-        if (!remotePayload) continue;
-        await saveBlocks(fileName, remotePayload);
-        downloadedCount += 1;
-      }
-
-      savedList = await listSavedBlocks();
-      alert(`Download complete. Downloaded ${downloadedCount} save file(s).`);
+      await pullRemoteUpdatesIfNeeded({ showInfo: true });
     } catch (error) {
       console.error(error);
       alert(`Download failed: ${error?.message || error}`);
@@ -1774,14 +1821,24 @@
       persistLastSaveName(currentSaveName);
     }
 
-    autoSyncIntervalId = window.setInterval(() => {
-      autoSyncTick().catch(error => {
-        console.error('Auto sync tick failed:', error);
+    autoSyncDownloadIntervalId = window.setInterval(() => {
+      autoSyncDownloadTick().catch(error => {
+        console.error('Auto sync download tick failed:', error);
+      });
+    }, 1_000);
+
+    autoSyncUploadIntervalId = window.setInterval(() => {
+      autoSyncUploadTick().catch(error => {
+        console.error('Auto sync upload tick failed:', error);
       });
     }, 10_000);
 
-    autoSyncTick().catch(error => {
-      console.error('Initial auto sync tick failed:', error);
+    autoSyncDownloadTick().catch(error => {
+      console.error('Initial auto sync download tick failed:', error);
+    });
+
+    autoSyncUploadTick().catch(error => {
+      console.error('Initial auto sync upload tick failed:', error);
     });
   });
 
@@ -1791,9 +1848,13 @@
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
-    if (autoSyncIntervalId !== null) {
-      window.clearInterval(autoSyncIntervalId);
-      autoSyncIntervalId = null;
+    if (autoSyncDownloadIntervalId !== null) {
+      window.clearInterval(autoSyncDownloadIntervalId);
+      autoSyncDownloadIntervalId = null;
+    }
+    if (autoSyncUploadIntervalId !== null) {
+      window.clearInterval(autoSyncUploadIntervalId);
+      autoSyncUploadIntervalId = null;
     }
   });
 
