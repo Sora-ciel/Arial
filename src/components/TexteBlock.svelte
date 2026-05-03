@@ -7,6 +7,7 @@
   export let initialBgColor = '#000000';
   export let initialTextColor = '#ffffff';
   export let initialContent = '';
+  export let initialScrollTop = 0;
   export let focused = false;
   export let canvasScale = 1;
 
@@ -17,6 +18,7 @@
   let bgColor = initialBgColor;
   let textColor = initialTextColor;
   let content = initialContent;
+  let textareaEl;
 
   let dragging = false;
   let resizing = false;
@@ -37,7 +39,7 @@
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content };
+    const detail = { id, position, size, bgColor, textColor, content, scrollTop: textareaEl?.scrollTop ?? 0 };
 
     if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
@@ -186,6 +188,21 @@
     event.preventDefault();
     handleWrapperClick(event);
   }
+
+  function applySavedScroll() {
+    if (!textareaEl) return;
+    const nextScrollTop = Number(initialScrollTop ?? 0);
+    textareaEl.scrollTop = Number.isFinite(nextScrollTop) ? Math.max(0, nextScrollTop) : 0;
+  }
+
+  function handleTextScroll() {
+    if (!textareaEl) return;
+    sendUpdate(['scrollTop'], { pushToHistory: false });
+  }
+
+  $: if (textareaEl) {
+    applySavedScroll();
+  }
 </script>
 
 <style>
@@ -325,9 +342,11 @@
 
   <div class="text-container">
     <textarea
+      bind:this={textareaEl}
       spellcheck="false"
       bind:value={content}
       on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+      on:scroll={handleTextScroll}
       on:focus={ensureFocus}
       data-focus-guard
     ></textarea>

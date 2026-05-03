@@ -385,6 +385,7 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
             on:delete={deleteBlockHandler}
@@ -416,6 +417,7 @@
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
             initialContent={block.content}
+            initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
             on:delete={deleteBlockHandler}

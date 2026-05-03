@@ -7,6 +7,7 @@
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#000000';
   export let initialContent = '';
+  export let initialScrollTop = 0;
   export let focused = false;
   export let canvasScale = 1;
 
@@ -44,7 +45,7 @@
     content = editableDiv?.innerText ?? content;
 
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content };
+    const detail = { id, position, size, bgColor, textColor, content, scrollTop: editableDiv?.scrollTop ?? 0 };
 
     if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
@@ -188,6 +189,21 @@
 
     event.preventDefault();
     handleWrapperClick(event);
+  }
+
+  function applySavedScroll() {
+    if (!editableDiv) return;
+    const nextScrollTop = Number(initialScrollTop ?? 0);
+    editableDiv.scrollTop = Number.isFinite(nextScrollTop) ? Math.max(0, nextScrollTop) : 0;
+  }
+
+  function handleEditableScroll() {
+    if (!editableDiv) return;
+    sendUpdate(['scrollTop'], { pushToHistory: false });
+  }
+
+  $: if (editableDiv) {
+    applySavedScroll();
   }
 </script>
 
@@ -346,6 +362,7 @@
     class="editable"
     spellcheck="false"
     on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+    on:scroll={handleEditableScroll}
     on:focus={ensureFocus}
     data-focus-guard
   ></div>
