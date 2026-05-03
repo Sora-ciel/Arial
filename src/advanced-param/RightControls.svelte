@@ -10,6 +10,7 @@
   export let authUser = null;
   export let uploadInProgress = false;
   export let downloadInProgress = false;
+  export let autoSyncEnabled = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -132,6 +133,10 @@
 
   function downloadNow() {
     dispatch("downloadNow");
+  }
+
+  function toggleAutoSync() {
+    dispatch("toggleAutoSync");
   }
 
   function handleColorChange(event) {
@@ -347,6 +352,9 @@
             {#if authUser}
               <button class="create-theme-btn" type="button" on:click={uploadNow} disabled={uploadInProgress}>
                 {uploadInProgress ? "⏳ Uploading..." : "⤴ Upload to Cloud"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={toggleAutoSync}>
+                {autoSyncEnabled ? "🟢 Auto Sync: ON" : "⚪ Auto Sync: OFF"}
               </button>
               <button class="create-theme-btn" type="button" on:click={downloadNow} disabled={downloadInProgress}>
                 {downloadInProgress ? "⏳ Downloading..." : "⤵ Download from Cloud"}

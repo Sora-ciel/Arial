@@ -32,10 +32,27 @@
   const BIRTHDAY_MODE_PASSWORD = 'Birthday24H';
   const BIRTHDAY_MODE_DURATION_MS = 24 * 60 * 60 * 1000;
   const MOBILE_BREAKPOINT = 1024;
+  const AUTO_SYNC_STORAGE_KEY = 'autoCloudSyncEnabled';
 
   function getDefaultModeForViewport() {
     if (typeof window === 'undefined') return 'default';
     return window.innerWidth <= MOBILE_BREAKPOINT ? 'simple' : 'default';
+  }
+
+  function loadAutoSyncEnabled() {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+      return JSON.parse(localStorage.getItem(AUTO_SYNC_STORAGE_KEY) || 'false') === true;
+    } catch {
+      return false;
+    }
+  }
+
+  function persistAutoSyncEnabled(value) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(AUTO_SYNC_STORAGE_KEY, JSON.stringify(Boolean(value)));
+    } catch {}
   }
 
   function toCssVarName(key) {
@@ -823,6 +840,15 @@
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
   let deferredLastSaveReason = '';
+  let cloudSyncTimeoutId = null;
+  let cloudSyncInFlight = false;
+  let cloudSyncPending = false;
+  let cloudNeedsAttachmentUpload = false;
+  let cloudBootstrapInProgress = false;
+  let cloudBootstrapComplete = false;
+  let autoSyncEnabled = false;
+  let autoSyncIntervalId = null;
+  let lastAutoSyncFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -865,6 +891,67 @@
       modeSettings: normalizeModeSettings(settingsToPersist)
     });
     savedList = await listSavedBlocks();
+    scheduleCloudSync();
+  }
+
+  function markCloudAttachmentDirty() {
+    cloudNeedsAttachmentUpload = true;
+  }
+
+  function scheduleCloudSync() {
+    if (!firebaseReady || !currentSaveName) return;
+    cloudSyncPending = true;
+    if (cloudSyncTimeoutId !== null) return;
+    cloudSyncTimeoutId = window.setTimeout(() => {
+      cloudSyncTimeoutId = null;
+      syncCurrentFileToCloud();
+    }, 10_000);
+  }
+
+  async function syncCurrentFileToCloud() {
+    if (cloudSyncInFlight || !cloudSyncPending) return;
+    if (!firebaseReady || !currentSaveName) return;
+    if (!authUser) {
+      if (cloudSyncTimeoutId === null) {
+        cloudSyncTimeoutId = window.setTimeout(() => {
+          cloudSyncTimeoutId = null;
+          syncCurrentFileToCloud();
+        }, 10_000);
+      }
+      return;
+    }
+    if (cloudBootstrapInProgress) {
+      if (cloudSyncTimeoutId === null) {
+        cloudSyncTimeoutId = window.setTimeout(() => {
+          cloudSyncTimeoutId = null;
+          syncCurrentFileToCloud();
+        }, 10_000);
+      }
+      return;
+    }
+
+    cloudSyncInFlight = true;
+    cloudSyncPending = false;
+    const shouldUploadAttachments = cloudNeedsAttachmentUpload;
+    cloudNeedsAttachmentUpload = false;
+
+    try {
+      const payload = normalizeLoadedData(await loadBlocks(currentSaveName), currentSaveName);
+      await saveRemoteFile(currentSaveName, payload, {
+        uploadAttachments: shouldUploadAttachments
+      });
+    } catch (error) {
+      console.error('Auto cloud sync failed:', error);
+      cloudSyncPending = true;
+    } finally {
+      cloudSyncInFlight = false;
+      if (cloudSyncPending && cloudSyncTimeoutId === null) {
+        cloudSyncTimeoutId = window.setTimeout(() => {
+          cloudSyncTimeoutId = null;
+          syncCurrentFileToCloud();
+        }, 10_000);
+      }
+    }
   }
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
@@ -1004,6 +1091,7 @@
 
   function deleteBlockHandler(event) {
     const id = event.detail?.id;
+    const deletingBlock = blocks.find(block => block.id === id);
     blocks = blocks.filter(b => b.id !== id);
     modeOrders = ensureModeOrders(
       blocks,
@@ -1016,6 +1104,9 @@
     );
     if (focusedBlockId === id) {
       focusedBlockId = null;
+    }
+    if (deletingBlock?.type === 'image') {
+      markCloudAttachmentDirty();
     }
     pushHistory(blocks, modeOrders);
   }
@@ -1053,6 +1144,9 @@
 
     if (!actualChangedKeys.length) {
       return;
+    }
+    if (existing.type === 'image' && actualChangedKeys.includes('src')) {
+      markCloudAttachmentDirty();
     }
 
     let shouldSnapshot;
@@ -1123,6 +1217,7 @@
 
     blocks = [...blocks, mediaBlock];
     modeOrders = ensureModeOrders(blocks, modeOrders);
+    markCloudAttachmentDirty();
     await pushHistory(blocks, modeOrders);
   }
 
@@ -1282,6 +1377,7 @@
 
     try {
       await signInWithGoogle();
+      await bootstrapCloudSync();
     } catch (error) {
       console.error(error);
       alert(`Google sign-in failed: ${error?.message || error}`);
@@ -1330,6 +1426,31 @@
     }
   }
 
+  async function buildLocalSyncFingerprint() {
+    const names = await listSavedBlocks();
+    const entries = await Promise.all(
+      names.map(async fileName => {
+        const payload = await loadBlocks(fileName);
+        return `${fileName}:${Number(payload?.updatedAt || 0)}`;
+      })
+    );
+    entries.sort();
+    return entries.join('|');
+  }
+
+  async function autoSyncTick() {
+    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
+    const fingerprint = await buildLocalSyncFingerprint();
+    if (!fingerprint || fingerprint === lastAutoSyncFingerprint) return;
+    await uploadAllLocalToCloud();
+    lastAutoSyncFingerprint = fingerprint;
+  }
+
+  function toggleAutoSync() {
+    autoSyncEnabled = !autoSyncEnabled;
+    persistAutoSyncEnabled(autoSyncEnabled);
+  }
+
   async function downloadAllCloudToLocal() {
     if (!firebaseReady) {
       alert('Firebase is not configured yet.');
@@ -1363,6 +1484,55 @@
       alert(`Download failed: ${error?.message || error}`);
     } finally {
       downloadInProgress = false;
+    }
+  }
+
+  async function bootstrapCloudSync() {
+    if (!firebaseReady || !authUser) return;
+    if (cloudBootstrapInProgress) return;
+
+    cloudBootstrapInProgress = true;
+    try {
+      const [localNames, remoteIndex] = await Promise.all([
+        listSavedBlocks(),
+        loadRemoteIndex()
+      ]);
+      const remoteNames = Object.keys(remoteIndex || {});
+      const localNameSet = new Set(localNames);
+      const remoteNameSet = new Set(remoteNames);
+
+      for (const remoteName of remoteNames) {
+        const remoteMeta = remoteIndex?.[remoteName] || {};
+        const localPayload = localNameSet.has(remoteName)
+          ? await loadBlocks(remoteName)
+          : null;
+        const localUpdatedAt = Number(localPayload?.updatedAt || 0);
+        const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+
+        if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+          const remotePayload = await loadRemoteFile(remoteName);
+          if (remotePayload) {
+            await saveBlocks(remoteName, remotePayload);
+          }
+        }
+      }
+
+      for (const localName of localNames) {
+        if (remoteNameSet.has(localName)) continue;
+        const localPayload = await loadBlocks(localName);
+        await saveRemoteFile(localName, localPayload, { uploadAttachments: true });
+      }
+
+      savedList = await listSavedBlocks();
+      cloudBootstrapComplete = true;
+      scheduleCloudSync();
+    } catch (error) {
+      console.error('Cloud bootstrap sync failed:', error);
+      // Do not block regular autosync forever if bootstrap fails.
+      cloudBootstrapComplete = true;
+      scheduleCloudSync();
+    } finally {
+      cloudBootstrapInProgress = false;
     }
   }
 
@@ -1557,6 +1727,7 @@
   let stopAuthListener = () => {};
 
   onMount(async () => {
+    autoSyncEnabled = loadAutoSyncEnabled();
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
@@ -1643,6 +1814,12 @@
     } else {
       persistLastSaveName(currentSaveName);
     }
+
+    autoSyncIntervalId = window.setInterval(() => {
+      autoSyncTick().catch(error => {
+        console.error('Auto sync tick failed:', error);
+      });
+    }, 10_000);
   });
 
   onDestroy(() => {
@@ -1651,7 +1828,23 @@
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
+    if (cloudSyncTimeoutId !== null) {
+      window.clearTimeout(cloudSyncTimeoutId);
+      cloudSyncTimeoutId = null;
+    }
+    if (autoSyncIntervalId !== null) {
+      window.clearInterval(autoSyncIntervalId);
+      autoSyncIntervalId = null;
+    }
   });
+
+  $: if (firebaseReady && authUser && !cloudBootstrapComplete && !cloudBootstrapInProgress) {
+    bootstrapCloudSync();
+  }
+
+  $: if (!authUser) {
+    cloudBootstrapComplete = false;
+  }
 
   $: if (controlsRef) {
     setupControlsObserver();
@@ -1813,10 +2006,12 @@
         {authUser}
         {uploadInProgress}
         {downloadInProgress}
+        {autoSyncEnabled}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
         on:uploadNow={uploadAllLocalToCloud}
         on:downloadNow={downloadAllCloudToLocal}
+        on:toggleAutoSync={toggleAutoSync}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
