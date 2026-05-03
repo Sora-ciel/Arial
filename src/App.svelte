@@ -38,6 +38,7 @@
     return window.innerWidth <= MOBILE_BREAKPOINT ? 'simple' : 'default';
   }
 
+
   function toCssVarName(key) {
     return key
       .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
@@ -823,6 +824,13 @@
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
   let deferredLastSaveReason = '';
+  let cloudNeedsAttachmentUpload = false;
+  let cloudBootstrapInProgress = false;
+  let cloudBootstrapComplete = false;
+  let autoSyncEnabled = true;
+  let autoSyncIntervalId = null;
+  let lastAutoSyncFingerprint = '';
+  let lastAutoSyncAttachmentFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   // --- Undo/Redo history ---
@@ -866,6 +874,11 @@
     });
     savedList = await listSavedBlocks();
   }
+
+  function markCloudAttachmentDirty() {
+    cloudNeedsAttachmentUpload = true;
+  }
+
 
   async function pushHistory(newBlocks, newOrders = modeOrders) {
     const stateSnapshot = cloneState(newBlocks, newOrders, { bumpVersion: true });
@@ -1004,6 +1017,7 @@
 
   function deleteBlockHandler(event) {
     const id = event.detail?.id;
+    const deletingBlock = blocks.find(block => block.id === id);
     blocks = blocks.filter(b => b.id !== id);
     modeOrders = ensureModeOrders(
       blocks,
@@ -1016,6 +1030,9 @@
     );
     if (focusedBlockId === id) {
       focusedBlockId = null;
+    }
+    if (deletingBlock?.type === 'image') {
+      markCloudAttachmentDirty();
     }
     pushHistory(blocks, modeOrders);
   }
@@ -1053,6 +1070,9 @@
 
     if (!actualChangedKeys.length) {
       return;
+    }
+    if (existing.type === 'image' && actualChangedKeys.includes('src')) {
+      markCloudAttachmentDirty();
     }
 
     let shouldSnapshot;
@@ -1123,6 +1143,7 @@
 
     blocks = [...blocks, mediaBlock];
     modeOrders = ensureModeOrders(blocks, modeOrders);
+    markCloudAttachmentDirty();
     await pushHistory(blocks, modeOrders);
   }
 
@@ -1282,6 +1303,7 @@
 
     try {
       await signInWithGoogle();
+      await bootstrapCloudSync();
     } catch (error) {
       console.error(error);
       alert(`Google sign-in failed: ${error?.message || error}`);
@@ -1297,7 +1319,7 @@
     }
   }
 
-  async function uploadAllLocalToCloud() {
+  async function uploadAllLocalToCloud(showInfo = true, options = {}) {
     if (!firebaseReady) {
       alert('Firebase is not configured yet.');
       return;
@@ -1315,19 +1337,74 @@
       const names = await listSavedBlocks();
       let uploadedCount = 0;
 
+      const uploadAttachments = options.uploadAttachments !== false;
+
       for (const fileName of names) {
         const localPayload = await loadBlocks(fileName);
-        await saveRemoteFile(fileName, localPayload);
+        await saveRemoteFile(fileName, localPayload, {
+          uploadAttachments
+        });
         uploadedCount += 1;
       }
 
-      alert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
+      if (showInfo) {
+        alert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
+      }
     } catch (error) {
       console.error(error);
-      alert(`Upload failed: ${error?.message || error}`);
+      if (showInfo) {
+        alert(`Upload failed: ${error?.message || error}`);
+      }
     } finally {
       uploadInProgress = false;
     }
+  }
+
+  async function buildLocalSyncFingerprint() {
+    const names = await listSavedBlocks();
+    const entries = await Promise.all(
+      names.map(async fileName => {
+        const payload = await loadBlocks(fileName);
+        const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
+        const attachmentSignature = blocks
+          .map(block => {
+            if (block?.type !== 'image') return '';
+            return `${block.id}:${block.src || ''}:${block.content || ''}:${block.trackUrl || ''}`;
+          })
+          .filter(Boolean)
+          .join('|');
+
+        return {
+          fingerprint: `${fileName}:${Number(payload?.updatedAt || 0)}`,
+          attachmentFingerprint: `${fileName}:${attachmentSignature}`
+        };
+      })
+    );
+    const fingerprint = entries.map(entry => entry.fingerprint).sort().join('|');
+    const attachmentFingerprint = entries
+      .map(entry => entry.attachmentFingerprint)
+      .sort()
+      .join('|');
+
+    return { fingerprint, attachmentFingerprint };
+  }
+
+  async function autoSyncTick() {
+    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
+    const { fingerprint, attachmentFingerprint } = await buildLocalSyncFingerprint();
+    if (!fingerprint || fingerprint === lastAutoSyncFingerprint) return;
+
+    const attachmentsChanged = attachmentFingerprint !== lastAutoSyncAttachmentFingerprint;
+    await uploadAllLocalToCloud(false, {
+      uploadAttachments: attachmentsChanged
+    });
+
+    lastAutoSyncFingerprint = fingerprint;
+    lastAutoSyncAttachmentFingerprint = attachmentFingerprint;
+  }
+
+  function toggleAutoSync() {
+    autoSyncEnabled = !autoSyncEnabled;
   }
 
   async function downloadAllCloudToLocal() {
@@ -1363,6 +1440,53 @@
       alert(`Download failed: ${error?.message || error}`);
     } finally {
       downloadInProgress = false;
+    }
+  }
+
+  async function bootstrapCloudSync() {
+    if (!firebaseReady || !authUser) return;
+    if (cloudBootstrapInProgress) return;
+
+    cloudBootstrapInProgress = true;
+    try {
+      const [localNames, remoteIndex] = await Promise.all([
+        listSavedBlocks(),
+        loadRemoteIndex()
+      ]);
+      const remoteNames = Object.keys(remoteIndex || {});
+      const localNameSet = new Set(localNames);
+      const remoteNameSet = new Set(remoteNames);
+
+      for (const remoteName of remoteNames) {
+        const remoteMeta = remoteIndex?.[remoteName] || {};
+        const localPayload = localNameSet.has(remoteName)
+          ? await loadBlocks(remoteName)
+          : null;
+        const localUpdatedAt = Number(localPayload?.updatedAt || 0);
+        const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+
+        if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+          const remotePayload = await loadRemoteFile(remoteName);
+          if (remotePayload) {
+            await saveBlocks(remoteName, remotePayload);
+          }
+        }
+      }
+
+      for (const localName of localNames) {
+        if (remoteNameSet.has(localName)) continue;
+        const localPayload = await loadBlocks(localName);
+        await saveRemoteFile(localName, localPayload, { uploadAttachments: true });
+      }
+
+      savedList = await listSavedBlocks();
+      cloudBootstrapComplete = true;
+    } catch (error) {
+      console.error('Cloud bootstrap sync failed:', error);
+      // Do not block regular autosync forever if bootstrap fails.
+      cloudBootstrapComplete = true;
+    } finally {
+      cloudBootstrapInProgress = false;
     }
   }
 
@@ -1643,6 +1767,12 @@
     } else {
       persistLastSaveName(currentSaveName);
     }
+
+    autoSyncIntervalId = window.setInterval(() => {
+      autoSyncTick().catch(error => {
+        console.error('Auto sync tick failed:', error);
+      });
+    }, 300_000);
   });
 
   onDestroy(() => {
@@ -1651,7 +1781,19 @@
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
+    if (autoSyncIntervalId !== null) {
+      window.clearInterval(autoSyncIntervalId);
+      autoSyncIntervalId = null;
+    }
   });
+
+  $: if (firebaseReady && authUser && !cloudBootstrapComplete && !cloudBootstrapInProgress) {
+    bootstrapCloudSync();
+  }
+
+  $: if (!authUser) {
+    cloudBootstrapComplete = false;
+  }
 
   $: if (controlsRef) {
     setupControlsObserver();
@@ -1813,10 +1955,12 @@
         {authUser}
         {uploadInProgress}
         {downloadInProgress}
+        {autoSyncEnabled}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
         on:uploadNow={uploadAllLocalToCloud}
         on:downloadNow={downloadAllCloudToLocal}
+        on:toggleAutoSync={toggleAutoSync}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
