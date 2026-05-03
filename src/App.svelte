@@ -1778,7 +1778,7 @@
       autoSyncTick().catch(error => {
         console.error('Auto sync tick failed:', error);
       });
-    }, 300_000);
+    }, 10_000);
 
     autoSyncTick().catch(error => {
       console.error('Initial auto sync tick failed:', error);
