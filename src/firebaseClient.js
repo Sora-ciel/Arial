@@ -181,11 +181,14 @@ export async function loadRemoteIndex() {
   return snapshot.exists() ? snapshot.val() : {};
 }
 
-export async function saveRemoteFile(fileId, payload) {
+export async function saveRemoteFile(fileId, payload, options = {}) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
-  const payloadWithRemoteAttachments = await uploadBlockAttachments(fileId, payload, ctx, user.uid);
+  const shouldUploadAttachments = options.uploadAttachments !== false;
+  const payloadWithRemoteAttachments = shouldUploadAttachments
+    ? await uploadBlockAttachments(fileId, payload, ctx, user.uid)
+    : payload;
   const updatedAt = payload?.updatedAt || Date.now();
 
   await ctx.dbApi.set(
