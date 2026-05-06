@@ -1413,7 +1413,7 @@
     const remoteIndex = await loadRemoteIndex();
     const remoteEntries = Object.entries(remoteIndex || {});
     const remoteFingerprint = remoteEntries
-      .map(([fileName, meta]) => `${fileName}:${Number(meta?.updatedAt || 0)}`)
+      .map(([fileName, meta]) => `${fileName}:${Number(meta?.modifiedAt || meta?.updatedAt || 0)}`)
       .sort()
       .join('|');
 
@@ -1422,10 +1422,10 @@
     let downloadedAny = false;
     for (const [fileName, remoteMeta] of remoteEntries) {
       const localPayload = savedList.includes(fileName) ? await loadBlocks(fileName) : null;
-      const localUpdatedAt = Number(localPayload?.updatedAt || 0);
-      const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+      const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
+      const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
 
-      if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+      if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
         await saveBlocks(fileName, remotePayload);
@@ -1514,10 +1514,10 @@
         const localPayload = localNameSet.has(remoteName)
           ? await loadBlocks(remoteName)
           : null;
-        const localUpdatedAt = Number(localPayload?.updatedAt || 0);
-        const remoteUpdatedAt = Number(remoteMeta?.updatedAt || 0);
+        const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
+        const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
 
-        if (!localPayload || remoteUpdatedAt > localUpdatedAt) {
+        if (!localPayload || remoteModifiedAt > localModifiedAt) {
           const remotePayload = await loadRemoteFile(remoteName);
           if (remotePayload) {
             await saveBlocks(remoteName, remotePayload);

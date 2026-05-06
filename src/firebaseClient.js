@@ -190,10 +190,12 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
     ? await uploadBlockAttachments(fileId, payload, ctx, user.uid)
     : payload;
   const updatedAt = payload?.updatedAt || Date.now();
+  const modifiedAt = payload?.modifiedAt || payload?.updatedAt || Date.now();
+  const lastSyncedAt = Date.now();
 
   await ctx.dbApi.set(
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
-    { ...payloadWithRemoteAttachments, updatedAt }
+    { ...payloadWithRemoteAttachments, updatedAt, modifiedAt, lastSyncedAt }
   );
 
   await ctx.dbApi.set(
@@ -201,6 +203,8 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
     {
       fileId,
       updatedAt,
+      modifiedAt,
+      lastSyncedAt,
       blockCount: Array.isArray(payloadWithRemoteAttachments?.blocks) ? payloadWithRemoteAttachments.blocks.length : 0
     }
   );

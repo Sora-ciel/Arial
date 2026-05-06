@@ -11,7 +11,8 @@ function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
     return {
       blocks: payload,
       modeOrders: {},
-      updatedAt
+      updatedAt,
+      modifiedAt: updatedAt
     };
   }
 
@@ -19,13 +20,16 @@ function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
     return {
       blocks: [],
       modeOrders: {},
-      updatedAt
+      updatedAt,
+      modifiedAt: updatedAt
     };
   }
 
+  const modifiedAt = payload.modifiedAt || payload.updatedAt || updatedAt;
   return {
     ...payload,
-    updatedAt: payload.updatedAt || updatedAt
+    updatedAt: payload.updatedAt || updatedAt,
+    modifiedAt
   };
 }
 
