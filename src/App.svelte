@@ -827,6 +827,7 @@
   let cloudNeedsAttachmentUpload = false;
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
+  let cloudSyncGateInProgress = false;
   let autoSyncEnabled = true;
   let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
@@ -1428,6 +1429,28 @@
       if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
+        if (localPayload && localModifiedAt > 0 && remoteModifiedAt !== localModifiedAt) {
+          const decision = window.prompt(
+            `Sync conflict for "${fileName}".\nType: remote / local / both / skip`,
+            'remote'
+          );
+          const normalizedDecision = String(decision || 'skip').trim().toLowerCase();
+          if (normalizedDecision === 'local') {
+            await saveRemoteFile(fileName, localPayload, { uploadAttachments: true });
+            continue;
+          }
+          if (normalizedDecision === 'both') {
+            const localCloneName = `${fileName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            const remoteCloneName = `${fileName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            await saveBlocks(localCloneName, localPayload);
+            await saveBlocks(remoteCloneName, remotePayload);
+            downloadedAny = true;
+            continue;
+          }
+          if (normalizedDecision === 'skip') {
+            continue;
+          }
+        }
         await saveBlocks(fileName, remotePayload);
         downloadedAny = true;
       }
@@ -1467,8 +1490,25 @@
     autoSyncDirty = false;
   }
 
-  function toggleAutoSync() {
-    autoSyncEnabled = !autoSyncEnabled;
+  async function toggleAutoSync() {
+    if (autoSyncEnabled) {
+      autoSyncEnabled = false;
+      return;
+    }
+
+    if (!firebaseReady || !authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
+
+    cloudSyncGateInProgress = true;
+    try {
+      await bootstrapCloudSync({ interactiveConflictResolution: true });
+      autoSyncEnabled = true;
+      autoSyncDirty = true;
+    } finally {
+      cloudSyncGateInProgress = false;
+    }
   }
 
   async function downloadAllCloudToLocal() {
@@ -1495,7 +1535,7 @@
     }
   }
 
-  async function bootstrapCloudSync() {
+  async function bootstrapCloudSync(options = {}) {
     if (!firebaseReady || !authUser) return;
     if (cloudBootstrapInProgress) return;
 
@@ -1520,6 +1560,27 @@
         if (!localPayload || remoteModifiedAt > localModifiedAt) {
           const remotePayload = await loadRemoteFile(remoteName);
           if (remotePayload) {
+            if (options.interactiveConflictResolution && localPayload && localModifiedAt > 0 && remoteModifiedAt !== localModifiedAt) {
+              const decision = window.prompt(
+                `Sync conflict for "${remoteName}".\nType: remote / local / both / skip`,
+                'remote'
+              );
+              const normalizedDecision = String(decision || 'skip').trim().toLowerCase();
+              if (normalizedDecision === 'local') {
+                await saveRemoteFile(remoteName, localPayload, { uploadAttachments: true });
+                continue;
+              }
+              if (normalizedDecision === 'both') {
+                const localCloneName = `${remoteName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+                const remoteCloneName = `${remoteName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+                await saveBlocks(localCloneName, localPayload);
+                await saveBlocks(remoteCloneName, remotePayload);
+                continue;
+              }
+              if (normalizedDecision === 'skip') {
+                continue;
+              }
+            }
             await saveBlocks(remoteName, remotePayload);
           }
         }
@@ -1962,6 +2023,25 @@
   overflow: hidden; /* so canvas doesn’t spill */
 }
 
+.modes.sync-lock-active {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.sync-lock-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 201, 40, 0.16);
+  border: 1px solid rgba(255, 201, 40, 0.5);
+  color: #ffd86c;
+  font-size: 0.9rem;
+}
+
 
 /* Optional: make it more mobile-friendly */
 /* Mobile adjustments */
@@ -2049,7 +2129,10 @@
     </div>
   {/if}
 
-  <div class="modes" role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+  <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+    {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
+      <div class="sync-lock-banner">Sync check in progress… editing is temporarily paused.</div>
+    {/if}
     <ModeArea
       {mode}
       blocks={modeOrderedBlocks}
