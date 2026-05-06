@@ -162,11 +162,28 @@ export async function loadRemoteFile(fileId) {
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
 
-  const snapshot = await ctx.dbApi.get(
+  const metadataSnapshot = await ctx.dbApi.get(
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))
   );
 
-  return snapshot.exists() ? snapshot.val() : null;
+  if (!metadataSnapshot.exists()) return null;
+  const metadata = metadataSnapshot.val() || {};
+  if (!metadata.storagePath) return null;
+
+  const storageRef = ctx.storageApi.ref(ctx.storage, metadata.storagePath);
+  const downloadUrl = await ctx.storageApi.getDownloadURL(storageRef);
+  const response = await fetch(downloadUrl);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch remote file snapshot for ${fileId}.`);
+  }
+
+  const payload = await response.json();
+  return {
+    ...payload,
+    updatedAt: metadata.updatedAt || payload?.updatedAt || null,
+    version: metadata.version || payload?.version || null,
+    _remoteMeta: metadata
+  };
 }
 
 export async function loadRemoteIndex() {
@@ -190,22 +207,54 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
     ? await uploadBlockAttachments(fileId, payload, ctx, user.uid)
     : payload;
   const updatedAt = payload?.updatedAt || Date.now();
+  const version = Number(payload?.version) || 1;
+  const storagePath = getStorageUserPath(user.uid, `files/${fileId}/latest.json`);
+  const payloadSnapshot = {
+    ...payloadWithRemoteAttachments,
+    fileId,
+    updatedAt,
+    version
+  };
 
-  await ctx.dbApi.set(
-    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
-    { ...payloadWithRemoteAttachments, updatedAt }
-  );
+  const payloadText = JSON.stringify(payloadSnapshot);
+  const payloadSize = new Blob([payloadText]).size;
+  const storageRef = ctx.storageApi.ref(ctx.storage, storagePath);
+
+  await ctx.storageApi.uploadString(storageRef, payloadText, 'raw', {
+    contentType: 'application/json',
+    cacheControl: 'no-cache'
+  });
 
   await ctx.dbApi.set(
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `index/${fileId}`)),
     {
       fileId,
       updatedAt,
-      blockCount: Array.isArray(payloadWithRemoteAttachments?.blocks) ? payloadWithRemoteAttachments.blocks.length : 0
+      version,
+      storagePath,
+      size: payloadSize,
+      status: 'uploaded',
+      blockCount: Array.isArray(payloadWithRemoteAttachments?.blocks) ? payloadWithRemoteAttachments.blocks.length : 0,
+      title: payloadWithRemoteAttachments?.title || null,
+      preview: payloadWithRemoteAttachments?.preview || null
     }
   );
 
-  return { fileId, updatedAt };
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
+    {
+      fileId,
+      updatedAt,
+      version,
+      storagePath,
+      size: payloadSize,
+      status: 'uploaded',
+      title: payloadWithRemoteAttachments?.title || null,
+      preview: payloadWithRemoteAttachments?.preview || null
+    }
+  );
+
+  return { fileId, updatedAt, version, storagePath, size: payloadSize };
 }
 
 export async function deleteRemoteFile(fileId) {
@@ -215,7 +264,10 @@ export async function deleteRemoteFile(fileId) {
 
   await Promise.all([
     ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))),
-    ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `index/${fileId}`)))
+    ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `index/${fileId}`))),
+    ctx.storageApi.deleteObject(
+      ctx.storageApi.ref(ctx.storage, getStorageUserPath(user.uid, `files/${fileId}/latest.json`))
+    ).catch(() => {})
   ]);
 
   return { fileId };
