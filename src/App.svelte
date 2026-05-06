@@ -1209,23 +1209,6 @@
   function handleModeDragOver(event) {
     event.preventDefault();
   }
-  async function save() {
-    const trimmedName = currentSaveName.trim();
-    if (!trimmedName) {
-      return;
-    }
-
-    if (trimmedName !== currentSaveName) {
-      currentSaveName = trimmedName;
-    }
-
-    if (hasUnsnapshottedChanges) {
-      await pushHistory(blocks, modeOrders);
-    } else {
-      await persistAutosave(blocks, modeOrders);
-      hasUnsnapshottedChanges = false;
-    }
-  }
 
   async function createNewFile() {
     const proposedName = window.prompt('Enter a name for the new file:');
@@ -2089,7 +2072,6 @@
       {birthdayUnlockMessage}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
-      on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
       on:setMode={(e) => setMode(e.detail)}
