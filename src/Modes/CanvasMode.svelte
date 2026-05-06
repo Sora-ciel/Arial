@@ -222,7 +222,7 @@
 
   function updateEdgePanFromPointer(event) {
     if (!canvasRef) return;
-    if (scale <= getViewportScaleFloor()) {
+    if (!event.ctrlKey || scale <= getViewportScaleFloor()) {
       stopEdgePan();
       return;
     }
