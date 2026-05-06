@@ -827,6 +827,9 @@
   let cloudNeedsAttachmentUpload = false;
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
+  let cloudSyncGateInProgress = false;
+  let pendingSyncConflict = null;
+  let resolveConflictChoice = null;
   let autoSyncEnabled = true;
   let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
@@ -835,6 +838,25 @@
   let lastAutoSyncAttachmentFingerprint = '';
   let lastRemoteSyncFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
+
+  async function askSyncConflictChoice(fileName, localModifiedAt, remoteModifiedAt) {
+    pendingSyncConflict = {
+      fileName,
+      localModifiedAt,
+      remoteModifiedAt
+    };
+    return await new Promise(resolve => {
+      resolveConflictChoice = resolve;
+    });
+  }
+
+  function chooseSyncConflict(option) {
+    if (!resolveConflictChoice) return;
+    const resolve = resolveConflictChoice;
+    resolveConflictChoice = null;
+    pendingSyncConflict = null;
+    resolve(option);
+  }
 
   // --- Undo/Redo history ---
   let history = [];
@@ -1428,7 +1450,28 @@
       if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
+        if (localPayload && localModifiedAt > 0 && remoteModifiedAt !== localModifiedAt) {
+          const normalizedDecision = await askSyncConflictChoice(fileName, localModifiedAt, remoteModifiedAt);
+          if (normalizedDecision === 'local') {
+            await saveRemoteFile(fileName, localPayload, { uploadAttachments: true });
+            continue;
+          }
+          if (normalizedDecision === 'both') {
+            const localCloneName = `${fileName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            const remoteCloneName = `${fileName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            await saveBlocks(localCloneName, localPayload);
+            await saveRemoteFile(localCloneName, localPayload, { uploadAttachments: true });
+            await saveBlocks(remoteCloneName, remotePayload);
+            await saveRemoteFile(remoteCloneName, remotePayload, { uploadAttachments: true });
+            downloadedAny = true;
+            continue;
+          }
+          if (normalizedDecision === 'skip') {
+            continue;
+          }
+        }
         await saveBlocks(fileName, remotePayload);
+        await saveRemoteFile(fileName, remotePayload, { uploadAttachments: true });
         downloadedAny = true;
       }
     }
@@ -1467,8 +1510,25 @@
     autoSyncDirty = false;
   }
 
-  function toggleAutoSync() {
-    autoSyncEnabled = !autoSyncEnabled;
+  async function toggleAutoSync() {
+    if (autoSyncEnabled) {
+      autoSyncEnabled = false;
+      return;
+    }
+
+    if (!firebaseReady || !authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
+
+    cloudSyncGateInProgress = true;
+    try {
+      await bootstrapCloudSync({ interactiveConflictResolution: true });
+      autoSyncEnabled = true;
+      autoSyncDirty = true;
+    } finally {
+      cloudSyncGateInProgress = false;
+    }
   }
 
   async function downloadAllCloudToLocal() {
@@ -1495,7 +1555,7 @@
     }
   }
 
-  async function bootstrapCloudSync() {
+  async function bootstrapCloudSync(options = {}) {
     if (!firebaseReady || !authUser) return;
     if (cloudBootstrapInProgress) return;
 
@@ -1520,7 +1580,27 @@
         if (!localPayload || remoteModifiedAt > localModifiedAt) {
           const remotePayload = await loadRemoteFile(remoteName);
           if (remotePayload) {
+            if (options.interactiveConflictResolution && localPayload && localModifiedAt > 0 && remoteModifiedAt !== localModifiedAt) {
+              const normalizedDecision = await askSyncConflictChoice(remoteName, localModifiedAt, remoteModifiedAt);
+              if (normalizedDecision === 'local') {
+                await saveRemoteFile(remoteName, localPayload, { uploadAttachments: true });
+                continue;
+              }
+              if (normalizedDecision === 'both') {
+                const localCloneName = `${remoteName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+                const remoteCloneName = `${remoteName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+                await saveBlocks(localCloneName, localPayload);
+                await saveRemoteFile(localCloneName, localPayload, { uploadAttachments: true });
+                await saveBlocks(remoteCloneName, remotePayload);
+                await saveRemoteFile(remoteCloneName, remotePayload, { uploadAttachments: true });
+                continue;
+              }
+              if (normalizedDecision === 'skip') {
+                continue;
+              }
+            }
             await saveBlocks(remoteName, remotePayload);
+            await saveRemoteFile(remoteName, remotePayload, { uploadAttachments: true });
           }
         }
       }
@@ -1962,6 +2042,59 @@
   overflow: hidden; /* so canvas doesn’t spill */
 }
 
+.modes.sync-lock-active {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.sync-lock-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 201, 40, 0.16);
+  border: 1px solid rgba(255, 201, 40, 0.5);
+  color: #ffd86c;
+  font-size: 0.9rem;
+}
+
+.sync-conflict-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1600;
+  display: grid;
+  place-items: center;
+}
+
+.sync-conflict-modal {
+  width: min(620px, calc(100vw - 24px));
+  background: #161820;
+  border: 1px solid #2d3344;
+  border-radius: 14px;
+  padding: 16px;
+  color: #e6e9f2;
+}
+
+.sync-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sync-conflict-actions button {
+  border: 1px solid #39415a;
+  background: #232a3d;
+  color: #f3f6ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
 
 /* Optional: make it more mobile-friendly */
 /* Mobile adjustments */
@@ -2049,7 +2182,10 @@
     </div>
   {/if}
 
-  <div class="modes" role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+  <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+    {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
+      <div class="sync-lock-banner">Sync check in progress… editing is temporarily paused.</div>
+    {/if}
     <ModeArea
       {mode}
       blocks={modeOrderedBlocks}
@@ -2084,4 +2220,21 @@
     on:deleteTheme={handleAdvancedThemeDelete}
     on:duplicateTheme={handleAdvancedThemeDuplicate}
   />
+{/if}
+
+{#if pendingSyncConflict}
+  <div class="sync-conflict-modal-backdrop">
+    <div class="sync-conflict-modal">
+      <h3>Sync conflict detected</h3>
+      <p><strong>File:</strong> {pendingSyncConflict.fileName}</p>
+      <p>Local and cloud have different edits. Choose what to keep and sync.</p>
+      <p><small>Local: {new Date(pendingSyncConflict.localModifiedAt).toLocaleString()} | Cloud: {new Date(pendingSyncConflict.remoteModifiedAt).toLocaleString()}</small></p>
+      <div class="sync-conflict-actions">
+        <button on:click={() => chooseSyncConflict('remote')}>Keep cloud version</button>
+        <button on:click={() => chooseSyncConflict('local')}>Keep local version</button>
+        <button on:click={() => chooseSyncConflict('both')}>Keep both copies</button>
+        <button on:click={() => chooseSyncConflict('skip')}>Skip for now</button>
+      </div>
+    </div>
+  </div>
 {/if}
