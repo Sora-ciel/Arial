@@ -1567,6 +1567,7 @@
     ]);
     const remoteNames = Object.keys(remoteIndex || {});
     const unionNames = new Set([...localNames, ...remoteNames]);
+    let localFilesChangedFromCloud = false;
 
     for (const fileName of unionNames) {
       const hasLocal = localNames.includes(fileName);
@@ -1577,6 +1578,7 @@
       const remoteModifiedAt = Number(remotePayload?.modifiedAt || remotePayload?.updatedAt || 0);
       if (!hasLocal && hasRemote && remotePayload) {
         await saveBlocks(fileName, remotePayload);
+        localFilesChangedFromCloud = true;
         continue;
       }
       if (hasLocal && !hasRemote && localPayload) {
@@ -1606,7 +1608,13 @@
         await saveRemoteFileWithMemory(remoteCloneName, remotePayload, { uploadAttachments: true });
       } else if (decision === 'remote') {
         await saveBlocks(fileName, remotePayload);
+        localFilesChangedFromCloud = true;
       }
+    }
+
+    if (localFilesChangedFromCloud) {
+      savedList = await listSavedBlocks();
+      await remountCurrentSaveIfLoaded();
     }
   }
 
