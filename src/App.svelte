@@ -150,6 +150,7 @@
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
+  const CLOUD_SYNC_MEMORY_STORAGE_KEY = 'cloudSyncMemoryByFile';
   const FALLBACK_SAVE_NAME = 'Fallback';
   const DEFAULT_MODE_SETTINGS = {
     simple: {
@@ -276,6 +277,26 @@
       localStorage.removeItem(BOOT_LOAD_GUARD_STORAGE_KEY);
     } catch (error) {
       /* ignore persistence failures */
+    }
+  }
+
+  function loadCloudSyncMemory() {
+    if (typeof localStorage === 'undefined') return {};
+    try {
+      const raw = localStorage.getItem(CLOUD_SYNC_MEMORY_STORAGE_KEY);
+      const parsed = raw ? JSON.parse(raw) : {};
+      return parsed && typeof parsed === 'object' ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+
+  function persistCloudSyncMemory(memory) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(CLOUD_SYNC_MEMORY_STORAGE_KEY, JSON.stringify(memory || {}));
+    } catch {
+      /* ignore local persistence failure */
     }
   }
 
@@ -827,6 +848,10 @@
   let cloudNeedsAttachmentUpload = false;
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
+  let cloudSyncGateInProgress = false;
+  let pendingSyncConflict = null;
+  let resolveConflictChoice = null;
+  let cloudSyncMemoryByFile = loadCloudSyncMemory();
   let autoSyncEnabled = true;
   let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
@@ -835,6 +860,42 @@
   let lastAutoSyncAttachmentFingerprint = '';
   let lastRemoteSyncFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
+
+  function rememberCloudSyncForFile(fileName, syncedAt = Date.now()) {
+    cloudSyncMemoryByFile = {
+      ...cloudSyncMemoryByFile,
+      [fileName]: Number(syncedAt) || Date.now()
+    };
+    persistCloudSyncMemory(cloudSyncMemoryByFile);
+  }
+
+  async function saveRemoteFileWithMemory(fileName, payload, options = {}) {
+    const result = await saveRemoteFile(fileName, payload, options);
+    const syncedAt = Date.now();
+    rememberCloudSyncForFile(fileName, syncedAt);
+    return result;
+  }
+
+  async function askSyncConflictChoice(fileName, localModifiedAt, remoteModifiedAt, localLastSyncedAt = 0, remoteLastSyncedAt = 0) {
+    pendingSyncConflict = {
+      fileName,
+      localModifiedAt,
+      remoteModifiedAt,
+      localLastSyncedAt,
+      remoteLastSyncedAt
+    };
+    return await new Promise(resolve => {
+      resolveConflictChoice = resolve;
+    });
+  }
+
+  function chooseSyncConflict(option) {
+    if (!resolveConflictChoice) return;
+    const resolve = resolveConflictChoice;
+    resolveConflictChoice = null;
+    pendingSyncConflict = null;
+    resolve(option);
+  }
 
   // --- Undo/Redo history ---
   let history = [];
@@ -1352,7 +1413,7 @@
 
       for (const fileName of names) {
         const localPayload = await loadBlocks(fileName);
-        await saveRemoteFile(fileName, localPayload, {
+        await saveRemoteFileWithMemory(fileName, localPayload, {
           uploadAttachments
         });
         uploadedCount += 1;
@@ -1423,12 +1484,42 @@
     for (const [fileName, remoteMeta] of remoteEntries) {
       const localPayload = savedList.includes(fileName) ? await loadBlocks(fileName) : null;
       const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
+      const localUpdatedAt = Number(localPayload?.updatedAt || localPayload?.modifiedAt || 0);
       const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
+      const remoteUpdatedAt = Number(remoteMeta?.updatedAt || remoteMeta?.modifiedAt || 0);
+      const localLastSyncedAt = Number(cloudSyncMemoryByFile?.[fileName] || 0);
+      const remoteLastSyncedAt = Number(remoteMeta?.lastSyncedAt || 0);
 
       if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
+        const cloudClearlyNewer =
+          remoteModifiedAt > localModifiedAt &&
+          remoteUpdatedAt > localUpdatedAt &&
+          remoteLastSyncedAt >= localLastSyncedAt;
+
+        if (localPayload && localModifiedAt > 0 && remoteModifiedAt !== localModifiedAt && !cloudClearlyNewer) {
+          const normalizedDecision = await askSyncConflictChoice(fileName, localModifiedAt, remoteModifiedAt, localLastSyncedAt, remoteLastSyncedAt);
+          if (normalizedDecision === 'local') {
+            await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments: true });
+            continue;
+          }
+          if (normalizedDecision === 'both') {
+            const localCloneName = `${fileName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            const remoteCloneName = `${fileName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+            await saveBlocks(localCloneName, localPayload);
+            await saveRemoteFileWithMemory(localCloneName, localPayload, { uploadAttachments: true });
+            await saveBlocks(remoteCloneName, remotePayload);
+            await saveRemoteFileWithMemory(remoteCloneName, remotePayload, { uploadAttachments: true });
+            downloadedAny = true;
+            continue;
+          }
+          if (normalizedDecision === 'skip') {
+            continue;
+          }
+        }
         await saveBlocks(fileName, remotePayload);
+        await saveRemoteFileWithMemory(fileName, remotePayload, { uploadAttachments: true });
         downloadedAny = true;
       }
     }
@@ -1451,13 +1542,15 @@
     await pullRemoteUpdatesIfNeeded();
   }
 
-  async function autoSyncUploadTick() {
+  async function autoSyncUploadTick(options = {}) {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
-    if (!autoSyncDirty) return;
+    const force = options.force === true;
+    if (!autoSyncDirty && !force) return;
     const { fingerprint, attachmentFingerprint } = await buildLocalSyncFingerprint();
-    if (!fingerprint || fingerprint === lastAutoSyncFingerprint) return;
+    if (!fingerprint) return;
+    if (!force && fingerprint === lastAutoSyncFingerprint) return;
 
-    const attachmentsChanged = attachmentFingerprint !== lastAutoSyncAttachmentFingerprint;
+    const attachmentsChanged = force || attachmentFingerprint !== lastAutoSyncAttachmentFingerprint;
     await uploadAllLocalToCloud(false, {
       uploadAttachments: attachmentsChanged
     });
@@ -1467,8 +1560,84 @@
     autoSyncDirty = false;
   }
 
-  function toggleAutoSync() {
-    autoSyncEnabled = !autoSyncEnabled;
+  async function reconcileDiffsOnAutoSyncEnable() {
+    const [localNames, remoteIndex] = await Promise.all([
+      listSavedBlocks(),
+      loadRemoteIndex()
+    ]);
+    const remoteNames = Object.keys(remoteIndex || {});
+    const unionNames = new Set([...localNames, ...remoteNames]);
+    let localChanged = false;
+
+    for (const fileName of unionNames) {
+      const hasLocal = localNames.includes(fileName);
+      const hasRemote = remoteNames.includes(fileName);
+      const localPayload = hasLocal ? await loadBlocks(fileName) : null;
+      const remotePayload = hasRemote ? await loadRemoteFile(fileName) : null;
+      const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
+      const remoteModifiedAt = Number(remotePayload?.modifiedAt || remotePayload?.updatedAt || 0);
+      if (!hasLocal && hasRemote && remotePayload) {
+        await saveBlocks(fileName, remotePayload);
+        localChanged = true;
+        continue;
+      }
+      if (hasLocal && !hasRemote && localPayload) {
+        await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments: true });
+        continue;
+      }
+      if (!hasLocal || !hasRemote || localModifiedAt === remoteModifiedAt) continue;
+
+      const localLastSyncedAt = Number(cloudSyncMemoryByFile?.[fileName] || 0);
+      const remoteLastSyncedAt = Number(remotePayload?.lastSyncedAt || 0);
+      const decision = await askSyncConflictChoice(
+        fileName,
+        localModifiedAt,
+        remoteModifiedAt,
+        localLastSyncedAt,
+        remoteLastSyncedAt
+      );
+
+      if (decision === 'local') {
+        await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments: true });
+      } else if (decision === 'both') {
+        const localCloneName = `${fileName} (local ${new Date(localModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+        const remoteCloneName = `${fileName} (cloud ${new Date(remoteModifiedAt).toISOString().slice(0, 19).replace('T', ' ')})`;
+        await saveBlocks(localCloneName, localPayload);
+        await saveRemoteFileWithMemory(localCloneName, localPayload, { uploadAttachments: true });
+        await saveBlocks(remoteCloneName, remotePayload);
+        await saveRemoteFileWithMemory(remoteCloneName, remotePayload, { uploadAttachments: true });
+        localChanged = true;
+      } else if (decision === 'remote') {
+        await saveBlocks(fileName, remotePayload);
+        localChanged = true;
+      }
+    }
+
+    if (localChanged) {
+      savedList = await listSavedBlocks();
+      await remountCurrentSaveIfLoaded();
+    }
+  }
+
+  async function toggleAutoSync() {
+    if (autoSyncEnabled) {
+      autoSyncEnabled = false;
+      return;
+    }
+
+    if (!firebaseReady || !authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
+
+    cloudSyncGateInProgress = true;
+    try {
+      await reconcileDiffsOnAutoSyncEnable();
+      autoSyncEnabled = true;
+      autoSyncDirty = true;
+    } finally {
+      cloudSyncGateInProgress = false;
+    }
   }
 
   async function downloadAllCloudToLocal() {
@@ -1509,31 +1678,33 @@
       const localNameSet = new Set(localNames);
       const remoteNameSet = new Set(remoteNames);
 
-      for (const remoteName of remoteNames) {
-        const remoteMeta = remoteIndex?.[remoteName] || {};
-        const localPayload = localNameSet.has(remoteName)
-          ? await loadBlocks(remoteName)
-          : null;
-        const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
-        const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
-
-        if (!localPayload || remoteModifiedAt > localModifiedAt) {
-          const remotePayload = await loadRemoteFile(remoteName);
-          if (remotePayload) {
-            await saveBlocks(remoteName, remotePayload);
-          }
+      // Simple sync policy:
+      // 1) First time account (no cloud files): upload all local files.
+      // 2) Existing cloud account (has cloud files): download cloud files locally.
+      if (remoteNames.length === 0) {
+        for (const localName of localNames) {
+          const localPayload = await loadBlocks(localName);
+          await saveRemoteFileWithMemory(localName, localPayload, { uploadAttachments: true });
         }
+
+        savedList = await listSavedBlocks();
+        cloudBootstrapComplete = true;
+        autoSyncDirty = false;
+        return;
       }
 
-      for (const localName of localNames) {
-        if (remoteNameSet.has(localName)) continue;
-        const localPayload = await loadBlocks(localName);
-        await saveRemoteFile(localName, localPayload, { uploadAttachments: true });
+      // Existing account: cloud is source of truth during bootstrap.
+      for (const remoteName of remoteNames) {
+        const remotePayload = await loadRemoteFile(remoteName);
+        if (remotePayload) {
+          await saveBlocks(remoteName, remotePayload);
+          rememberCloudSyncForFile(remoteName, Number(remotePayload?.lastSyncedAt || Date.now()));
+        }
       }
 
       savedList = await listSavedBlocks();
       cloudBootstrapComplete = true;
-      autoSyncDirty = true;
+      autoSyncDirty = false;
     } catch (error) {
       console.error('Cloud bootstrap sync failed:', error);
       // Do not block regular autosync forever if bootstrap fails.
@@ -1962,6 +2133,59 @@
   overflow: hidden; /* so canvas doesn’t spill */
 }
 
+.modes.sync-lock-active {
+  pointer-events: none;
+  opacity: 0.8;
+}
+
+.sync-lock-banner {
+  position: fixed;
+  top: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1300;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(255, 201, 40, 0.16);
+  border: 1px solid rgba(255, 201, 40, 0.5);
+  color: #ffd86c;
+  font-size: 0.9rem;
+}
+
+.sync-conflict-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  z-index: 1600;
+  display: grid;
+  place-items: center;
+}
+
+.sync-conflict-modal {
+  width: min(620px, calc(100vw - 24px));
+  background: #161820;
+  border: 1px solid #2d3344;
+  border-radius: 14px;
+  padding: 16px;
+  color: #e6e9f2;
+}
+
+.sync-conflict-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.sync-conflict-actions button {
+  border: 1px solid #39415a;
+  background: #232a3d;
+  color: #f3f6ff;
+  border-radius: 8px;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
 
 /* Optional: make it more mobile-friendly */
 /* Mobile adjustments */
@@ -2049,7 +2273,10 @@
     </div>
   {/if}
 
-  <div class="modes" role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+  <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+    {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
+      <div class="sync-lock-banner">Sync check in progress… editing is temporarily paused.</div>
+    {/if}
     <ModeArea
       {mode}
       blocks={modeOrderedBlocks}
@@ -2084,4 +2311,22 @@
     on:deleteTheme={handleAdvancedThemeDelete}
     on:duplicateTheme={handleAdvancedThemeDuplicate}
   />
+{/if}
+
+{#if pendingSyncConflict}
+  <div class="sync-conflict-modal-backdrop">
+    <div class="sync-conflict-modal">
+      <h3>Sync conflict detected</h3>
+      <p><strong>File:</strong> {pendingSyncConflict.fileName}</p>
+      <p>Local and cloud have different edits. Choose what to keep and sync.</p>
+      <p><small>Local modified: {new Date(pendingSyncConflict.localModifiedAt).toLocaleString()} | Cloud modified: {new Date(pendingSyncConflict.remoteModifiedAt).toLocaleString()}</small></p>
+      <p><small>Local last cloud update: {pendingSyncConflict.localLastSyncedAt ? new Date(pendingSyncConflict.localLastSyncedAt).toLocaleString() : 'Never'} | Cloud last update: {pendingSyncConflict.remoteLastSyncedAt ? new Date(pendingSyncConflict.remoteLastSyncedAt).toLocaleString() : 'Unknown'}</small></p>
+      <div class="sync-conflict-actions">
+        <button on:click={() => chooseSyncConflict('remote')}>Keep cloud version</button>
+        <button on:click={() => chooseSyncConflict('local')}>Keep local version</button>
+        <button on:click={() => chooseSyncConflict('both')}>Keep both copies</button>
+        <button on:click={() => chooseSyncConflict('skip')}>Skip for now</button>
+      </div>
+    </div>
+  </div>
 {/if}
