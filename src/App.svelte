@@ -151,6 +151,7 @@
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
   const CLOUD_SYNC_MEMORY_STORAGE_KEY = 'cloudSyncMemoryByFile';
+  const AUTO_SYNC_ENABLED_STORAGE_KEY = 'autoSyncEnabled';
   const FALLBACK_SAVE_NAME = 'Fallback';
   const DEFAULT_MODE_SETTINGS = {
     simple: {
@@ -295,6 +296,26 @@
     if (typeof localStorage === 'undefined') return;
     try {
       localStorage.setItem(CLOUD_SYNC_MEMORY_STORAGE_KEY, JSON.stringify(memory || {}));
+    } catch {
+      /* ignore local persistence failure */
+    }
+  }
+
+  function loadAutoSyncEnabled() {
+    if (typeof localStorage === 'undefined') return true;
+    try {
+      const raw = localStorage.getItem(AUTO_SYNC_ENABLED_STORAGE_KEY);
+      if (raw === null) return true;
+      return raw === 'true';
+    } catch {
+      return true;
+    }
+  }
+
+  function persistAutoSyncEnabled(enabled) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(AUTO_SYNC_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
     } catch {
       /* ignore local persistence failure */
     }
@@ -850,7 +871,7 @@
   let cloudBootstrapComplete = false;
   let cloudSyncGateInProgress = false;
   let cloudSyncMemoryByFile = loadCloudSyncMemory();
-  let autoSyncEnabled = true;
+  let autoSyncEnabled = loadAutoSyncEnabled();
   let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
   let autoSyncDirty = false;
@@ -1209,23 +1230,6 @@
   function handleModeDragOver(event) {
     event.preventDefault();
   }
-  async function save() {
-    const trimmedName = currentSaveName.trim();
-    if (!trimmedName) {
-      return;
-    }
-
-    if (trimmedName !== currentSaveName) {
-      currentSaveName = trimmedName;
-    }
-
-    if (hasUnsnapshottedChanges) {
-      await pushHistory(blocks, modeOrders);
-    } else {
-      await persistAutosave(blocks, modeOrders);
-      hasUnsnapshottedChanges = false;
-    }
-  }
 
   async function createNewFile() {
     const proposedName = window.prompt('Enter a name for the new file:');
@@ -1511,6 +1515,7 @@
   async function toggleAutoSync() {
     if (autoSyncEnabled) {
       autoSyncEnabled = false;
+      persistAutoSyncEnabled(false);
       return;
     }
 
@@ -1520,6 +1525,7 @@
     }
 
     autoSyncEnabled = true;
+    persistAutoSyncEnabled(true);
     autoSyncDirty = true;
     cloudSyncGateInProgress = true;
     try {
@@ -2089,7 +2095,6 @@
       {birthdayUnlockMessage}
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
-      on:save={save}
       on:exportJSON={exportJSON}
       on:importJSON={(e) => importJSON(e.detail)}
       on:setMode={(e) => setMode(e.detail)}

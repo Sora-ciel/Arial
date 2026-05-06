@@ -71,9 +71,6 @@
     dispatch("clear");
   }
 
-  function save() {
-    dispatch("save");
-  }
 
   function exportJSON() {
     dispatch("exportJSON");
@@ -626,7 +623,6 @@ onMount(() => {
       style="display: none"
     />
     <input bind:value={currentSaveName} placeholder="File name" />
-    <button on:click={save}>💾 Save</button>
     {#if isSimpleNoteMode}
       <label class="simple-columns-control mobile-only">
         Columns
