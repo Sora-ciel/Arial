@@ -149,6 +149,7 @@
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
   const LAST_SAVE_STORAGE_KEY = 'lastLoadedSave';
+  const MODE_SETTINGS_STORAGE_KEY = 'modeSettings';
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
   const CLOUD_SYNC_MEMORY_STORAGE_KEY = 'cloudSyncMemoryByFile';
   const AUTO_SYNC_ENABLED_STORAGE_KEY = 'autoSyncEnabled';
@@ -225,6 +226,29 @@
       return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
     } catch (error) {
       return null;
+    }
+  }
+
+  function loadStoredModeSettings() {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const serialized = localStorage.getItem(MODE_SETTINGS_STORAGE_KEY);
+      if (!serialized) return null;
+      return normalizeModeSettings(JSON.parse(serialized));
+    } catch (error) {
+      return null;
+    }
+  }
+
+  function persistModeSettings(settings) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(
+        MODE_SETTINGS_STORAGE_KEY,
+        JSON.stringify(normalizeModeSettings(settings))
+      );
+    } catch (error) {
+      // no-op
     }
   }
 
@@ -823,7 +847,7 @@
   let observedControlsEl;
 
   let mode = getDefaultModeForViewport();
-  let modeSettings = normalizeModeSettings();
+  let modeSettings = normalizeModeSettings(loadStoredModeSettings());
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
@@ -1699,7 +1723,39 @@
       }
     });
     modeSettings = nextModeSettings;
+    persistModeSettings(nextModeSettings);
     await persistAutosave(blocks, modeOrders, nextModeSettings);
+  }
+
+  async function handleSimpleModeReorder(event) {
+    const sourceBlockId = event.detail?.sourceBlockId;
+    const targetBlockId = event.detail?.targetBlockId;
+    const targetColumn = Math.max(0, Number.parseInt(event.detail?.targetColumn, 10) || 0);
+    const placement = event.detail?.placement === 'end' ? 'end' : 'before';
+    const ordersForMode = normalizedModeOrders[mode] || [];
+    const sourceIndex = ordersForMode.indexOf(sourceBlockId);
+    const targetIndex = targetBlockId ? ordersForMode.indexOf(targetBlockId) : -1;
+
+    if (sourceIndex === -1) return;
+    if (targetBlockId && (targetIndex === -1 || sourceIndex === targetIndex)) return;
+
+    const updatedOrder = [...ordersForMode];
+    updatedOrder.splice(sourceIndex, 1);
+    if (placement === 'end' || targetIndex === -1) {
+      updatedOrder.push(sourceBlockId);
+    } else {
+      const insertionIndex = sourceIndex < targetIndex ? targetIndex - 1 : targetIndex;
+      updatedOrder.splice(insertionIndex, 0, sourceBlockId);
+    }
+
+    const updatedBlocks = blocks.map((block) =>
+      block.id === sourceBlockId ? { ...block, simpleColumn: targetColumn } : block
+    );
+    modeOrders = {
+      ...modeOrders,
+      [mode]: updatedOrder
+    };
+    await pushHistory(updatedBlocks, modeOrders);
   }
 
   function setupControlsObserver() {
@@ -2160,6 +2216,7 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
       on:modeSettingChange={handleModeSettingChange}
+      on:reorderBlocks={handleSimpleModeReorder}
     />
   </div>
 </div>
