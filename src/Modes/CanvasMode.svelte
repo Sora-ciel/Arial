@@ -26,7 +26,8 @@
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 4;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
-  const EDGE_PAN_ZONE = 240;
+  const EDGE_PAN_ZONE_HORIZONTAL = 550;
+  const EDGE_PAN_ZONE_VERTICAL = 350;
   const EDGE_PAN_MAX_SPEED = 50;
 
   let scale = 1;
@@ -173,7 +174,27 @@
 
 
   function onWheel(event) {
-    if (!event.ctrlKey || !canvasRef) return;
+    if (!canvasRef) return;
+
+    if (!event.ctrlKey) {
+      const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
+      const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
+      const hasSingleScrollableAxis = canScrollHorizontally !== canScrollVertically;
+
+      if (!hasSingleScrollableAxis) return;
+
+      if (event.cancelable) event.preventDefault();
+      const scrollDelta = Math.abs(event.deltaY) >= Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+
+      if (canScrollVertically) {
+        canvasRef.scrollTop += scrollDelta;
+      } else if (canScrollHorizontally) {
+        canvasRef.scrollLeft += scrollDelta;
+      }
+
+      return;
+    }
+
     if (event.cancelable) event.preventDefault();
 
     const oldScale = scale;
@@ -194,8 +215,8 @@
   }
 
 
-  function getEdgePanStrength(distanceToEdge) {
-    const normalized = Math.max(0, Math.min(1, (EDGE_PAN_ZONE - distanceToEdge) / EDGE_PAN_ZONE));
+  function getEdgePanStrength(distanceToEdge, zoneSize) {
+    const normalized = Math.max(0, Math.min(1, (zoneSize - distanceToEdge) / zoneSize));
     return normalized * normalized;
   }
 
@@ -220,9 +241,19 @@
     edgePanRaf = requestAnimationFrame(stepEdgePan);
   }
 
+
+  function canCtrlEdgePan() {
+    if (!canvasRef) return false;
+
+    const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
+    const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
+
+    return scale > getViewportScaleFloor() || canScrollHorizontally || canScrollVertically;
+  }
+
   function updateEdgePanFromPointer(event) {
     if (!canvasRef) return;
-    if (!event.ctrlKey || scale <= getViewportScaleFloor()) {
+    if (!event.ctrlKey || !canCtrlEdgePan()) {
       stopEdgePan();
       return;
     }
@@ -236,10 +267,10 @@
       return;
     }
 
-    const leftStrength = getEdgePanStrength(localX);
-    const rightStrength = getEdgePanStrength(rect.width - localX);
-    const topStrength = getEdgePanStrength(localY);
-    const bottomStrength = getEdgePanStrength(rect.height - localY);
+    const leftStrength = getEdgePanStrength(localX, EDGE_PAN_ZONE_HORIZONTAL);
+    const rightStrength = getEdgePanStrength(rect.width - localX, EDGE_PAN_ZONE_HORIZONTAL);
+    const topStrength = getEdgePanStrength(localY, EDGE_PAN_ZONE_VERTICAL);
+    const bottomStrength = getEdgePanStrength(rect.height - localY, EDGE_PAN_ZONE_VERTICAL);
 
     edgePanVelocityX = (rightStrength - leftStrength) * EDGE_PAN_MAX_SPEED;
     edgePanVelocityY = (bottomStrength - topStrength) * EDGE_PAN_MAX_SPEED;
@@ -252,6 +283,15 @@
     if (edgePanRaf === null) {
       edgePanRaf = requestAnimationFrame(stepEdgePan);
     }
+  }
+
+
+  function onCtrlMiddleClick(event) {
+    if (!event.ctrlKey || event.button !== 1) return;
+
+    if (event.cancelable) event.preventDefault();
+    stopEdgePan();
+    fitToViewport();
   }
 
   function onMouseMove(event) {
@@ -362,6 +402,7 @@
   on:wheel|nonpassive={onWheel}
   on:mousemove={onMouseMove}
   on:mouseleave={onMouseLeave}
+  on:mousedown={onCtrlMiddleClick}
 >
     <div
       class="canvas-zoom-shell"
