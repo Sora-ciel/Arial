@@ -26,7 +26,7 @@
   const MIN_ZOOM = 0.2;
   const MAX_ZOOM = 4;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
-  const EDGE_PAN_ZONE = 240;
+  const EDGE_PAN_ZONE = 480;
   const EDGE_PAN_MAX_SPEED = 50;
 
   let scale = 1;
@@ -220,9 +220,19 @@
     edgePanRaf = requestAnimationFrame(stepEdgePan);
   }
 
+
+  function canCtrlEdgePan() {
+    if (!canvasRef) return false;
+
+    const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
+    const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
+
+    return scale > getViewportScaleFloor() || canScrollHorizontally || canScrollVertically;
+  }
+
   function updateEdgePanFromPointer(event) {
     if (!canvasRef) return;
-    if (!event.ctrlKey || scale <= getViewportScaleFloor()) {
+    if (!event.ctrlKey || !canCtrlEdgePan()) {
       stopEdgePan();
       return;
     }
