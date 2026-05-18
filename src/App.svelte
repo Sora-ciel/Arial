@@ -158,15 +158,29 @@
       columnCount: 2
     }
   };
+  const SIMPLE_NOTE_COLUMN_STORAGE_KEY = 'simpleNoteColumnCount';
+
+  function loadStoredSimpleNoteColumnCount() {
+    if (typeof localStorage === 'undefined') return DEFAULT_MODE_SETTINGS.simple.columnCount;
+    const parsed = Number.parseInt(localStorage.getItem(SIMPLE_NOTE_COLUMN_STORAGE_KEY), 10);
+    return Math.max(1, Number.isFinite(parsed) ? parsed : DEFAULT_MODE_SETTINGS.simple.columnCount);
+  }
+
+  function persistSimpleNoteColumnCount(columnCount) {
+    if (typeof localStorage === 'undefined') return;
+    const normalized = Math.max(1, Number.parseInt(columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount);
+    localStorage.setItem(SIMPLE_NOTE_COLUMN_STORAGE_KEY, String(normalized));
+  }
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
+    const storedColumnCount = loadStoredSimpleNoteColumnCount();
     return {
       ...DEFAULT_MODE_SETTINGS,
       simple: {
         ...DEFAULT_MODE_SETTINGS.simple,
         ...incomingSimple,
-        columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount)
+        columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || storedColumnCount)
       }
     };
   }
@@ -1702,7 +1716,28 @@
       }
     });
     modeSettings = nextModeSettings;
+    persistSimpleNoteColumnCount(nextColumnCount);
     await persistAutosave(blocks, modeOrders, nextModeSettings);
+  }
+
+  async function handleSimpleBlockReorder(event) {
+    const draggedId = event.detail?.draggedId;
+    const targetId = event.detail?.targetId;
+    if (!draggedId || !targetId || draggedId === targetId) return;
+
+    const ordersForMode = [...(normalizedModeOrders[mode] || [])];
+    const fromIndex = ordersForMode.indexOf(draggedId);
+    const toIndex = ordersForMode.indexOf(targetId);
+    if (fromIndex === -1 || toIndex === -1) return;
+
+    ordersForMode.splice(fromIndex, 1);
+    ordersForMode.splice(toIndex, 0, draggedId);
+
+    modeOrders = {
+      ...modeOrders,
+      [mode]: ordersForMode
+    };
+    await pushHistory(blocks, modeOrders);
   }
 
   function setupControlsObserver() {
@@ -2163,6 +2198,7 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
       on:modeSettingChange={handleModeSettingChange}
+      on:reorderBlocks={handleSimpleBlockReorder}
     />
   </div>
 </div>
