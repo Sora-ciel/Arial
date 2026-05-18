@@ -173,10 +173,38 @@
   }
 
 
+  function shouldLetNestedScrollerHandleWheel(event) {
+    if (!canvasRef) return false;
+
+    let current = event.target;
+    while (current && current !== canvasRef) {
+      if (!(current instanceof Element)) {
+        current = current?.parentElement;
+        continue;
+      }
+
+      const style = getComputedStyle(current);
+      const overflowY = style.overflowY;
+      const overflowX = style.overflowX;
+      const canScrollY = (overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight;
+      const canScrollX = (overflowX === 'auto' || overflowX === 'scroll') && current.scrollWidth > current.clientWidth;
+
+      if (canScrollY || canScrollX) {
+        return true;
+      }
+
+      current = current.parentElement;
+    }
+
+    return false;
+  }
+
   function onWheel(event) {
     if (!canvasRef) return;
 
     if (!event.ctrlKey) {
+      if (shouldLetNestedScrollerHandleWheel(event)) return;
+
       const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
       const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
       const hasSingleScrollableAxis = canScrollHorizontally !== canScrollVertically;
