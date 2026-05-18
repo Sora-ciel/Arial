@@ -115,6 +115,12 @@
     closeBlockMenu();
   }
 
+  function toggleImageEditFromMenu(blockId) {
+    const block = blocks.find((entry) => entry.id === blockId);
+    if (!block || block.type !== 'image') return;
+    updateBlock(blockId, { editing: !block.editing }, { changedKeys: ['editing'] });
+  }
+
   function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
     const detail = { id, ...updates };
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
@@ -252,6 +258,8 @@
   }
 
   function handleImageTouchEnd(event, block) {
+    cancelTouchHold();
+    touchHoldTriggered = false;
     if (!hasImageSource(block)) return;
     const currentTap = Date.now();
     const previousTap = imageTapTracker[block.id] || 0;
@@ -267,6 +275,7 @@
   $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
   );
+  $: menuBlock = blocks.find((block) => block.id === blockMenu.blockId) || null;
 
   // Resize all textareas when component mounts
   onMount(() => {
@@ -458,19 +467,6 @@ li {
   font-size: 0.95rem;
 }
 
-.edit-button {
-  background: transparent;
-  color: var(--text-color);
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.edit-button {
-  align-self: flex-start;
-}
-
 .block-menu {
   position: fixed;
   z-index: 1200;
@@ -489,13 +485,28 @@ li {
   padding: 8px 10px;
   font-size: 0.9rem;
   text-align: left;
-  color: #ff8b8b;
+  color: #f5f5f5;
   background: transparent;
   cursor: pointer;
 }
 
 .block-menu button:hover {
   background: rgba(255, 255, 255, 0.08);
+}
+
+.block-menu .delete-button {
+  color: #ff8b8b;
+}
+
+.menu-image-url {
+  width: 100%;
+  margin-top: 6px;
+  box-sizing: border-box;
+  border-radius: 8px;
+  border: 1px solid #3a3a3a;
+  background: #171717;
+  color: #f5f5f5;
+  padding: 8px 10px;
 }
 
 @media (max-width: 1023px) {
@@ -597,25 +608,6 @@ li {
                 on:change={(event) => handleImageChange(event, block)}
                 data-focus-guard
               />
-              <button
-                class="edit-button"
-                data-focus-guard
-                on:click={() =>
-                  updateBlock(block.id, { editing: !block.editing })
-                }
-              >
-                {block.editing ? 'Done' : 'Edit'}
-              </button>
-              {#if block.editing}
-                <input
-                  type="text"
-                  placeholder="Image URL"
-                  value={block.src}
-                  on:input={(e) => updateBlock(block.id, { src: e.target.value })}
-                  on:focus={() => ensureFocus(block.id)}
-                  data-focus-guard
-                />
-              {/if}
             </li>
 
           {:else if block.type === 'music'}
@@ -647,6 +639,22 @@ li {
 
 {#if blockMenu.blockId}
   <div class="block-menu" style={`left:${blockMenu.x}px; top:${blockMenu.y}px;`}>
-    <button on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
+    {#if menuBlock?.type === 'image'}
+      <button on:click={() => toggleImageEditFromMenu(blockMenu.blockId)}>
+        {menuBlock.editing ? 'Done editing' : 'Edit image'}
+      </button>
+      {#if menuBlock.editing}
+        <input
+          class="menu-image-url"
+          type="text"
+          placeholder="Image URL"
+          value={menuBlock.src}
+          on:input={(event) => updateBlock(menuBlock.id, { src: event.target.value }, { changedKeys: ['src'] })}
+          on:focus={() => ensureFocus(menuBlock.id)}
+          data-focus-guard
+        />
+      {/if}
+    {/if}
+    <button class="delete-button" on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
   </div>
 {/if}
