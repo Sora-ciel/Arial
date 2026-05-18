@@ -1550,12 +1550,15 @@
     if (downloadInProgress) return;
 
     downloadInProgress = true;
+    cloudSyncGateInProgress = true;
     try {
       await pullRemoteUpdatesIfNeeded({ showInfo: true });
+      await remountCurrentSaveIfLoaded();
     } catch (error) {
       console.error(error);
       alert(`Download failed: ${error?.message || error}`);
     } finally {
+      cloudSyncGateInProgress = false;
       downloadInProgress = false;
     }
   }
