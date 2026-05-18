@@ -115,6 +115,12 @@
     closeBlockMenu();
   }
 
+  function toggleImageEditFromMenu(blockId) {
+    const block = blocks.find((entry) => entry.id === blockId);
+    if (!block || block.type !== 'image') return;
+    updateBlock(blockId, { editing: !block.editing }, { changedKeys: ['editing'] });
+  }
+
   function updateBlock(id, updates, { pushToHistory, changedKeys } = {}) {
     const detail = { id, ...updates };
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length
@@ -252,6 +258,8 @@
   }
 
   function handleImageTouchEnd(event, block) {
+    cancelTouchHold();
+    touchHoldTriggered = false;
     if (!hasImageSource(block)) return;
     const currentTap = Date.now();
     const previousTap = imageTapTracker[block.id] || 0;
@@ -458,19 +466,6 @@ li {
   font-size: 0.95rem;
 }
 
-.edit-button {
-  background: transparent;
-  color: var(--text-color);
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.edit-button {
-  align-self: flex-start;
-}
-
 .block-menu {
   position: fixed;
   z-index: 1200;
@@ -597,15 +592,6 @@ li {
                 on:change={(event) => handleImageChange(event, block)}
                 data-focus-guard
               />
-              <button
-                class="edit-button"
-                data-focus-guard
-                on:click={() =>
-                  updateBlock(block.id, { editing: !block.editing })
-                }
-              >
-                {block.editing ? 'Done' : 'Edit'}
-              </button>
               {#if block.editing}
                 <input
                   type="text"
@@ -647,6 +633,11 @@ li {
 
 {#if blockMenu.blockId}
   <div class="block-menu" style={`left:${blockMenu.x}px; top:${blockMenu.y}px;`}>
+    {#if blocks.find((block) => block.id === blockMenu.blockId)?.type === 'image'}
+      <button on:click={() => toggleImageEditFromMenu(blockMenu.blockId)}>
+        {blocks.find((block) => block.id === blockMenu.blockId)?.editing ? 'Done editing' : 'Edit image'}
+      </button>
+    {/if}
     <button on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
   </div>
 {/if}
