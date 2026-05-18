@@ -443,7 +443,7 @@
         style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
-      {#each blocks as block (`${block.id}-${block._version || 0}`)}
+      {#each blocks as block (block.id)}
         {#if block.type === 'text'}
           <TexteBlock
             id={block.id}
