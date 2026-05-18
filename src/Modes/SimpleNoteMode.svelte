@@ -185,6 +185,7 @@
 
   let imageInputRefs = {};
   let imageTapTracker = {};
+  let draggedBlockId = null;
 
   function setImageInputRef(blockId, node) {
     if (node) {
@@ -263,10 +264,45 @@
     }
   }
 
+  function handleDragStart(event, blockId) {
+    draggedBlockId = blockId;
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', blockId);
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+  }
+
+  function handleDrop(event, targetBlockId, targetColumn, placement = 'before') {
+    event.preventDefault();
+    event.stopPropagation();
+    const sourceBlockId = event.dataTransfer.getData('text/plain') || draggedBlockId;
+    draggedBlockId = null;
+    if (!sourceBlockId) return;
+    if (targetBlockId && sourceBlockId === targetBlockId) return;
+    dispatch('reorderBlocks', { sourceBlockId, targetBlockId, targetColumn, placement });
+  }
+
+  function handleDragEnd() {
+    draggedBlockId = null;
+  }
+
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
-  $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
-    blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
-  );
+  $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) => ({ columnIndex, blocks: [] }));
+  $: {
+    renderColumns.forEach((column) => {
+      column.blocks = [];
+    });
+    blocks.forEach((block, blockIndex) => {
+      const savedColumn = Number.parseInt(block.simpleColumn, 10);
+      const normalizedColumn = Number.isInteger(savedColumn) && savedColumn >= 0
+        ? Math.min(savedColumn, normalizedColumnCount - 1)
+        : blockIndex % normalizedColumnCount;
+      renderColumns[normalizedColumn].blocks.push(block);
+    });
+  }
 
   // Resize all textareas when component mounts
   onMount(() => {
@@ -534,8 +570,12 @@ li {
 
 <div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
   {#each renderColumns as column}
-    <div class="simple-column">
-      {#each column as block (blockKey(block))}
+    <div
+      class="simple-column"
+      on:dragover={handleDragOver}
+      on:drop={(event) => handleDrop(event, null, column.columnIndex, 'end')}
+    >
+      {#each column.blocks as block (blockKey(block))}
       <div class="canvas">
         <div
           class="container"
@@ -551,6 +591,11 @@ li {
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
+          draggable="true"
+          on:dragstart={(event) => handleDragStart(event, block.id)}
+          on:dragover={handleDragOver}
+          on:drop={(event) => handleDrop(event, block.id, column.columnIndex, 'before')}
+          on:dragend={handleDragEnd}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
             <textarea
