@@ -5,6 +5,7 @@
   export let focusedBlockId = null;
   export let canvasColors = {};
   export let canvasRef;
+  export let addDirection = 'above';
 
   const dispatch = createEventDispatcher();
 
@@ -62,12 +63,15 @@
     if (!selectedTaskId) return;
     const trimmed = newTaskText.trim();
     if (!trimmed) return;
-    const nextTasks = [
-      ...tasks,
-      { id: crypto.randomUUID(), text: trimmed, done: false }
-    ];
+    const newItem = { id: crypto.randomUUID(), text: trimmed, done: false };
     newTaskText = "";
+    const nextTasks = addDirection === 'above' ? [newItem, ...tasks] : [...tasks, newItem];
     updateTasks(nextTasks, { pushToHistory: true });
+  }
+
+  function toggleDirection() {
+    const next = addDirection === 'above' ? 'below' : 'above';
+    dispatch('modeSettingChange', { taskAddDirection: next });
   }
 
   function toggleTask(taskId) {
@@ -82,11 +86,8 @@
     updateTasks(nextTasks, { pushToHistory: true });
   }
 
-  function handleAddTaskKeydown(event) {
-    if (event.key === "Enter") {
-      event.preventDefault();
-      addTask();
-    }
+  function handleKeydown(event) {
+    if (event.key === "Enter") { event.preventDefault(); addTask(); }
   }
 
   function updateTitle(value, { pushToHistory = false } = {}) {
@@ -265,7 +266,7 @@
 
   .task-input {
     display: flex;
-    gap: 8px;
+    gap: 6px;
   }
 
   .task-input input {
@@ -276,15 +277,24 @@
     background: var(--block-header-bg, rgba(0, 0, 0, 0.2));
     color: var(--block-header-text, inherit);
     font-family: var(--block-body-font, inherit);
+    min-width: 0;
   }
 
-  .task-input button {
+  .task-dir-btn {
+    flex: 0 0 auto;
     padding: 8px 12px;
     border-radius: 10px;
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     background: var(--block-media-button-bg, rgba(255, 255, 255, 0.12));
     color: var(--block-media-button-text, inherit);
     cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    transition: background 0.15s;
+  }
+
+  .task-dir-btn:hover {
+    background: var(--block-media-button-bg, rgba(255, 255, 255, 0.22));
   }
 
   .task-list {
@@ -314,10 +324,17 @@
     flex: 1 1 auto;
   }
 
-  .task-item input[type='checkbox'] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--block-accent-color, #8bd3ff);
+  .circle-check {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .task-item button {
@@ -371,21 +388,37 @@
             <input
               type="text"
               bind:value={newTaskText}
-              on:keydown={handleAddTaskKeydown}
-              placeholder="Add a task"
+              on:keydown={handleKeydown}
+              placeholder="Add a task…"
             />
-            <button on:click={addTask}>Add</button>
+            <button
+              class="task-dir-btn"
+              on:click={toggleDirection}
+              title={addDirection === 'above' ? 'Adding at top — click to add at bottom' : 'Adding at bottom — click to add at top'}
+            >{addDirection === 'above' ? '↑' : '↓'}</button>
           </div>
           {#if todoTasks.length}
             <ul class="task-list">
               {#each todoTasks as task}
                 <li class="task-item">
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={task.done}
-                      on:change={() => toggleTask(task.id)}
-                    />
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="circle-check"
+                      on:click={() => toggleTask(task.id)}
+                      aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+                    >
+                      {#if task.done}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="9" fill="var(--block-header-text, #f5f5f5)" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1"/>
+                          <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--canvas-inner-bg, #000)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      {:else}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1.5" stroke-opacity="0.5"/>
+                        </svg>
+                      {/if}
+                    </button>
                     <span>{task.text}</span>
                   </label>
                   <button
@@ -408,11 +441,23 @@
               {#each doneTasks as task}
                 <li class="task-item">
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={task.done}
-                      on:change={() => toggleTask(task.id)}
-                    />
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="circle-check"
+                      on:click={() => toggleTask(task.id)}
+                      aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+                    >
+                      {#if task.done}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="9" fill="var(--block-header-text, #f5f5f5)" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1"/>
+                          <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--canvas-inner-bg, #000)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      {:else}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1.5" stroke-opacity="0.5"/>
+                        </svg>
+                      {/if}
+                    </button>
                     <span>{task.text}</span>
                   </label>
                   <button

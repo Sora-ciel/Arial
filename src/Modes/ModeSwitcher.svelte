@@ -6,6 +6,7 @@
   import HabitTrackerMode from './HabitTrackerMode.svelte';
   import TaskMode from './TaskMode.svelte';
   import BirthdayMode from './BirthdayMode.svelte';
+  import FileSearcherMode from './FileSearcherMode.svelte';
 
   export let mode; // 'default' or 'simple'
   export let blocks;
@@ -18,6 +19,8 @@
   export let leftControlColors = {};
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
+  export let taskAddDirection = 'above';
+  export let currentSaveName = '';
 
   let width = 0;
 
@@ -86,12 +89,20 @@
       {focusedBlockId}
       bind:canvasRef
       {canvasColors}
+      addDirection={taskAddDirection}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:modeSettingChange
     />
   {:else if mode === 'birthday'}
     <BirthdayMode />
+  {:else if mode === 'files'}
+    <FileSearcherMode
+      {canvasColors}
+      {currentSaveName}
+      on:shareContent={(e) => dispatch('shareContent', e.detail)}
+    />
   {:else}
     <SingleNoteMode
       {blocks}

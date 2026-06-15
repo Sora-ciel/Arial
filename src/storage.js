@@ -1,56 +1,29 @@
-import { openDB } from 'idb';
+import { IndexedDBDriver, DriverProxy, getDB, FS_SETTINGS_STORE } from './storage/driver.js';
+import { FileSystemDriver } from './storage/FileSystemDriver.js';
+import { runMigrationIfNeeded } from './storage/migration.js';
+import {
+  readFileExplorer, writeFileExplorer,
+  getBlockColors, setBlockColor, removeBlockColor
+} from './storage/fileExplorer.js';
+import { readAllSettings, writeAllSettings } from './storage/settings.js';
 
-const DB_NAME = 'codex-db';
-const STORE_NAME = 'blocks';
-const FILE_STORE_NAME = 'block-files';
-const DB_VERSION = 2;
 const FILE_FIELDS = ['content', 'src', 'trackUrl', 'title', 'tasks'];
+
+// ---- Utility helpers ----
 
 function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
   if (Array.isArray(payload)) {
-    return {
-      blocks: payload,
-      modeOrders: {},
-      updatedAt,
-      modifiedAt: updatedAt
-    };
+    return { blocks: payload, modeOrders: {}, updatedAt, modifiedAt: updatedAt };
   }
-
   if (!payload || typeof payload !== 'object') {
-    return {
-      blocks: [],
-      modeOrders: {},
-      updatedAt,
-      modifiedAt: updatedAt
-    };
+    return { blocks: [], modeOrders: {}, updatedAt, modifiedAt: updatedAt };
   }
-
   const modifiedAt = payload.modifiedAt || payload.updatedAt || updatedAt;
-  return {
-    ...payload,
-    updatedAt: payload.updatedAt || updatedAt,
-    modifiedAt
-  };
-}
-
-
-export async function getDB() {
-  return await openDB(DB_NAME, DB_VERSION, {
-    upgrade(db) {
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME);
-      }
-      if (!db.objectStoreNames.contains(FILE_STORE_NAME)) {
-        db.createObjectStore(FILE_STORE_NAME);
-      }
-    }
-  });
+  return { ...payload, updatedAt: payload.updatedAt || updatedAt, modifiedAt };
 }
 
 function decodeBase64(base64) {
-  if (typeof atob === 'function') {
-    return atob(base64);
-  }
+  if (typeof atob === 'function') return atob(base64);
   return '';
 }
 
@@ -59,48 +32,38 @@ function dataUrlToBlob(dataUrl) {
   const mimeMatch = meta?.match(/data:(.*?)(;base64)?$/);
   const mime = mimeMatch?.[1] || 'application/octet-stream';
   const isBase64 = /;base64/i.test(meta || '');
-  const binaryString = isBase64 ? decodeBase64(encoded || '') : decodeURIComponent(encoded || '');
+  const binaryString = isBase64
+    ? decodeBase64(encoded || '')
+    : decodeURIComponent(encoded || '');
   const bytes = new Uint8Array(binaryString.length);
-  for (let i = 0; i < binaryString.length; i += 1) {
+  for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
   return new Blob([bytes], { type: mime });
 }
 
 function extensionFromMime(mime = '') {
-  const normalized = mime.toLowerCase();
-  if (normalized.includes('jpeg')) return 'jpg';
-  if (normalized.includes('png')) return 'png';
-  if (normalized.includes('gif')) return 'gif';
-  if (normalized.includes('webp')) return 'webp';
-  if (normalized.includes('svg')) return 'svg';
-  if (normalized.includes('mp4')) return 'mp4';
-  if (normalized.includes('webm')) return 'webm';
-  if (normalized.includes('ogg')) return 'ogg';
-  if (normalized.includes('plain')) return 'txt';
-  if (normalized.includes('json')) return 'json';
+  const n = mime.toLowerCase();
+  if (n.includes('jpeg')) return 'jpg';
+  if (n.includes('png')) return 'png';
+  if (n.includes('gif')) return 'gif';
+  if (n.includes('webp')) return 'webp';
+  if (n.includes('svg')) return 'svg';
+  if (n.includes('mp4')) return 'mp4';
+  if (n.includes('webm')) return 'webm';
+  if (n.includes('ogg')) return 'ogg';
+  if (n.includes('plain')) return 'txt';
+  if (n.includes('json')) return 'json';
   return 'bin';
 }
 
-function makeFileKey(saveName, blockId, field, ext) {
-  return `${saveName}/${blockId}/${field}.${ext}`;
-}
-
 async function blobToDataUrl(blob) {
-  return await new Promise((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ''));
     reader.onerror = () => reject(reader.error || new Error('Failed to read blob'));
     reader.readAsDataURL(blob);
   });
-}
-
-function cloneBlock(block) {
-  return {
-    ...block,
-    position: { ...(block?.position || {}) },
-    size: { ...(block?.size || {}) }
-  };
 }
 
 function shouldPersistAsFile(value) {
@@ -117,135 +80,627 @@ function valueToBlobDescriptor(value, field) {
     const mime = blob.type || 'application/octet-stream';
     return { blob, ext: extensionFromMime(mime), encoding: 'binary', mime };
   }
-
   if (typeof value === 'object') {
     const blob = new Blob([JSON.stringify(value)], { type: 'application/json' });
     return { blob, ext: 'json', encoding: 'json', mime: 'application/json' };
   }
-
   const text = String(value);
   const ext = field === 'src' && /^https?:\/\//i.test(text) ? 'url' : 'txt';
   const mime = ext === 'url' ? 'text/uri-list' : 'text/plain';
-  const blob = new Blob([text], { type: mime });
-  return { blob, ext, encoding: 'text', mime };
+  return { blob: new Blob([text], { type: mime }), ext, encoding: 'text', mime };
 }
 
-async function clearSaveFiles(db, saveName) {
-  const tx = db.transaction(FILE_STORE_NAME, 'readwrite');
-  const store = tx.objectStore(FILE_STORE_NAME);
-  const lower = `${saveName}/`;
-  const upper = `${saveName}/\uffff`;
-  const keys = await store.getAllKeys(IDBKeyRange.bound(lower, upper));
-  for (const key of keys) {
-    await store.delete(key);
+function resolveContentType(encoding, mime) {
+  if (encoding === 'binary') return mime.startsWith('video/') ? 'video' : 'image';
+  if (mime === 'application/json') return 'json';
+  return 'text';
+}
+
+function makeDisplayName(value, field, descriptor, counts) {
+  const { encoding, mime } = descriptor;
+  if (encoding === 'binary' && mime.startsWith('image/')) return `Image ${counts.image}`;
+  if (encoding === 'binary' && mime.startsWith('video/')) return `Video ${counts.video}`;
+  if (field === 'tasks') return counts.json > 1 ? `Tasks ${counts.json}` : 'Tasks';
+  if (field === 'src' && encoding === 'text' && /^https?:\/\//i.test(String(value))) {
+    const s = String(value);
+    return s.length > 60 ? s.slice(0, 57) + '...' : s;
   }
-  await tx.done;
+  if (typeof value === 'string' && value.length > 0) {
+    const trimmed = value.replace(/\s+/g, ' ').trim();
+    return trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed;
+  }
+  return `Content ${counts.text}`;
 }
 
-async function preparePersistedPayload(saveName, payload) {
+function makePreview(value, encoding) {
+  if (encoding === 'binary') return null;
+  if (typeof value === 'string') {
+    const t = value.replace(/\s+/g, ' ').trim();
+    return t.length > 80 ? t.slice(0, 77) + '...' : t || null;
+  }
+  return null;
+}
+
+// ---- Driver & migration bootstrap ----
+
+const driver = new DriverProxy(new IndexedDBDriver());
+let migrationPromise = null;
+
+async function ensureMigrated() {
+  if (!migrationPromise) {
+    migrationPromise = runMigrationIfNeeded(driver);
+  }
+  return migrationPromise;
+}
+
+// ---- In-memory caches (speed up repeated saves) ----
+
+// File_explorer.json cached in memory — one IDB read per session
+let _registryCache = null;
+
+async function getRegistry() {
+  if (!_registryCache) _registryCache = await readFileExplorer(driver);
+  return _registryCache;
+}
+
+function invalidateCaches() {
+  _registryCache = null;
+  _fingerprintCache.clear();
+  _saveRefs.clear();
+}
+
+// uuid → lightweight fingerprint of the content written at that uuid
+const _fingerprintCache = new Map();
+
+// saveName → Map<"blockId::field", uuid> — the contentRefs from the last save/load
+const _saveRefs = new Map();
+
+function makeFingerprint(value, field) {
+  if (typeof value === 'string') {
+    // For large strings (e.g. data URLs) use length + head snippet
+    if (value.length > 400) return `${value.length}:${value.slice(0, 80)}`;
+    return value;
+  }
+  if (typeof value === 'object') {
+    try { return JSON.stringify(value); } catch { return String(value); }
+  }
+  return String(value ?? '');
+}
+
+// ---- Public API ----
+
+export async function saveBlocks(name, payload) {
+  await ensureMigrated();
   const normalized = asPayloadWithTimestamp(payload, Date.now());
-  const blocks = (normalized.blocks || []).map(cloneBlock);
-  const fileWrites = [];
-  const persistedBlocks = blocks.map(block => {
-    const next = { ...block };
-    const fileRefs = {};
+  const registry = await getRegistry();
+
+  // Previous contentRefs for this save (from memory after last load/save)
+  const prevRefs = _saveRefs.get(name) ?? new Map();
+  const nextRefs = new Map(); // will become new _saveRefs entry after save
+  const keptUuids = new Set(); // UUIDs being reused — must NOT be deleted
+
+  const counts = { image: 0, video: 0, text: 0, json: 0 };
+  const now = Date.now();
+  const convertedBlocks = [];
+
+  for (const block of normalized.blocks || []) {
+    const next = {
+      ...block,
+      position: { ...(block.position || {}) },
+      size: { ...(block.size || {}) }
+    };
+    delete next.contentRefs;
+    const contentRefs = {};
+
+    if (next.bgColor !== undefined || next.textColor !== undefined) {
+      setBlockColor(registry, next.id, next.bgColor, next.textColor);
+      delete next.bgColor;
+      delete next.textColor;
+    }
 
     for (const field of FILE_FIELDS) {
       const value = next[field];
       if (!shouldPersistAsFile(value)) continue;
 
+      const refKey = `${next.id}::${field}`;
+      const newFp = makeFingerprint(value, field);
+      const existingUuid = prevRefs.get(refKey);
+
+      // Reuse UUID if content is unchanged
+      if (existingUuid && registry[existingUuid] && _fingerprintCache.get(existingUuid) === newFp) {
+        keptUuids.add(existingUuid);
+        contentRefs[field] = existingUuid;
+        nextRefs.set(refKey, existingUuid);
+        const ub = new Set(registry[existingUuid].usedBy || []);
+        ub.add(name);
+        registry[existingUuid].usedBy = [...ub];
+        delete next[field];
+        continue;
+      }
+
+      // Content changed — write new file
       const descriptor = valueToBlobDescriptor(value, field);
-      const key = makeFileKey(saveName, block.id, field, descriptor.ext);
-      fileWrites.push({ key, blob: descriptor.blob });
-      fileRefs[field] = {
-        key,
-        ext: descriptor.ext,
+      const contentType = resolveContentType(descriptor.encoding, descriptor.mime);
+      counts[contentType === 'image' ? 'image' : contentType === 'video' ? 'video' : contentType === 'json' ? 'json' : 'text']++;
+
+      const uuid = crypto.randomUUID();
+      await driver.write(`content/${uuid}.${descriptor.ext}`, descriptor.blob);
+      _fingerprintCache.set(uuid, newFp);
+      keptUuids.add(uuid);
+      nextRefs.set(refKey, uuid);
+
+      registry[uuid] = {
+        displayName: makeDisplayName(value, field, descriptor, counts),
+        file: `${uuid}.${descriptor.ext}`,
+        mime: descriptor.mime,
+        type: contentType,
         encoding: descriptor.encoding,
-        mime: descriptor.mime
+        preview: makePreview(value, descriptor.encoding),
+        createdAt: now,
+        usedBy: [name]
       };
+
+      contentRefs[field] = uuid;
       delete next[field];
     }
 
-    if (Object.keys(fileRefs).length) {
-      next.__fileRefs = fileRefs;
-    }
-
-    return next;
-  });
-
-  return {
-    payload: {
-      ...normalized,
-      blocks: persistedBlocks
-    },
-    files: fileWrites
-  };
-}
-
-async function hydratePayload(db, payload) {
-  const normalized = asPayloadWithTimestamp(payload || []);
-  const hydratedBlocks = [];
-
-  for (const originalBlock of normalized.blocks || []) {
-    const block = cloneBlock(originalBlock);
-    const refs = block.__fileRefs || {};
-    delete block.__fileRefs;
-
-    for (const [field, ref] of Object.entries(refs)) {
-      if (!ref?.key) continue;
-      const blob = await db.get(FILE_STORE_NAME, ref.key);
-      if (!blob) continue;
-
-      if (ref.encoding === 'binary') {
-        block[field] = await blobToDataUrl(blob);
-      } else if (ref.encoding === 'json') {
-        const text = await blob.text();
-        try {
-          block[field] = JSON.parse(text);
-        } catch {
-          block[field] = text;
-        }
-      } else {
-        block[field] = await blob.text();
-      }
-    }
-
-    hydratedBlocks.push(block);
+    if (Object.keys(contentRefs).length) next.contentRefs = contentRefs;
+    convertedBlocks.push(next);
   }
 
-  return {
-    ...normalized,
-    blocks: hydratedBlocks
-  };
-}
-
-export async function saveBlocks(name, blocks) {
-  const db = await getDB();
-  const prepared = await preparePersistedPayload(name, blocks);
-  await clearSaveFiles(db, name);
-
-  const tx = db.transaction([STORE_NAME, FILE_STORE_NAME], 'readwrite');
-  await tx.objectStore(STORE_NAME).put(prepared.payload, name);
-  for (const file of prepared.files) {
-    await tx.objectStore(FILE_STORE_NAME).put(file.blob, file.key);
+  // Clean up genuinely orphaned UUIDs (previously used by this save, no longer referenced)
+  for (const [uuid, entry] of Object.entries(registry)) {
+    if (!entry?.usedBy?.includes(name)) continue;
+    if (keptUuids.has(uuid)) continue;
+    entry.usedBy = entry.usedBy.filter(s => s !== name);
+    if (entry.usedBy.length === 0) {
+      await driver.delete(`content/${entry.file}`);
+      _fingerprintCache.delete(uuid);
+      delete registry[uuid];
+    }
   }
-  await tx.done;
+
+  await driver.write(`folders/${name}/layout.json`, { ...normalized, blocks: convertedBlocks });
+  await writeFileExplorer(driver, registry);
+  _saveRefs.set(name, nextRefs);
 }
 
 export async function loadBlocks(name) {
-  const db = await getDB();
-  const localPayload = await db.get(STORE_NAME, name);
-  return await hydratePayload(db, localPayload || []);
+  await ensureMigrated();
+
+  const [layout, registry] = await Promise.all([
+    driver.read(`folders/${name}/layout.json`),
+    getRegistry()
+  ]);
+  if (!layout) return { blocks: [], modeOrders: {}, modeSettings: { simple: { columnCount: 2 } } };
+
+  const blockColors = getBlockColors(registry);
+  const loadedRefs = new Map(); // populate _saveRefs so first save after load can deduplicate
+  const hydratedBlocks = [];
+
+  for (const block of layout.blocks || []) {
+    const next = {
+      ...block,
+      position: { ...(block.position || {}) },
+      size: { ...(block.size || {}) }
+    };
+    const refs = next.contentRefs || {};
+    delete next.contentRefs;
+
+    const colors = blockColors[next.id];
+    if (colors) { next.bgColor = colors.bgColor; next.textColor = colors.textColor; }
+
+    for (const [field, uuid] of Object.entries(refs)) {
+      const entry = registry[uuid];
+      if (!entry) continue;
+      const blob = await driver.read(`content/${entry.file}`);
+      if (!blob) continue;
+
+      let value;
+      if (entry.encoding === 'binary') {
+        value = await blobToDataUrl(blob);
+        // Binary fingerprint: size is enough (avoids re-reading the whole blob)
+        _fingerprintCache.set(uuid, `${blob.size}`);
+      } else if (entry.encoding === 'json') {
+        const text = await blob.text();
+        try { value = JSON.parse(text); } catch { value = text; }
+        _fingerprintCache.set(uuid, makeFingerprint(value, field));
+      } else {
+        value = await blob.text();
+        _fingerprintCache.set(uuid, makeFingerprint(value, field));
+      }
+
+      next[field] = value;
+      loadedRefs.set(`${next.id}::${field}`, uuid);
+    }
+
+    hydratedBlocks.push(next);
+  }
+
+  _saveRefs.set(name, loadedRefs);
+  return { ...layout, blocks: hydratedBlocks };
 }
 
 export async function deleteBlocks(name) {
-  const db = await getDB();
-  await db.delete(STORE_NAME, name);
-  await clearSaveFiles(db, name);
+  await ensureMigrated();
+  _saveRefs.delete(name);
+
+  const [layout, registry] = await Promise.all([
+    driver.read(`folders/${name}/layout.json`),
+    getRegistry()
+  ]);
+
+  // Remove orphaned content files
+  for (const [uuid, entry] of Object.entries(registry)) {
+    if (!entry.usedBy?.includes(name)) continue;
+    entry.usedBy = entry.usedBy.filter(s => s !== name);
+    if (entry.usedBy.length === 0) {
+      await driver.delete(`content/${entry.file}`);
+      delete registry[uuid];
+    }
+  }
+
+  // Remove global colors for blocks in this save
+  if (layout?.blocks) {
+    for (const block of layout.blocks) {
+      removeBlockColor(registry, block.id);
+    }
+  }
+
+  await writeFileExplorer(driver, registry);
+  await driver.delete(`folders/${name}/layout.json`);
 }
 
 export async function listSavedBlocks() {
-  const db = await getDB();
-  const keys = await db.getAllKeys(STORE_NAME);
-  return keys.map(String);
+  await ensureMigrated();
+  const paths = await driver.list('folders/');
+  const names = new Set();
+  for (const path of paths) {
+    const parts = path.split('/');
+    if (parts.length >= 2) names.add(parts[1]);
+  }
+  return [...names];
 }
+
+// ---- Content sharing ----
+
+export async function prepareSharedContent(uuid, field) {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const entry = registry[uuid];
+  if (!entry) return null;
+
+  const blob = await driver.read(`content/${entry.file}`);
+  if (!blob) return null;
+
+  let value;
+  if (entry.encoding === 'binary') {
+    value = await blobToDataUrl(blob);
+    _fingerprintCache.set(uuid, `${blob.size}`);
+  } else if (entry.encoding === 'json') {
+    const text = await blob.text();
+    try { value = JSON.parse(text); } catch { value = text; }
+    _fingerprintCache.set(uuid, makeFingerprint(value, field));
+  } else {
+    value = await blob.text();
+    _fingerprintCache.set(uuid, makeFingerprint(value, field));
+  }
+
+  return { value, entry };
+}
+
+// Tell the save engine to reuse an existing UUID for a specific block-field.
+// Call this after creating a new block that shares content from another block/folder,
+// BEFORE the next saveBlocks call, so deduplication reuses the UUID instead of copying.
+export function seedSharedRef(saveName, blockId, field, uuid) {
+  let refs = _saveRefs.get(saveName);
+  if (!refs) { refs = new Map(); _saveRefs.set(saveName, refs); }
+  refs.set(`${blockId}::${field}`, uuid);
+}
+
+// ---- Content file deletion ----
+
+export async function deleteContentFile(uuid) {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const entry = registry[uuid];
+  if (!entry) return;
+
+  // Remove the contentRef from every block in every layout that references this UUID
+  for (const saveName of [...(entry.usedBy || [])]) {
+    const layout = await driver.read(`folders/${saveName}/layout.json`);
+    if (!layout?.blocks) continue;
+    let dirty = false;
+    for (const block of layout.blocks) {
+      for (const [field, ref] of Object.entries(block.contentRefs || {})) {
+        if (ref === uuid) {
+          delete block.contentRefs[field];
+          dirty = true;
+        }
+      }
+      if (block.contentRefs && Object.keys(block.contentRefs).length === 0) {
+        delete block.contentRefs;
+      }
+    }
+    if (dirty) {
+      await driver.write(`folders/${saveName}/layout.json`, layout);
+      _saveRefs.delete(saveName);
+    }
+  }
+
+  await driver.delete(`content/${entry.file}`);
+  _fingerprintCache.delete(uuid);
+  delete registry[uuid];
+  await writeFileExplorer(driver, registry);
+}
+
+// ---- File Explorer public API ----
+
+export async function getFileExplorer() {
+  await ensureMigrated();
+  const registry = await readFileExplorer(driver);
+  // Strip internal _colors section — that's block metadata, not content files
+  const { _colors, ...contentEntries } = registry;
+  return contentEntries;
+}
+
+export async function renameContentFile(uuid, newDisplayName) {
+  await ensureMigrated();
+  const registry = await readFileExplorer(driver);
+  if (!registry[uuid]) return;
+  registry[uuid].displayName = String(newDisplayName).trim() || registry[uuid].displayName;
+  await writeFileExplorer(driver, registry);
+}
+
+export async function loadContentBlob(uuid) {
+  await ensureMigrated();
+  const registry = await readFileExplorer(driver);
+  const entry = registry[uuid];
+  if (!entry) return null;
+  const blob = await driver.read(`content/${entry.file}`);
+  return blob ?? null;
+}
+
+// Reads a blob directly by its stored filename — avoids re-reading the registry
+// when the caller already has the entry's `file` field.
+export async function loadBlobByPath(filePath) {
+  await ensureMigrated();
+  return (await driver.read(`content/${filePath}`)) ?? null;
+}
+
+// ---- Bundle export / import ----
+
+async function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || '').split(',')[1] || '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
+}
+
+function base64ToBlob(b64, mime) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new Blob([bytes], { type: mime });
+}
+
+export async function exportBundle(saveName, sections = ['layout', 'content']) {
+  await ensureMigrated();
+  const bundle = {
+    _codex_bundle: true,
+    version: 1,
+    exportedAt: Date.now(),
+    saveName,
+    sections
+  };
+
+  if (sections.includes('layout')) {
+    const layout = await driver.read(`folders/${saveName}/layout.json`);
+    bundle.layout = layout || { blocks: [], modeOrders: {}, modeSettings: { simple: { columnCount: 2 } } };
+  }
+
+  if (sections.includes('content')) {
+    const registry = await readFileExplorer(driver);
+    const relevant = Object.entries(registry).filter(
+      ([k, v]) => k !== '_colors' && v?.usedBy?.includes(saveName)
+    );
+    const files = {};
+    for (const [uuid, entry] of relevant) {
+      const blob = await driver.read(`content/${entry.file}`);
+      if (!blob) continue;
+      if (entry.encoding === 'binary') {
+        files[uuid] = await blobToBase64(blob);
+      } else {
+        files[uuid] = await blob.text();
+      }
+    }
+    bundle.content = {
+      registry: Object.fromEntries(relevant.map(([k, v]) => [k, v])),
+      files,
+      colors: registry._colors || {}
+    };
+  }
+
+  if (sections.includes('settings')) {
+    bundle.settings = await readAllSettings();
+  }
+
+  return bundle;
+}
+
+export async function importBundle(bundle, { saveName, sections }) {
+  if (!bundle?._codex_bundle) throw new Error('Not a valid Codex bundle');
+  await ensureMigrated();
+  invalidateCaches();
+
+  if (sections.includes('content') && bundle.content) {
+    const registry = await readFileExplorer(driver);
+
+    for (const [uuid, entry] of Object.entries(bundle.content.registry || {})) {
+      const rawData = bundle.content.files?.[uuid];
+      if (rawData === undefined || rawData === null) continue;
+
+      let blob;
+      if (entry.encoding === 'binary') {
+        blob = base64ToBlob(rawData, entry.mime);
+      } else {
+        blob = new Blob([rawData], { type: entry.mime });
+      }
+
+      await driver.write(`content/${entry.file}`, blob);
+
+      const usedBy = new Set(entry.usedBy || []);
+      usedBy.add(saveName);
+      registry[uuid] = { ...entry, usedBy: [...usedBy] };
+    }
+
+    // Merge block colors
+    if (bundle.content.colors) {
+      if (!registry._colors) registry._colors = {};
+      Object.assign(registry._colors, bundle.content.colors);
+    }
+
+    await writeFileExplorer(driver, registry);
+  }
+
+  if (sections.includes('layout') && bundle.layout) {
+    // Clear old content refs for this save before writing new layout
+    const registry = await readFileExplorer(driver);
+    for (const [uuid, entry] of Object.entries(registry)) {
+      if (!entry.usedBy?.includes(saveName)) continue;
+      entry.usedBy = entry.usedBy.filter(s => s !== saveName);
+      if (entry.usedBy.length === 0 && !sections.includes('content')) {
+        // only delete content if we're not also importing content
+        await driver.delete(`content/${entry.file}`);
+        delete registry[uuid];
+      }
+    }
+
+    // Mark all contentRefs in the new layout as usedBy this save
+    for (const block of bundle.layout.blocks || []) {
+      for (const uuid of Object.values(block.contentRefs || {})) {
+        if (registry[uuid]) {
+          const usedBy = new Set(registry[uuid].usedBy || []);
+          usedBy.add(saveName);
+          registry[uuid].usedBy = [...usedBy];
+        }
+      }
+    }
+
+    await driver.write(`folders/${saveName}/layout.json`, bundle.layout);
+    await writeFileExplorer(driver, registry);
+  }
+
+  if (sections.includes('settings') && bundle.settings) {
+    await writeAllSettings(bundle.settings);
+  }
+}
+
+// ---- Filesystem storage (File System Access API) ----
+
+async function saveFSHandle(handle) {
+  const db = await getDB();
+  const tx = db.transaction(FS_SETTINGS_STORE, 'readwrite');
+  await tx.store.put(handle, 'rootHandle');
+  await tx.done;
+}
+
+async function loadFSHandle() {
+  const db = await getDB();
+  return db.get(FS_SETTINGS_STORE, 'rootHandle') ?? null;
+}
+
+async function clearFSHandle() {
+  const db = await getDB();
+  await db.delete(FS_SETTINGS_STORE, 'rootHandle');
+}
+
+export function isFileSystemStorageActive() {
+  return driver.getInner() instanceof FileSystemDriver;
+}
+
+export function getFileSystemFolderName() {
+  const inner = driver.getInner();
+  return inner instanceof FileSystemDriver ? inner.rootName : null;
+}
+
+export function isFileSystemAccessSupported() {
+  return typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+}
+
+export async function tryInitFileSystemStorage() {
+  // Tauri — auto-activate, no user gesture needed
+  if (typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window) {
+    try {
+      const { TauriFileSystemDriver } = await import(/* @vite-ignore */ './storage/TauriFileSystemDriver.js');
+      migrationPromise = null;
+      invalidateCaches();
+      driver.setInner(new TauriFileSystemDriver());
+      return true;
+    } catch (e) {
+      console.warn('[storage] Tauri driver failed to load:', e);
+    }
+  }
+
+  // Capacitor — auto-activate, no user gesture needed
+  if (
+    typeof window !== 'undefined' &&
+    typeof window.Capacitor !== 'undefined' &&
+    window.Capacitor?.isNativePlatform?.()
+  ) {
+    try {
+      const { CapacitorFileSystemDriver } = await import(/* @vite-ignore */ './storage/CapacitorFileSystemDriver.js');
+      migrationPromise = null;
+      invalidateCaches();
+      driver.setInner(new CapacitorFileSystemDriver());
+      return true;
+    } catch (e) {
+      console.warn('[storage] Capacitor driver failed to load:', e);
+    }
+  }
+
+  // Browser — try to reconnect a previously chosen local folder
+  if (!isFileSystemAccessSupported()) return false;
+  const handle = await loadFSHandle();
+  if (!handle) return false;
+  try {
+    let perm = await handle.queryPermission({ mode: 'readwrite' });
+    if (perm !== 'granted') {
+      perm = await handle.requestPermission({ mode: 'readwrite' });
+    }
+    if (perm === 'granted') {
+      migrationPromise = null;
+      invalidateCaches();
+      driver.setInner(new FileSystemDriver(handle));
+      return true;
+    }
+  } catch {
+    // Permission API unavailable or handle invalid
+  }
+  return false;
+}
+
+export async function enableFileSystemStorage() {
+  if (!isFileSystemAccessSupported()) {
+    throw new Error('File System Access API is not supported in this browser.');
+  }
+  const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+  migrationPromise = null;
+  invalidateCaches();
+  driver.setInner(new FileSystemDriver(handle));
+  await saveFSHandle(handle);
+  return handle.name;
+}
+
+export async function disableFileSystemStorage() {
+  migrationPromise = null;
+  invalidateCaches();
+  driver.setInner(new IndexedDBDriver());
+  await clearFSHandle();
+}
+
+// ---- Exported for DevTools / rollback ----
+export { driver };
+export { rollbackMigration } from './storage/migration.js';

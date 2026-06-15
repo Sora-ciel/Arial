@@ -36,10 +36,16 @@ export const MODE_DEFINITIONS = {
     addBlockTypes: [],
     showRightControls: false,
     requiresUnlock: true
+  },
+  files: {
+    id: 'files',
+    label: 'File Explorer',
+    addBlockTypes: [],
+    showRightControls: true
   }
 };
 
-export const MODE_ORDER = ['default', 'simple', 'single', 'habit', 'task', 'birthday'];
+export const MODE_ORDER = ['default', 'simple', 'single', 'habit', 'task', 'birthday', 'files'];
 
 export function getModeDefinition(mode) {
   return MODE_DEFINITIONS[mode] || MODE_DEFINITIONS.single;

@@ -2,9 +2,18 @@
   import { onMount, onDestroy, tick } from 'svelte';
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
+  import ExportImportDialog from './components/ExportImportDialog.svelte';
+  import FilePickerPopup from './components/FilePickerPopup.svelte';
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './Modes/ModeSwitcher.svelte';
-  import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
+  import {
+    saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks,
+    exportBundle, importBundle,
+    isFileSystemAccessSupported, isFileSystemStorageActive, getFileSystemFolderName,
+    tryInitFileSystemStorage, enableFileSystemStorage, disableFileSystemStorage,
+    prepareSharedContent, seedSharedRef
+  } from './storage.js';
+  import { readSetting, writeSetting, deleteSetting } from './storage/settings.js';
   import {
     isFirebaseConfigured,
     onAuthStateChange,
@@ -156,169 +165,88 @@
   const DEFAULT_MODE_SETTINGS = {
     simple: {
       columnCount: 2
+    },
+    task: {
+      addDirection: 'above'
     }
   };
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
+    const incomingTask = settings?.task || {};
     return {
       ...DEFAULT_MODE_SETTINGS,
       simple: {
         ...DEFAULT_MODE_SETTINGS.simple,
         ...incomingSimple,
         columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount)
+      },
+      task: {
+        ...DEFAULT_MODE_SETTINGS.task,
+        ...incomingTask,
+        addDirection: incomingTask.addDirection === 'below' ? 'below' : 'above'
       }
     };
   }
 
-  function loadStoredCustomThemes() {
-    if (typeof localStorage === 'undefined') return [];
-    try {
-      const serialized = localStorage.getItem(CUSTOM_THEMES_STORAGE_KEY);
-      if (!serialized) return [];
-      const parsed = JSON.parse(serialized);
-      if (!Array.isArray(parsed)) return [];
-      return parsed
-        .filter(theme => theme && theme.id && theme.name)
-        .map(theme => ({
-          ...theme,
-          controlColors: normalizeControlColors(theme.controlColors),
-          blockTheme: normalizeBlockTheme(theme.blockTheme),
-          isCustom: true
-        }));
-    } catch (error) {
-      return [];
-    }
+  async function loadStoredCustomThemes() {
+    const stored = await readSetting('customThemes');
+    if (!Array.isArray(stored)) return [];
+    return stored
+      .filter(theme => theme && theme.id && theme.name)
+      .map(theme => ({
+        ...theme,
+        controlColors: normalizeControlColors(theme.controlColors),
+        blockTheme: normalizeBlockTheme(theme.blockTheme),
+        isCustom: true
+      }));
   }
 
-  function loadStoredControlColors() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      const serialized = localStorage.getItem(CONTROL_COLOR_STORAGE_KEY);
-      if (!serialized) return null;
-      const parsed = JSON.parse(serialized);
-      return normalizeControlColors(parsed);
-    } catch (error) {
-      return null;
-    }
+  async function loadStoredControlColors() {
+    const stored = await readSetting('controlColors');
+    if (!stored) return null;
+    return normalizeControlColors(stored);
   }
 
-  function loadStoredBlockTheme() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      const serializedTheme = localStorage.getItem(BLOCK_THEME_STORAGE_KEY);
-      const storedId =
-        localStorage.getItem(BLOCK_THEME_ID_STORAGE_KEY) || CUSTOM_THEME_ID;
-      if (!serializedTheme) {
-        return { theme: null, id: storedId };
-      }
-      const parsed = JSON.parse(serializedTheme);
-      return { theme: normalizeBlockTheme(parsed), id: storedId };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function loadStoredLastSaveName() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      return localStorage.getItem(LAST_SAVE_STORAGE_KEY);
-    } catch (error) {
-      return null;
-    }
+  async function loadStoredBlockTheme() {
+    const [storedTheme, storedId] = await Promise.all([
+      readSetting('blockTheme'),
+      readSetting('blockThemeId')
+    ]);
+    const id = storedId || CUSTOM_THEME_ID;
+    if (!storedTheme) return { theme: null, id };
+    return { theme: normalizeBlockTheme(storedTheme), id };
   }
 
   function persistLastSaveName(name) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      if (name) {
-        localStorage.setItem(LAST_SAVE_STORAGE_KEY, name);
-      } else {
-        localStorage.removeItem(LAST_SAVE_STORAGE_KEY);
-      }
-    } catch (error) {
-      /* ignore persistence failures */
-    }
+    writeSetting('lastLoadedSave', name || null);
   }
 
-  function loadBootLoadGuard() {
-    if (typeof localStorage === 'undefined') return null;
-    try {
-      const raw = localStorage.getItem(BOOT_LOAD_GUARD_STORAGE_KEY);
-      if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return null;
-      const pendingSaveName = typeof parsed.pendingSaveName === 'string'
-        ? parsed.pendingSaveName
-        : '';
-      const startedAt = Number(parsed.startedAt);
-      if (!pendingSaveName || !Number.isFinite(startedAt)) return null;
-      const openingLastFile = parsed.openingLastFile === true;
-      return { pendingSaveName, startedAt, openingLastFile };
-    } catch (error) {
-      return null;
-    }
+  async function loadBootLoadGuard() {
+    const parsed = await readSetting('bootLoadGuard');
+    if (!parsed || typeof parsed !== 'object') return null;
+    const pendingSaveName = typeof parsed.pendingSaveName === 'string'
+      ? parsed.pendingSaveName : '';
+    const startedAt = Number(parsed.startedAt);
+    if (!pendingSaveName || !Number.isFinite(startedAt)) return null;
+    return { pendingSaveName, startedAt, openingLastFile: parsed.openingLastFile === true };
   }
 
   function startBootLoadGuard(pendingSaveName) {
-    if (typeof localStorage === 'undefined' || !pendingSaveName) return;
-    try {
-      localStorage.setItem(
-        BOOT_LOAD_GUARD_STORAGE_KEY,
-        JSON.stringify({ pendingSaveName, startedAt: Date.now(), openingLastFile: true })
-      );
-    } catch (error) {
-      /* ignore persistence failures */
-    }
+    if (!pendingSaveName) return;
+    writeSetting('bootLoadGuard', { pendingSaveName, startedAt: Date.now(), openingLastFile: true });
   }
 
   function clearBootLoadGuard() {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.removeItem(BOOT_LOAD_GUARD_STORAGE_KEY);
-    } catch (error) {
-      /* ignore persistence failures */
-    }
-  }
-
-  function loadCloudSyncMemory() {
-    if (typeof localStorage === 'undefined') return {};
-    try {
-      const raw = localStorage.getItem(CLOUD_SYNC_MEMORY_STORAGE_KEY);
-      const parsed = raw ? JSON.parse(raw) : {};
-      return parsed && typeof parsed === 'object' ? parsed : {};
-    } catch {
-      return {};
-    }
+    deleteSetting('bootLoadGuard');
   }
 
   function persistCloudSyncMemory(memory) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(CLOUD_SYNC_MEMORY_STORAGE_KEY, JSON.stringify(memory || {}));
-    } catch {
-      /* ignore local persistence failure */
-    }
-  }
-
-  function loadAutoSyncEnabled() {
-    if (typeof localStorage === 'undefined') return true;
-    try {
-      const raw = localStorage.getItem(AUTO_SYNC_ENABLED_STORAGE_KEY);
-      if (raw === null) return true;
-      return raw === 'true';
-    } catch {
-      return true;
-    }
+    writeSetting('cloudSyncMemoryByFile', memory || {});
   }
 
   function persistAutoSyncEnabled(enabled) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(AUTO_SYNC_ENABLED_STORAGE_KEY, enabled ? 'true' : 'false');
-    } catch {
-      /* ignore local persistence failure */
-    }
+    writeSetting('autoSyncEnabled', !!enabled);
   }
 
 
@@ -367,62 +295,23 @@
   }
 
   function persistControlColors(colors) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(
-        CONTROL_COLOR_STORAGE_KEY,
-        JSON.stringify(colors)
-      );
-    } catch (error) {
-      /* ignore persistence failures */
-    }
+    writeSetting('controlColors', colors);
   }
 
   function persistBlockTheme(theme, id = selectedThemeId) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      localStorage.setItem(
-        BLOCK_THEME_STORAGE_KEY,
-        JSON.stringify(theme)
-      );
-      localStorage.setItem(
-        BLOCK_THEME_ID_STORAGE_KEY,
-        id || CUSTOM_THEME_ID
-      );
-    } catch (error) {
-      /* ignore persistence failures */
-    }
-  }
-
-
-  function loadBirthdayUnlockExpiry() {
-    if (typeof localStorage === 'undefined') return 0;
-    try {
-      const raw = localStorage.getItem(BIRTHDAY_UNLOCK_STORAGE_KEY);
-      if (!raw) return 0;
-      const parsed = Number(raw);
-      if (!Number.isFinite(parsed)) return 0;
-      return parsed;
-    } catch (error) {
-      return 0;
-    }
+    writeSetting('blockTheme', theme);
+    writeSetting('blockThemeId', id || CUSTOM_THEME_ID);
   }
 
   function persistBirthdayUnlockExpiry(expiresAt) {
-    if (typeof localStorage === 'undefined') return;
-    try {
-      if (expiresAt > Date.now()) {
-        localStorage.setItem(BIRTHDAY_UNLOCK_STORAGE_KEY, String(expiresAt));
-      } else {
-        localStorage.removeItem(BIRTHDAY_UNLOCK_STORAGE_KEY);
-      }
-    } catch (error) {
-      /* ignore persistence failures */
+    if (expiresAt > Date.now()) {
+      writeSetting('birthdayModeAccess', expiresAt);
+    } else {
+      deleteSetting('birthdayModeAccess');
     }
   }
 
   function persistCustomThemes(themes) {
-    if (typeof localStorage === 'undefined') return;
     try {
       const serializable = themes.map(({
         id,
@@ -441,10 +330,7 @@
         previewBg,
         createdAt
       }));
-      localStorage.setItem(
-        CUSTOM_THEMES_STORAGE_KEY,
-        JSON.stringify(serializable)
-      );
+      writeSetting('customThemes', serializable);
     } catch (error) {
       /* ignore persistence failures */
     }
@@ -670,18 +556,21 @@
     showAdvancedCssPage = false;
   }
 
-  onMount(() => {
-    const storedCustomThemes = loadStoredCustomThemes();
+  onMount(async () => {
+    const [storedCustomThemes, storedControlColors, storedTheme] = await Promise.all([
+      loadStoredCustomThemes(),
+      loadStoredControlColors(),
+      loadStoredBlockTheme()
+    ]);
+
     if (storedCustomThemes.length) {
       customThemes = storedCustomThemes;
     }
 
-    const storedControlColors = loadStoredControlColors();
     if (storedControlColors) {
       controlColors = storedControlColors;
     }
 
-    const storedTheme = loadStoredBlockTheme();
     if (storedTheme?.theme) {
       blockTheme = storedTheme.theme;
       selectedThemeId = storedTheme.id ?? CUSTOM_THEME_ID;
@@ -825,6 +714,7 @@
   let mode = getDefaultModeForViewport();
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
+  $: taskAddDirection = modeSettings.task.addDirection;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
   let blocks = [];
@@ -854,6 +744,11 @@
   let currentSaveName = "default";
   let savedList = [];
   let firebaseReady = isFirebaseConfigured();
+  let showExportImportDialog = false;
+  let showFilePickerPopup = false;
+  let fsStorageActive = false;
+  let fsFolderName = null;
+  let fsSupported = isFileSystemAccessSupported();
   let authUser = null;
   let uploadInProgress = false;
   let downloadInProgress = false;
@@ -862,7 +757,7 @@
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > MOBILE_BREAKPOINT;
-  let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
+  let birthdayUnlockExpiry = 0;
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
   let deferredLastSaveReason = '';
@@ -870,8 +765,8 @@
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
   let cloudSyncGateInProgress = false;
-  let cloudSyncMemoryByFile = loadCloudSyncMemory();
-  let autoSyncEnabled = loadAutoSyncEnabled();
+  let cloudSyncMemoryByFile = {};
+  let autoSyncEnabled = true;
   let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
   let autoSyncDirty = false;
@@ -925,17 +820,66 @@
     }
   }
 
-  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings) {
+  // ---- Save queue: prevents concurrent writes that cause missing chars ----
+  let _saveInFlight = false;
+  let _pendingSave = null;       // latest payload waiting to run
+  let _debounceTimer = null;     // for non-critical (typing) saves
+
+  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings, { immediate = false } = {}) {
     if (!currentSaveName) return;
     persistLastSaveName(currentSaveName);
-    const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
-    await saveBlocks(currentSaveName, {
+
+    const payload = {
       blocks: blocksToPersist,
-      modeOrders: normalizedOrders,
-      modeSettings: normalizeModeSettings(settingsToPersist)
-    });
-    savedList = await listSavedBlocks();
-    autoSyncDirty = true;
+      orders: ordersToPersist,
+      modeSettings: settingsToPersist
+    };
+
+    if (!immediate) {
+      // Debounce: replace any queued save, schedule flush
+      _pendingSave = payload;
+      if (_debounceTimer) return;
+      _debounceTimer = setTimeout(() => {
+        _debounceTimer = null;
+        if (_pendingSave) {
+          const p = _pendingSave;
+          _pendingSave = null;
+          _runSave(p);
+        }
+      }, 300);
+      return;
+    }
+
+    // Immediate: flush debounce timer, run (or queue behind in-flight save)
+    clearTimeout(_debounceTimer);
+    _debounceTimer = null;
+    _pendingSave = null;
+    await _runSave(payload);
+  }
+
+  async function _runSave(payload) {
+    if (_saveInFlight) {
+      _pendingSave = payload; // queue behind in-flight save
+      return;
+    }
+    _saveInFlight = true;
+    try {
+      const normalizedOrders = ensureModeOrders(payload.blocks, payload.orders);
+      await saveBlocks(currentSaveName, {
+        blocks: payload.blocks,
+        modeOrders: normalizedOrders,
+        modeSettings: normalizeModeSettings(payload.modeSettings)
+      });
+      savedList = await listSavedBlocks();
+      autoSyncDirty = true;
+    } finally {
+      _saveInFlight = false;
+      if (_pendingSave) {
+        const next = _pendingSave;
+        _pendingSave = null;
+        _runSave(next);
+      }
+    }
   }
 
   function markCloudAttachmentDirty() {
@@ -951,7 +895,7 @@
       blocks = stateSnapshot.blocks;
       modeOrders = stateSnapshot.modeOrders;
       if (options.persist !== false) {
-        await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+        await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, modeSettings, { immediate: true });
       }
       hasUnsnapshottedChanges = false;
       return;
@@ -967,7 +911,7 @@
     blocks = stateSnapshot.blocks;
     modeOrders = stateSnapshot.modeOrders;
     if (options.persist !== false) {
-      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, modeSettings, { immediate: true });
     }
     hasUnsnapshottedChanges = false;
   }
@@ -1024,7 +968,7 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, modeSettings, { immediate: true });
     }
   }
 
@@ -1039,7 +983,7 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, modeSettings, { immediate: true });
     }
   }
 
@@ -1214,16 +1158,62 @@
     await pushHistory(blocks, modeOrders);
   }
 
+  async function addTextBlockFromContent(content) {
+    const newBlock = applyHistoryTriggers({
+      id: crypto.randomUUID(),
+      type: 'cleantext',
+      content,
+      src: '',
+      position: { x: 100, y: 100 },
+      size: { width: 300, height: 200 },
+      bgColor: '#000000',
+      textColor: '#ffffff',
+      _version: 0
+    });
+    blocks = [...blocks, newBlock];
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    await pushHistory(blocks, modeOrders);
+  }
+
+  async function handlePaste(event) {
+    // Don't intercept paste inside text fields
+    const t = event.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItems = items.filter(i => i.kind === 'file' && i.type.startsWith('image/'));
+    const textItem   = items.find(i  => i.kind === 'string' && i.type === 'text/plain');
+
+    if (imageItems.length) {
+      event.preventDefault();
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          try { await addImageBlockFromFile(file); }
+          catch (e) { console.error('Paste image failed:', e); }
+        }
+      }
+    } else if (textItem) {
+      textItem.getAsString(async (text) => {
+        const trimmed = text?.trim();
+        if (!trimmed) return;
+        event.preventDefault();
+        try { await addTextBlockFromContent(trimmed); }
+        catch (e) { console.error('Paste text failed:', e); }
+      });
+    }
+  }
+
   async function handleModeDrop(event) {
     event.preventDefault();
     const files = Array.from(event.dataTransfer?.files || []);
-    const mediaFile = files.find(file => file.type?.startsWith('image/') || file.type?.startsWith('video/'));
-    if (!mediaFile) return;
-
-    try {
-      await addImageBlockFromFile(mediaFile);
-    } catch (error) {
-      console.error('Failed to import dropped media:', error);
+    const mediaFiles = files.filter(f => f.type?.startsWith('image/') || f.type?.startsWith('video/'));
+    for (const file of mediaFiles) {
+      try {
+        await addImageBlockFromFile(file);
+      } catch (error) {
+        console.error('Failed to import dropped media:', error);
+      }
     }
   }
 
@@ -1339,7 +1329,7 @@
     }
     savedList = await listSavedBlocks();
 
-    if (!deletingCurrent && loadStoredLastSaveName() === name) {
+    if (!deletingCurrent && (await readSetting('lastLoadedSave')) === name) {
       persistLastSaveName(currentSaveName);
     }
 
@@ -1611,61 +1601,72 @@
   }
 
   function exportJSON() {
-    const dataStr = JSON.stringify(
-      {
-        blocks,
-        modeOrders: ensureModeOrders(blocks, modeOrders),
-        modeSettings: normalizeModeSettings(modeSettings)
-      },
-      null,
-      2
-    );
-    const blob = new Blob([dataStr], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${currentSaveName || "codex-blocks"}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
+    showExportImportDialog = true;
   }
 
-  async function importJSON(event) {
-    const file = event.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async e => {
-      try {
-        const imported = JSON.parse(e.target.result);
-        if (Array.isArray(imported) || (imported && typeof imported === "object")) {
-          const importedBlocks = Array.isArray(imported)
-            ? imported
-            : Array.isArray(imported.blocks)
-            ? imported.blocks
-            : [];
-          const importedOrders = Array.isArray(imported)
-            ? {}
-            : imported.modeOrders;
-          const importedModeSettings = Array.isArray(imported)
-            ? null
-            : imported.modeSettings;
-          blocks = importedBlocks.map(b => ({
-            ...applyHistoryTriggers(b),
-            _version: 0
-          }));
-          modeOrders = ensureModeOrders(blocks, importedOrders);
-          modeSettings = normalizeModeSettings(importedModeSettings);
-          focusedBlockId = null;
-          history = [];
-          historyIndex = -1;
-          await pushHistory(blocks, modeOrders);
-          alert("Imported successfully!");
-        } else alert("Invalid file structure!");
-      } catch {
-        alert("Invalid JSON file!");
-      }
+  function importJSON() {
+    showExportImportDialog = true;
+  }
+
+  const CONTENT_TYPE_TO_BLOCK = {
+    image: { type: 'image',   field: 'src' },
+    video: { type: 'image',   field: 'src' },
+    text:  { type: 'cleantext', field: 'content' },
+    json:  { type: 'task',    field: 'tasks' },
+  };
+
+  async function handleShareContent(event) {
+    const { uuid, entry } = event.detail || {};
+    if (!uuid || !currentSaveName) return;
+
+    const { type: blockType, field } = CONTENT_TYPE_TO_BLOCK[entry?.type] ?? { type: 'text', field: 'content' };
+
+    const result = await prepareSharedContent(uuid, field);
+    if (!result) return;
+
+    const newBlock = {
+      id: crypto.randomUUID(),
+      type: blockType,
+      [field]: result.value,
+      position: { x: 120 + Math.round(Math.random() * 80), y: 120 + Math.round(Math.random() * 80) },
+      size: { width: 300, height: blockType === 'image' ? 220 : 160 },
+      bgColor: '#212121',
+      textColor: '#f5f5f5',
+      _version: 0,
+      historyTriggers: []
     };
-    reader.readAsText(file);
-    event.target.value = "";
+
+    seedSharedRef(currentSaveName, newBlock.id, field, uuid);
+
+    blocks = [...blocks, newBlock];
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    await pushHistory(blocks, modeOrders);
+  }
+
+  async function handleEnableFileSystem() {
+    try {
+      const name = await enableFileSystemStorage();
+      fsStorageActive = true;
+      fsFolderName = name;
+      savedList = await listSavedBlocks();
+    } catch (e) {
+      if (e?.name !== 'AbortError') console.error('FS storage error:', e);
+    }
+  }
+
+  async function handleDisableFileSystem() {
+    await disableFileSystemStorage();
+    fsStorageActive = false;
+    fsFolderName = null;
+    savedList = await listSavedBlocks();
+  }
+
+  async function handleImported(event) {
+    const { saveName } = event.detail || {};
+    savedList = await listSavedBlocks();
+    if (saveName === currentSaveName) {
+      await load(currentSaveName);
+    }
   }
 
   function setControlsHeight(value) {
@@ -1687,19 +1688,21 @@
   }
 
   async function handleModeSettingChange(event) {
-    const nextColumnCount = Math.max(
-      1,
-      Number.parseInt(event.detail?.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount
-    );
-    const nextModeSettings = normalizeModeSettings({
-      ...modeSettings,
-      simple: {
-        ...modeSettings.simple,
-        columnCount: nextColumnCount
-      }
-    });
+    const detail = event.detail || {};
+    let patch = { ...modeSettings };
+
+    if (detail.columnCount !== undefined) {
+      const nextColumnCount = Math.max(1, Number.parseInt(detail.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount);
+      patch = { ...patch, simple: { ...patch.simple, columnCount: nextColumnCount } };
+    }
+
+    if (detail.taskAddDirection !== undefined) {
+      patch = { ...patch, task: { ...patch.task, addDirection: detail.taskAddDirection } };
+    }
+
+    const nextModeSettings = normalizeModeSettings(patch);
     modeSettings = nextModeSettings;
-    await persistAutosave(blocks, modeOrders, nextModeSettings);
+    await persistAutosave(blocks, modeOrders, nextModeSettings, { immediate: true });
   }
 
   function setupControlsObserver() {
@@ -1804,6 +1807,7 @@
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
+    window.addEventListener("paste", handlePaste);
     adjustCanvasPadding();
 
     if (firebaseReady) {
@@ -1812,8 +1816,24 @@
       });
     }
 
+    // Try to reconnect filesystem storage from a previous session
+    const fsRestored = await tryInitFileSystemStorage();
+    if (fsRestored) {
+      fsStorageActive = true;
+      fsFolderName = getFileSystemFolderName();
+    }
+
+    const [savedSyncMemory, savedAutoSync, savedBirthday] = await Promise.all([
+      readSetting('cloudSyncMemoryByFile'),
+      readSetting('autoSyncEnabled'),
+      readSetting('birthdayModeAccess')
+    ]);
+    cloudSyncMemoryByFile = savedSyncMemory ?? {};
+    autoSyncEnabled = savedAutoSync ?? true;
+    birthdayUnlockExpiry = savedBirthday ?? 0;
+
     savedList = await listSavedBlocks();
-    const storedLastSave = loadStoredLastSaveName();
+    const storedLastSave = await readSetting('lastLoadedSave');
     const safeModeFromShift = await detectShiftSafeModeDuringStartup();
     const safeModeActive = safeModeFromShift;
     let shouldClearLastSavePointer = false;
@@ -1835,7 +1855,7 @@
       }
 
       const guardedSave = currentSaveName || FALLBACK_SAVE_NAME;
-      const bootGuard = loadBootLoadGuard();
+      const bootGuard = await loadBootLoadGuard();
 
       if (bootGuard?.openingLastFile === true) {
         clearBootLoadGuard();
@@ -1857,12 +1877,16 @@
           const initialOrders = !Array.isArray(initialData)
             ? initialData?.modeOrders
             : {};
+          const initialModeSettings = !Array.isArray(initialData)
+            ? initialData?.modeSettings
+            : null;
           currentSaveName = guardedSave;
           blocks = initialBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, initialOrders);
+          modeSettings = normalizeModeSettings(initialModeSettings);
           clearBootLoadGuard();
         } catch (error) {
           console.error('Failed to load last opened save:', error);
@@ -1912,6 +1936,7 @@
   onDestroy(() => {
     window.removeEventListener("resize", handleWindowResize);
     window.removeEventListener("keydown", handleUndoRedoShortcut);
+    window.removeEventListener("paste", handlePaste);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
@@ -2061,12 +2086,11 @@
 /* Mobile adjustments */
 @media (max-width: 1024px) {
   .controls {
-    min-height: 55px;
     flex-wrap: nowrap;
-    padding: 8px 10px;
+    padding: 4px 8px;
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
   }
 
@@ -2096,8 +2120,14 @@
       on:addBlock={(e) => addBlock(e.detail)}
       on:clear={clear}
       on:exportJSON={exportJSON}
-      on:importJSON={(e) => importJSON(e.detail)}
+      on:importJSON={importJSON}
+      on:openFilePicker={() => (showFilePickerPopup = true)}
       on:setMode={(e) => setMode(e.detail)}
+      on:enableFileSystem={handleEnableFileSystem}
+      on:disableFileSystem={handleDisableFileSystem}
+      {fsSupported}
+      {fsStorageActive}
+      {fsFolderName}
       on:unlockBirthdayMode={(e) => unlockBirthdayMode(e.detail?.password)}
       on:undo={undo}
       on:redo={redo}
@@ -2150,16 +2180,19 @@
       {mode}
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
+      {taskAddDirection}
       {groupedBlocks}
       {focusedBlockId}
       modeLabels={MODE_LABELS}
       bind:canvasRef
       canvasColors={canvasTheme}
       leftControlColors={leftTheme}
+      {currentSaveName}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
       on:modeSettingChange={handleModeSettingChange}
+      on:shareContent={handleShareContent}
     />
   </div>
 </div>
@@ -2179,5 +2212,24 @@
     on:updateTheme={handleAdvancedThemeUpdate}
     on:deleteTheme={handleAdvancedThemeDelete}
     on:duplicateTheme={handleAdvancedThemeDuplicate}
+  />
+{/if}
+
+{#if showFilePickerPopup}
+  <FilePickerPopup
+    {currentSaveName}
+    {controlColors}
+    on:close={() => (showFilePickerPopup = false)}
+    on:shareContent={handleShareContent}
+  />
+{/if}
+
+{#if showExportImportDialog}
+  <ExportImportDialog
+    {savedList}
+    {currentSaveName}
+    {controlColors}
+    on:close={() => (showExportImportDialog = false)}
+    on:imported={handleImported}
   />
 {/if}

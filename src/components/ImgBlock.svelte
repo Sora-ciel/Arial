@@ -307,6 +307,17 @@ function onResizeEnd() {
     ensureFocus();
   }
 
+  // Click on the media content:
+  //   - When NOT focused: focus the block (next click will open lightbox)
+  //   - When focused: open lightbox if there's a source
+  function handleMediaClick() {
+    if (!focused) {
+      ensureFocus();
+    } else if (mediaSrc) {
+      dispatch('lightbox', { src: mediaSrc });
+    }
+  }
+
   function handleWrapperKeydown(event) {
     if (event.key !== 'Enter' && event.key !== ' ') {
       return;
@@ -358,6 +369,7 @@ function onResizeEnd() {
     justify-content: space-between;
     align-items: center;
     gap: 10px;
+    overflow: hidden;
     font-family: var(--block-header-font, var(--block-body-font, inherit));
     letter-spacing: var(--block-header-letter-spacing, 0.08em);
     text-transform: var(--block-header-transform, uppercase);
@@ -387,13 +399,15 @@ function onResizeEnd() {
   
 /* Style the emoji container */
   .media-btn .emoji {
-    display: inline-block;
+    display: inline-flex;
+    align-items: center;
     color: var(--block-media-button-text, var(--block-header-text, var(--text)));
     background: var(--block-media-button-bg, transparent);
-    padding: 4px 6px;
+    padding: 1px 5px;
     border-radius: var(--block-control-radius, 6px);
     cursor: pointer;
-    font-size: 1.25rem;
+    font-size: 1rem;
+    line-height: 1;
   }
 
   button.delete-btn {
@@ -412,13 +426,27 @@ function onResizeEnd() {
     filter: brightness(1.08);
   }
 
-  img {
-    background-color: var(--bg);
-    flex-grow: 1;
+  .media-container {
+    flex: 1 1 0;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Use absolute fill so height:100% resolves correctly regardless of parent sizing method */
+  .media-container img,
+  .media-container video {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: transparent;
+    display: block;
+    cursor: default;
+  }
+
+  .media-container img.clickable,
+  .media-container video.clickable {
+    cursor: zoom-in;
   }
 
   .resize-handle {
@@ -438,6 +466,7 @@ function onResizeEnd() {
 <div
   class="wrapper"
   class:focused={focused}
+  data-block-id={id}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor}"
   role="button"
   tabindex="0"
@@ -472,12 +501,27 @@ function onResizeEnd() {
     </div>
   </div>
 
-  <div class="media-container" style="flex-grow:1;">
+  <div class="media-container">
     {#if mediaSrc}
       {#if mediaSrc.startsWith('data:video')}
-        <video src={mediaSrc} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-media-has-caption -->
+        <video
+          src={mediaSrc}
+          class:clickable={true}
+          autoplay loop muted playsinline
+          on:click|stopPropagation={handleMediaClick}
+        ></video>
       {:else}
-        <img src={mediaSrc} alt="" style="width:100%; height:100%; object-fit:contain;" />
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <img
+          src={mediaSrc}
+          alt=""
+          class:clickable={true}
+          on:click|stopPropagation={handleMediaClick}
+        />
       {/if}
     {:else if hasStorageAttachment}
       <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777; text-align:center; padding: 8px;">

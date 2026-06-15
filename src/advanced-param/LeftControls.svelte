@@ -11,6 +11,9 @@
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
+  export let fsSupported = false;
+  export let fsStorageActive = false;
+  export let fsFolderName = null;
 
 
   const dispatch = createEventDispatcher();
@@ -76,8 +79,8 @@
     dispatch("exportJSON");
   }
 
-  function importJSON(event) {
-    dispatch("importJSON", event);
+  function importJSON() {
+    dispatch("importJSON");
   }
 
   function triggerFileInput() {
@@ -347,6 +350,28 @@ onMount(() => {
     white-space: nowrap;
   }
 
+  .fs-storage-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+
+  .fs-badge {
+    font-size: 0.78rem;
+    opacity: 0.75;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 130px;
+  }
+
+  .fs-toggle {
+    font-size: 0.78rem;
+    padding: 3px 8px;
+    opacity: 0.8;
+  }
+
   .mobile-block-actions {
     display: none;
   }
@@ -378,6 +403,11 @@ onMount(() => {
   }
 
   @media (max-width: 1024px) {
+    .mobile-quick-actions button {
+      padding: 5px 10px;
+      min-height: 32px;
+    }
+
     .left-controls {
       display: none;
       flex-direction: column;
@@ -604,8 +634,25 @@ onMount(() => {
       </button>
     </div>
     <button on:click={clear}>🗑️ Clear</button>
-    <button on:click={exportJSON}>⬇ Export</button>
-    <button on:click={triggerFileInput}>📁 Import JSON</button>
+    <button on:click={exportJSON}>⬇ Export / Import</button>
+    <button on:click={() => dispatch('openFilePicker')}>📂 File Library</button>
+
+    {#if fsSupported}
+      {#if fsStorageActive}
+        <div class="fs-storage-row">
+          <span class="fs-badge" title="Storing data in local folder: {fsFolderName}">
+            📂 {fsFolderName || 'Local folder'}
+          </span>
+          <button class="fs-toggle" on:click={() => dispatch('disableFileSystem')}>
+            Use browser storage
+          </button>
+        </div>
+      {:else}
+        <button class="fs-toggle" on:click={() => dispatch('enableFileSystem')}>
+          📂 Use local folder
+        </button>
+      {/if}
+    {/if}
     <button on:click={() => dispatch('undo')}>↩ Undo</button>
     <button on:click={() => dispatch('redo')}>↪ Redo</button>
 

@@ -292,6 +292,7 @@
 <div
   class="player"
   class:focused={focused}
+  data-block-id={id}
   style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: {textColor};"
   role="button"
   tabindex="0"

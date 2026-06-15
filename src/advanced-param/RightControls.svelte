@@ -13,6 +13,7 @@
   export let autoSyncEnabled = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
+  import { readSetting, writeSetting } from "../storage/settings.js";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
   import StylePresetPage from "./StylePresetPage.svelte";
 
@@ -49,33 +50,13 @@
     .map(([name, value]) => `${name}: ${value}`)
     .join("; ");
 
-  function loadStoredOpenState() {
-    if (typeof localStorage === "undefined") return null;
-    try {
-      const stored = localStorage.getItem(RIGHT_CONTROLS_OPEN_KEY);
-      if (stored === null) return null;
-      return JSON.parse(stored);
-    } catch (error) {
-      return null;
-    }
-  }
-
-  function persistOpenState(open) {
-    if (typeof localStorage === "undefined") return;
-    try {
-      localStorage.setItem(RIGHT_CONTROLS_OPEN_KEY, JSON.stringify(open));
-    } catch (error) {
-      /* ignore persistence failures */
-    }
-  }
-
   $: if (hasMounted) {
-    persistOpenState(isOpen);
+    writeSetting(RIGHT_CONTROLS_OPEN_KEY, isOpen);
   }
 
   // Detect PC vs mobile
-  onMount(() => {
-    const storedOpenState = loadStoredOpenState();
+  onMount(async () => {
+    const storedOpenState = await readSetting(RIGHT_CONTROLS_OPEN_KEY);
     if (typeof storedOpenState === "boolean") {
       isOpen = storedOpenState;
     }
@@ -222,6 +203,11 @@
 
   /* Optional: make it more mobile-friendly */
   @media (max-width: 1024px) {
+  .right-controls summary {
+    padding: 5px 10px;
+    min-height: 32px;
+  }
+
   .right-controls {
     position: static;
     z-index: 1003;
@@ -233,8 +219,8 @@
     top: calc(var(--controls-height, 56px) + 8px);
     right: 8px;
     bottom: auto;
-    width: min(92vw, 360px);
-    max-width: 92vw;
+    width: min(72vw, 260px);
+    max-width: 72vw;
     max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
     background: var(--right-panel-bg, #222222);
     border: 1px solid var(--right-border-color, #444444);

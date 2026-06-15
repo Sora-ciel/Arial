@@ -252,7 +252,6 @@
 
   .header {
     background: var(--block-header-bg, var(--bg));
-    height: 30px;
     padding: 4px 8px;
     cursor: move;
     touch-action: none;
@@ -264,7 +263,7 @@
     align-items: center;
     gap: 10px;
     font-family: var(--block-header-font, var(--block-body-font, inherit));
-    letter-spacing: var(--block-header-letter-spacing, 0.08em);
+    letter-spacing: var(--block-header-letter-spacing, 0.04em);
     text-transform: var(--block-header-transform, uppercase);
   }
 
@@ -287,14 +286,19 @@
 
 
   button.delete-btn {
-    background: var(--block-accent-color, var(--text));
-    border-color: transparent;
-    font-size: 1.1rem;
-    color: var(--block-accent-text, var(--bg));
+    background: var(--block-accent-color, #ff5f5f);
+    color: var(--block-accent-text, #ffffff);
+    border: none;
     cursor: pointer;
-    padding: 0px 8px;
+    padding: 2px 8px;
+    font-weight: 600;
     border-radius: var(--block-control-radius, 6px);
     transition: transform 0.15s ease, filter 0.2s ease;
+  }
+
+  button.delete-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.1);
   }
 
   .content {
@@ -363,11 +367,17 @@
     font-size: 0.85rem;
   }
 
-  .task-item input[type='checkbox'] {
-    width: 14px;
-    height: 14px;
-    color: var(--text);
-    accent-color: var(--block-accent-color, var(--text));
+  .circle-check {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .task-item button {
@@ -392,6 +402,7 @@
 <div
   class="wrapper"
   class:focused={focused}
+  data-block-id={id}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
   role="button"
   tabindex="0"
@@ -443,12 +454,24 @@
       {#each todoTasks() as task}
         <li class="task-item">
           <label>
-            <input
-              type="checkbox"
-              checked={task.done}
-              on:change={() => toggleTask(task.id)}
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <button
+              class="circle-check"
+              on:click|stopPropagation={() => toggleTask(task.id)}
               data-focus-guard
-            />
+              aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+            >
+              {#if task.done}
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="9" fill="var(--text)" stroke="var(--text)" stroke-width="1"/>
+                  <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {:else}
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--text)" stroke-width="1.5" stroke-opacity="0.6"/>
+                </svg>
+              {/if}
+            </button>
             <span>{task.text}</span>
           </label>
           <button

@@ -1,5 +1,7 @@
 <script>
   import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
+  import Lightbox from '../components/Lightbox.svelte';
+  import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -71,15 +73,20 @@
     x: 0,
     y: 0
   };
+  let blockMenuMode = 'menu'; // 'menu' | 'editUrl'
+  let blockMenuUrlDraft = '';
   let touchHoldTimer;
   let touchHoldTriggered = false;
 
   function openBlockMenu(blockId, x, y) {
     blockMenu = { blockId, x, y };
+    blockMenuMode = 'menu';
   }
 
   function closeBlockMenu() {
     blockMenu = { blockId: null, x: 0, y: 0 };
+    blockMenuMode = 'menu';
+    blockMenuUrlDraft = '';
   }
 
   function handleContextMenu(event, blockId) {
@@ -112,6 +119,78 @@
 
   function deleteFromMenu(blockId) {
     deleteBlock(blockId);
+    closeBlockMenu();
+  }
+
+  function downloadSrc(src, name = 'media') {
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function copyImageSrc(src) {
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      if (blob.type.startsWith('image/')) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        return;
+      }
+    } catch {}
+    try { await navigator.clipboard.writeText(src); } catch {}
+  }
+
+  function buildMenuItems(block) {
+    if (!block) return [];
+    const items = [];
+    if (block.type === 'image') {
+      items.push({ id: 'edit', label: 'Edit image URL' });
+      const src = getImageSource(block);
+      if (src) {
+        items.push({ id: 'saveMedia', label: 'Save image' });
+        items.push({ id: 'copyMedia', label: 'Copy to clipboard' });
+      }
+    }
+    if (block.type === 'text' || block.type === 'cleantext') {
+      if (block.content) items.push({ id: 'copyText', label: 'Copy text' });
+    }
+    items.push({ id: 'delete', label: 'Delete block', variant: 'danger' });
+    return items;
+  }
+
+  async function handleMenuAction(actionId, block) {
+    if (!block) { closeBlockMenu(); return; }
+    if (actionId === 'edit') {
+      blockMenuUrlDraft = getImageSource(block);
+      blockMenuMode = 'editUrl';
+      return;
+    } else if (actionId === 'saveMedia') {
+      const src = getImageSource(block);
+      if (src) downloadSrc(src, 'image');
+    } else if (actionId === 'copyMedia') {
+      const src = getImageSource(block);
+      if (src) await copyImageSrc(src);
+    } else if (actionId === 'copyText') {
+      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+    } else if (actionId === 'delete') {
+      deleteFromMenu(block.id);
+      return;
+    }
+    closeBlockMenu();
+  }
+
+  function autoFocusInput(node) {
+    requestAnimationFrame(() => { node.focus(); node.select(); });
+  }
+
+  function confirmUrlEdit() {
+    const menuBlock = blocks.find(b => b.id === blockMenu.blockId);
+    if (menuBlock) {
+      updateBlock(menuBlock.id, { src: blockMenuUrlDraft });
+    }
     closeBlockMenu();
   }
 
@@ -185,6 +264,23 @@
 
   let imageInputRefs = {};
   let imageTapTracker = {};
+
+  // ── Lightbox ──────────────────────────────────────────────────────
+  let lbOpen = false;
+  let lbImages = [];
+  let lbStart = 0;
+
+  function openLightbox(block) {
+    const src = getImageSource(block);
+    if (!src) return;
+    const imageSrcs = blocks
+      .filter(b => b.type === 'image' && hasImageSource(b))
+      .map(getImageSource);
+    lbStart = imageSrcs.indexOf(src);
+    if (lbStart < 0) lbStart = 0;
+    lbImages = imageSrcs;
+    lbOpen = true;
+  }
 
   function setImageInputRef(blockId, node) {
     if (node) {
@@ -260,6 +356,8 @@
     if (currentTap - previousTap <= 300) {
       event.preventDefault();
       openImagePicker(block.id);
+    } else {
+      openLightbox(block);
     }
   }
 
@@ -272,11 +370,13 @@
   onMount(() => {
     let rafId;
     const handleGlobalPointerDown = (event) => {
-      if (event.target?.closest?.('.block-menu')) return;
       if (blockMenu.blockId) closeBlockMenu();
     };
     const handleEsc = (event) => {
-      if (event.key === 'Escape' && blockMenu.blockId) closeBlockMenu();
+      if (event.key === 'Escape') {
+        if (lbOpen) return; // Lightbox component handles this via stopImmediatePropagation
+        if (blockMenu.blockId) closeBlockMenu();
+      }
     };
     
     const initializeLayout = async () => {
@@ -459,44 +559,65 @@ li {
 }
 
 .edit-button {
-  background: transparent;
-  color: var(--text-color);
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
+  display: none;
 }
 
-.edit-button {
-  align-self: flex-start;
-}
-
-.block-menu {
+.url-edit-popup {
   position: fixed;
-  z-index: 1200;
-  min-width: 110px;
-  background: #101010;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  z-index: 9100;
+  background: #111111;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
 }
 
-.block-menu button {
+.url-edit-input {
   width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #f0f0f0;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.url-edit-input:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.url-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.url-edit-cancel,
+.url-edit-confirm {
   border: none;
   border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 0.9rem;
-  text-align: left;
-  color: #ff8b8b;
-  background: transparent;
+  padding: 6px 12px;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-.block-menu button:hover {
+.url-edit-cancel {
   background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
 }
+
+.url-edit-confirm {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f0f0f0;
+}
+
+
 
 @media (max-width: 1023px) {
   .simple-wrapper {
@@ -574,8 +695,10 @@ li {
                 src={getImageSource(block)}
                 alt=""
                 data-focus-guard
+                on:click|stopPropagation={() => openLightbox(block)}
                 on:dblclick|stopPropagation={() => openImagePicker(block.id)}
                 on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
+                style="cursor:zoom-in"
               />
             {:else}
               <div class="image-empty-state" data-focus-guard>
@@ -646,7 +769,34 @@ li {
 </div>
 
 {#if blockMenu.blockId}
-  <div class="block-menu" style={`left:${blockMenu.x}px; top:${blockMenu.y}px;`}>
-    <button on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
-  </div>
+  {#if blockMenuMode === 'editUrl'}
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="url-edit-popup" style="left:{blockMenu.x}px; top:{blockMenu.y}px;">
+      <input
+        class="url-edit-input"
+        type="text"
+        bind:value={blockMenuUrlDraft}
+        placeholder="Paste image URL…"
+        on:keydown={(e) => { if (e.key === 'Enter') confirmUrlEdit(); if (e.key === 'Escape') closeBlockMenu(); }}
+        use:autoFocusInput
+      />
+      <div class="url-edit-actions">
+        <button class="url-edit-cancel" on:click={closeBlockMenu}>Cancel</button>
+        <button class="url-edit-confirm" on:click={confirmUrlEdit}>Done</button>
+      </div>
+    </div>
+  {:else}
+    {@const menuBlock = blocks.find(b => b.id === blockMenu.blockId)}
+    <BlockContextMenu
+      x={blockMenu.x}
+      y={blockMenu.y}
+      items={buildMenuItems(menuBlock)}
+      on:action={(e) => handleMenuAction(e.detail, menuBlock)}
+      on:close={closeBlockMenu}
+    />
+  {/if}
+{/if}
+
+{#if lbOpen}
+  <Lightbox images={lbImages} startIndex={lbStart} on:close={() => lbOpen = false} />
 {/if}

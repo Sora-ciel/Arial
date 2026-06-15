@@ -1,5 +1,6 @@
 <script>
   import { onMount } from "svelte";
+  import { readSetting, writeSetting } from "../storage/settings.js";
 
   export let modeLabels = {};
   export let activeMode = "default";
@@ -51,7 +52,7 @@
 
   const saveHabits = updatedHabits => {
     habits = updatedHabits;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(habits));
+    writeSetting(STORAGE_KEY, habits);
   };
 
   const addHabit = () => {
@@ -83,17 +84,10 @@
     saveHabits(updated);
   };
 
-  onMount(() => {
-    const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored);
-        if (Array.isArray(parsed)) {
-          habits = parsed;
-        }
-      } catch {
-        habits = [];
-      }
+  onMount(async () => {
+    const stored = await readSetting(STORAGE_KEY);
+    if (Array.isArray(stored)) {
+      habits = stored;
     }
     days = buildDays();
   });
