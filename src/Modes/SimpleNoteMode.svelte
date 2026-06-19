@@ -133,9 +133,20 @@
 
   async function copyImageSrc(src) {
     try {
-      const res = await fetch(src);
-      const blob = await res.blob();
-      if (blob.type.startsWith('image/')) {
+      let blob;
+      if (src.startsWith('data:image/')) {
+        // Convert base64 data URL directly — avoids fetch issues with large data URIs
+        const [header, b64] = src.split(',');
+        const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+        const binary = atob(b64);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+        blob = new Blob([bytes], { type: mime });
+      } else {
+        const res = await fetch(src);
+        blob = await res.blob();
+      }
+      if (blob && blob.type.startsWith('image/')) {
         await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
         return;
       }
@@ -188,8 +199,8 @@
 
   function confirmUrlEdit() {
     const menuBlock = blocks.find(b => b.id === blockMenu.blockId);
-    if (menuBlock) {
-      updateBlock(menuBlock.id, { src: blockMenuUrlDraft });
+    if (menuBlock && blockMenuUrlDraft.trim()) {
+      updateBlock(menuBlock.id, { src: blockMenuUrlDraft.trim(), resolvedSrc: null }, { pushToHistory: true, changedKeys: ['src', 'resolvedSrc'] });
     }
     closeBlockMenu();
   }
@@ -355,9 +366,9 @@
 
     if (currentTap - previousTap <= 300) {
       event.preventDefault();
-      openImagePicker(block.id);
-    } else {
       openLightbox(block);
+    } else {
+      ensureFocus(block.id);
     }
   }
 
@@ -370,7 +381,9 @@
   onMount(() => {
     let rafId;
     const handleGlobalPointerDown = (event) => {
-      if (blockMenu.blockId) closeBlockMenu();
+      if (!blockMenu.blockId) return;
+      if (event.target?.closest?.('.url-edit-popup') || event.target?.closest?.('.ctx-menu')) return;
+      closeBlockMenu();
     };
     const handleEsc = (event) => {
       if (event.key === 'Escape') {
@@ -653,6 +666,7 @@ li {
 
 
 
+<!-- svelte-ignore a11y-no-static-element-interactions -->
 <div class="simple-wrapper" bind:this={canvasRef} style={`${canvasCssVars} --simple-note-columns: ${normalizedColumnCount};`}>
   {#each renderColumns as column}
     <div class="simple-column">
@@ -661,6 +675,7 @@ li {
         <div
           class="container"
           class:focused={block.id === focusedBlockId}
+          data-simplenote-block={block.id}
           style="--bg-color: {block.bgColor}; --text-color: {block.textColor};"
           on:click={(event) => handleBlockClick(event, block.id)}
           on:contextmenu={(event) => handleContextMenu(event, block.id)}
@@ -695,10 +710,10 @@ li {
                 src={getImageSource(block)}
                 alt=""
                 data-focus-guard
-                on:click|stopPropagation={() => openLightbox(block)}
-                on:dblclick|stopPropagation={() => openImagePicker(block.id)}
+                on:click|stopPropagation={() => ensureFocus(block.id)}
+                on:dblclick|stopPropagation={() => openLightbox(block)}
                 on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
-                style="cursor:zoom-in"
+                style="cursor:pointer"
               />
             {:else}
               <div class="image-empty-state" data-focus-guard>
@@ -766,7 +781,7 @@ li {
       {/each}
     </div>
   {/each}
-</div>
+</div><!-- /simple-wrapper -->
 
 {#if blockMenu.blockId}
   {#if blockMenuMode === 'editUrl'}
@@ -792,7 +807,7 @@ li {
       y={blockMenu.y}
       items={buildMenuItems(menuBlock)}
       on:action={(e) => handleMenuAction(e.detail, menuBlock)}
-      on:close={closeBlockMenu}
+      on:close={() => { if (blockMenuMode !== 'editUrl') closeBlockMenu(); }}
     />
   {/if}
 {/if}

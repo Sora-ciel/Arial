@@ -139,9 +139,19 @@
       document.body.removeChild(a);
     } else if (actionId === 'copyMedia') {
       try {
-        const res = await fetch(src);
-        const blob = await res.blob();
-        if (blob.type.startsWith('image/')) {
+        let blob;
+        if (src.startsWith('data:image/')) {
+          const [header, b64] = src.split(',');
+          const mime = header.match(/:(.*?);/)?.[1] ?? 'image/png';
+          const binary = atob(b64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+          blob = new Blob([bytes], { type: mime });
+        } else {
+          const res = await fetch(src);
+          blob = await res.blob();
+        }
+        if (blob && blob.type.startsWith('image/')) {
           await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
           return;
         }

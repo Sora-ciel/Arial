@@ -1785,6 +1785,7 @@
     if (nextMode === "birthday" && !birthdayModeUnlocked) return;
     if (nextMode === mode) return;
     mode = nextMode;
+    writeSetting('lastMode', nextMode);
 
     if (
       mode === "single" &&
@@ -1898,7 +1899,13 @@
     if (birthdayUnlockExpiry <= Date.now()) {
       birthdayUnlockExpiry = 0;
       persistBirthdayUnlockExpiry(0);
-      if (mode === "birthday") mode = getDefaultModeForViewport();
+    }
+
+    const storedMode = await readSetting('lastMode');
+    if (storedMode && KNOWN_MODES.includes(storedMode) && storedMode !== 'birthday') {
+      mode = storedMode;
+    } else if (mode === 'birthday' && !birthdayModeUnlocked) {
+      mode = getDefaultModeForViewport();
     }
 
     history = [];
@@ -2193,6 +2200,8 @@
       on:focusToggle={handleFocusToggle}
       on:modeSettingChange={handleModeSettingChange}
       on:shareContent={handleShareContent}
+      on:addBlock={(e) => addBlock(e.detail)}
+      on:switchSave={(e) => load(e.detail.saveName)}
     />
   </div>
 </div>

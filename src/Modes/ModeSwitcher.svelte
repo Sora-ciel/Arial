@@ -79,6 +79,7 @@
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:addBlock
     />
 
   {:else if mode === 'habit'}
@@ -109,11 +110,14 @@
       {focusedBlockId}
       bind:canvasRef
       {canvasColors}
+      {currentSaveName}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:addBlock
+      on:switchSave
     />
 {/if}

@@ -75,21 +75,43 @@
   }
 
   async function loadThumbnails(list) {
-    const toLoad = list.filter(e =>
+    // Blob-backed images/videos (data URLs saved as binary files)
+    const blobEntries = list.filter(e =>
       (e.type === 'image' || e.type === 'video') && !thumbUrls[e.uuid] && e.file
     );
-    if (!toLoad.length) return;
+    // URL-backed images (src was an https:// URL, stored as a .url text file)
+    const urlEntries = list.filter(e =>
+      e.type === 'text' && !thumbUrls[e.uuid] && e.file?.endsWith('.url')
+    );
 
+    // Load blob entries in batches
     const BATCH = 8;
-    for (let i = 0; i < toLoad.length; i += BATCH) {
+    for (let i = 0; i < blobEntries.length; i += BATCH) {
       if (destroyed) return;
-      const batch = toLoad.slice(i, i + BATCH);
+      const batch = blobEntries.slice(i, i + BATCH);
       const blobs = await Promise.all(batch.map(e => loadBlobByPath(e.file)));
       if (destroyed) return;
       const newUrls = {};
       blobs.forEach((blob, idx) => {
         if (blob instanceof Blob) newUrls[batch[idx].uuid] = URL.createObjectURL(blob);
       });
+      if (Object.keys(newUrls).length) thumbUrls = { ...thumbUrls, ...newUrls };
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    // Load URL entries: read the stored URL text and use it directly as the img src
+    for (let i = 0; i < urlEntries.length; i += BATCH) {
+      if (destroyed) return;
+      const batch = urlEntries.slice(i, i + BATCH);
+      const blobs = await Promise.all(batch.map(e => loadBlobByPath(e.file)));
+      if (destroyed) return;
+      const newUrls = {};
+      for (let j = 0; j < blobs.length; j++) {
+        const blob = blobs[j];
+        if (!(blob instanceof Blob)) continue;
+        const urlText = (await blob.text()).trim();
+        if (urlText) newUrls[batch[j].uuid] = urlText;
+      }
       if (Object.keys(newUrls).length) thumbUrls = { ...thumbUrls, ...newUrls };
       await new Promise(r => setTimeout(r, 0));
     }
@@ -208,7 +230,7 @@
     if (!_cache) loading = true;
     const reg = await getFileExplorer();
     if (destroyed) return;
-    entries = Object.entries(reg).map(([uuid, e]) => ({ uuid, ...e }));
+    entries = Object.entries(reg).map(([uuid, e]) => ({ uuid, ...e })).filter(e => e.type !== 'json');
     loading = false;
     await tick();
     if (!destroyed) await loadThumbnails(entries);
@@ -227,7 +249,7 @@
 
     const reg = await getFileExplorer();
     if (destroyed) return;
-    const newEntries = Object.entries(reg).map(([uuid, e]) => ({ uuid, ...e }));
+    const newEntries = Object.entries(reg).map(([uuid, e]) => ({ uuid, ...e })).filter(e => e.type !== 'json');
 
     // O(n) change detection using Maps — avoids the previous O(n²) entries.find loop
     const oldMap = new Map(entries.map(e => [e.uuid, e.displayName]));
@@ -239,9 +261,10 @@
         return oldName === undefined || oldName !== e.displayName;
       });
 
-    // Revoke URLs only for deleted files
+    // Revoke URLs only for deleted files (skip plain https:// URLs — those aren't blob URLs)
     for (const e of removed) {
-      if (thumbUrls[e.uuid]) URL.revokeObjectURL(thumbUrls[e.uuid]);
+      const t = thumbUrls[e.uuid];
+      if (t && t.startsWith('blob:')) URL.revokeObjectURL(t);
     }
     if (removed.length) {
       const cleaned = { ...thumbUrls };
@@ -327,7 +350,7 @@
     if (!window.confirm(`Delete "${displayFilename(e)}"?\nThis removes it from all folders that use it.`)) return;
     closeCtx();
     if (thumbUrls[uuid]) {
-      URL.revokeObjectURL(thumbUrls[uuid]);
+      if (thumbUrls[uuid].startsWith('blob:')) URL.revokeObjectURL(thumbUrls[uuid]);
       const t = { ...thumbUrls }; delete t[uuid]; thumbUrls = t;
       if (_cache) delete _cache.thumbUrls[uuid];
     }

@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import TipTapEditor from './TipTapEditor.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -18,7 +19,7 @@
   let bgColor = initialBgColor;
   let textColor = initialTextColor;
   let content = initialContent;
-  let textareaEl;
+  let scrollTop = initialScrollTop;
 
   let dragging = false;
   let resizing = false;
@@ -39,7 +40,7 @@
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content, scrollTop: textareaEl?.scrollTop ?? 0 };
+    const detail = { id, position, size, bgColor, textColor, content, scrollTop };
 
     if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
@@ -189,19 +190,9 @@
     handleWrapperClick(event);
   }
 
-  function applySavedScroll() {
-    if (!textareaEl) return;
-    const nextScrollTop = Number(initialScrollTop ?? 0);
-    textareaEl.scrollTop = Number.isFinite(nextScrollTop) ? Math.max(0, nextScrollTop) : 0;
-  }
-
-  function handleTextScroll() {
-    if (!textareaEl) return;
+  function handleTextScroll(e) {
+    scrollTop = e.detail;
     sendUpdate(['scrollTop'], { pushToHistory: false });
-  }
-
-  $: if (textareaEl) {
-    applySavedScroll();
   }
 </script>
 
@@ -274,20 +265,18 @@
     display: flex;
     flex-direction: column;
   }
-  textarea {
-    width: 100%;
+  /* TipTapEditor fills the block body and inherits block colors */
+  :global(.text-container .tiptap-wrap) {
     height: 100%;
-    background-color: transparent;
-    border: none;
+    background: transparent;
     color: var(--text);
     font-size: 1.08rem;
     font-weight: 300;
     font-family: var(--block-body-font, inherit);
-    resize: none;
-    outline: none;
     padding: 8px;
-    box-sizing: border-box;
-    overflow-y: auto;
+  }
+  :global(.text-container .tiptap-inner) {
+    color: var(--text);
   }
   .resize-handle {
     position: absolute;
@@ -342,15 +331,14 @@
   </div>
 
   <div class="text-container">
-    <textarea
-      bind:this={textareaEl}
-      spellcheck="false"
-      bind:value={content}
-      on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+    <TipTapEditor
+      {content}
+      initialScrollTop={initialScrollTop}
+      placeholder=""
+      on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
       on:scroll={handleTextScroll}
       on:focus={ensureFocus}
-      data-focus-guard
-    ></textarea>
+    />
   </div>
 
   <div
