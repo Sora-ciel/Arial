@@ -8,6 +8,7 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let simpleNoteColumnCount = 2;
+  export let canvasRotation = 0;
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
@@ -61,6 +62,7 @@
 
 
   $: isSimpleNoteMode = Boolean(activeModeDefinition?.settings?.simpleColumns);
+  $: isCanvasMode = mode === 'default';
   $: availableAddBlockTypes = activeModeDefinition?.addBlockTypes || [];
   $: canAddBlock = (type) => availableAddBlockTypes.includes(type);
   $: addBlockDefinitions = getBlockDefinitions(availableAddBlockTypes);
@@ -123,6 +125,15 @@
   function handleSimpleColumnInput(event) {
     const next = Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1);
     dispatch("modeSettingChange", { columnCount: next });
+  }
+
+  function handleCanvasRotationInput(event) {
+    const next = Number.parseInt(event.currentTarget.value, 10) || 0;
+    dispatch("modeSettingChange", { canvasRotation: next });
+  }
+
+  function resetCanvasRotation() {
+    dispatch("modeSettingChange", { canvasRotation: 0 });
   }
 
   function checkWidth() {
@@ -400,6 +411,13 @@ onMount(() => {
   .simple-columns-value {
     min-width: 1.25rem;
     text-align: center;
+  }
+
+  .rotation-reset {
+    min-height: 0 !important;
+    padding: 2px 8px !important;
+    font-size: 1rem;
+    line-height: 1;
   }
 
   @media (max-width: 1024px) {
@@ -683,6 +701,26 @@ onMount(() => {
         />
         <span class="simple-columns-value">{simpleNoteColumnCount}</span>
       </label>
+    {/if}
+    {#if isCanvasMode}
+      <div class="simple-columns-control mobile-only">
+        <button
+          class="rotation-reset"
+          on:click={resetCanvasRotation}
+          title="Reset rotation"
+          aria-label="Reset rotation"
+        >⟳</button>
+        <input
+          type="range"
+          min="-180"
+          max="180"
+          step="1"
+          value={canvasRotation}
+          on:input={handleCanvasRotationInput}
+          title="Rotate canvas"
+        />
+        <span class="simple-columns-value">{canvasRotation}°</span>
+      </div>
     {/if}
 
   </div>

@@ -16,6 +16,37 @@
   export let canvasRef;
   export let focusedBlockId;
   export let canvasColors = {};
+  export let rotation = 0;
+
+  // Rotated bounding box of the scaled canvas — gives the scroll container
+  // enough room to reach every corner at any angle. Reduces to the plain
+  // scaled size when rotation is 0, so the un-rotated case is unchanged.
+  $: _rad = (Number(rotation) || 0) * Math.PI / 180;
+  $: _absCos = Math.abs(Math.cos(_rad));
+  $: _absSin = Math.abs(Math.sin(_rad));
+  $: shellWidth = (canvasWidth * _absCos + canvasHeight * _absSin) * scale;
+  $: shellHeight = (canvasWidth * _absSin + canvasHeight * _absCos) * scale;
+  // Center the (scaled, rotated) content inside the bounding-box shell.
+  // At rotation 0 this resolves to the content sitting flush at the shell's
+  // top-left (0,0), so the existing pan/zoom/scroll math is unchanged.
+  $: innerTranslateX = (shellWidth - canvasWidth) / 2;
+  $: innerTranslateY = (shellHeight - canvasHeight) / 2;
+
+  // Keep the rotation pivot at the middle of the screen: whenever the angle
+  // changes, scroll so the content's center sits at the viewport center.
+  let _prevRotation = rotation;
+  $: if (canvasRef && rotation !== _prevRotation) {
+    _prevRotation = rotation;
+    centerOnViewport();
+  }
+
+  function centerOnViewport() {
+    requestAnimationFrame(() => {
+      if (!canvasRef) return;
+      canvasRef.scrollLeft = Math.max(0, (shellWidth - canvasRef.clientWidth) / 2);
+      canvasRef.scrollTop = Math.max(0, (shellHeight - canvasRef.clientHeight) / 2);
+    });
+  }
 
   
 
@@ -162,13 +193,21 @@
     return Math.min(1, fittedScale);
   }
 
+  // Deterministic "home" zoom based purely on screen size (not content),
+  // so first mount and the Ctrl+middle-click reset always land on the same zoom.
+  function getInitialScale() {
+    const availableWidth = Math.max(window.innerWidth, 1);
+    const fitted = availableWidth / MIN_CANVAS_WIDTH;
+    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(1, fitted)));
+  }
+
   function getMinAllowedScale() {
     return Math.min(MIN_ZOOM, getViewportScaleFloor());
   }
 
   function fitToViewport() {
     if (!canvasRef) return;
-    scale = getViewportScaleFloor();
+    scale = getInitialScale();
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
@@ -371,9 +410,9 @@
     if (event.ctrlKey && event.button === 1) {
       if (event.cancelable) event.preventDefault();
       stopEdgePan();
-      // Restore the exact state from first mount — not a recomputed fit
+      // Reset to the deterministic screen-based home zoom (same as first mount)
       if (canvasRef) {
-        scale = _mountScale;
+        scale = getInitialScale();
         canvasRef.scrollLeft = 0;
         canvasRef.scrollTop = 0;
       }
@@ -440,6 +479,17 @@
     clearTimeout(canvasLongPressTimer);
   }
 
+  function htmlToPlainText(html) {
+    return String(html || '')
+      .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  }
+
   function buildCanvasMenuItems(block) {
     if (!block) return [];
     const items = [];
@@ -455,6 +505,20 @@
     }
     items.push({ id: 'delete', label: 'Delete block', variant: 'danger' });
     return items;
+  }
+
+  function handleCanvasColorChange(detail) {
+    if (!canvasCtxBlock) return;
+    const changed = {};
+    if (detail.bgColor !== undefined) changed.bgColor = detail.bgColor;
+    if (detail.textColor !== undefined) changed.textColor = detail.textColor;
+    const keys = Object.keys(changed);
+    if (!keys.length) return;
+    // Live drag = no history; release (commit) = snapshot. Bump either way so
+    // the canvas block (which caches its colors) re-renders for live preview.
+    updateBlockHandler({ detail: { id: canvasCtxBlock.id, ...changed, changedKeys: keys, pushToHistory: !!detail.commit, bumpVersion: true } });
+    // keep the open menu's swatches in sync
+    canvasCtxBlock = { ...canvasCtxBlock, ...changed };
   }
 
   async function handleCanvasMenuAction(actionId) {
@@ -498,7 +562,8 @@
         try { await navigator.clipboard.writeText(src); } catch {}
       }
     } else if (actionId === 'copyText') {
-      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+      const text = htmlToPlainText(block.content);
+      if (text) await navigator.clipboard.writeText(text).catch(() => {});
     }
   }
 
@@ -525,17 +590,28 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
-  // Snapshot of the view exactly as it was at first mount — used by Ctrl+Middle reset
-  let _mountScale = 1;
+  // Stop edge-pan the moment Ctrl is released or the window loses focus,
+  // even if the pointer doesn't move (the rAF loop otherwise keeps scrolling).
+  function handleKeyUp(event) {
+    if (event.key === 'Control' || event.key === 'Meta') stopEdgePan();
+  }
+  function handleWindowBlur() {
+    stopEdgePan();
+  }
 
   onMount(() => {
     refitCanvas();
-    // Capture after refitCanvas so _mountScale matches what the user first sees
-    _mountScale = scale;
+    // If a rotation was restored from the saved file, center it on screen
+    if (rotation) centerOnViewport();
+
+    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleWindowBlur);
 
     return () => {
       stopEdgePan();
       stopRightClickPan();
+      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleWindowBlur);
     };
   });
 </script>
@@ -551,6 +627,8 @@
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
   touch-action: pan-x pan-y;
+  --sb-track: var(--canvas-outer-bg, #000000);
+  --sb-thumb: var(--canvas-inner-bg, #1a1a1a);
 }
 
 .canvas.panning {
@@ -566,7 +644,7 @@
 .canvas-inner {
   position: absolute;
   inset: 0 auto auto 0;
-  transform-origin: top left;
+  transform-origin: center center;
   background: var(--canvas-inner-bg, #000000);
 }
 
@@ -622,14 +700,14 @@
 >
     <div
       class="canvas-zoom-shell"
-      style:width={`${canvasWidth * scale}px`}
-      style:height={`${canvasHeight * scale}px`}
+      style:width={`${shellWidth}px`}
+      style:height={`${shellHeight}px`}
       >
       <div
         class="canvas-inner"
         style:width={`${canvasWidth}px`}
         style:height={`${canvasHeight}px`}
-        style:transform={`scale(${scale})`}
+        style:transform={`translate(${innerTranslateX}px, ${innerTranslateY}px) scale(${scale}) rotate(${rotation}deg)`}
         style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
@@ -645,6 +723,7 @@
             initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -662,6 +741,7 @@
             initialAttachmentRequiresAuth={block.attachmentRequiresAuth}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -678,6 +758,7 @@
             initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -693,6 +774,7 @@
             initialContent={block.content}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -707,6 +789,7 @@
             initialContent={block.content}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -722,6 +805,7 @@
             initialTitle={block.title}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
+            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -742,7 +826,11 @@
     x={canvasCtxMenu.x}
     y={canvasCtxMenu.y}
     items={buildCanvasMenuItems(canvasCtxBlock)}
+    colorEdit={true}
+    bgColor={canvasCtxBlock?.bgColor || '#000000'}
+    textColor={canvasCtxBlock?.textColor || '#ffffff'}
     on:action={(e) => handleCanvasMenuAction(e.detail)}
+    on:colorChange={(e) => handleCanvasColorChange(e.detail)}
     on:close={closeCanvasCtxMenu}
   />
 {/if}

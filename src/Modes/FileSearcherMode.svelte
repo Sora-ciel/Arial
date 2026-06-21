@@ -5,7 +5,7 @@
 
 <script>
   import { onMount, onDestroy, createEventDispatcher, tick } from 'svelte';
-  import { getFileExplorer, renameContentFile, loadBlobByPath, deleteContentFile } from '../storage.js';
+  import { getFileExplorer, renameContentFile, loadBlobByPath, deleteContentFile, recoverFiles } from '../storage.js';
   import { readSetting, writeSetting } from '../storage/settings.js';
   import Lightbox from '../components/Lightbox.svelte';
 
@@ -58,6 +58,8 @@
 
   // ── Thumbnails ─────────────────────────────────────────────────────
   let thumbUrls = _cache ? { ..._cache.thumbUrls } : {};
+  // For text files: a small HTML snippet rendered as a "document" thumbnail
+  let textPreviews = _cache ? { ..._cache.textPreviews } : {};
 
   // ── Lightbox ───────────────────────────────────────────────────────
   let lbOpen = false;
@@ -113,6 +115,30 @@
         if (urlText) newUrls[batch[j].uuid] = urlText;
       }
       if (Object.keys(newUrls).length) thumbUrls = { ...thumbUrls, ...newUrls };
+      await new Promise(r => setTimeout(r, 0));
+    }
+
+    // Text files: load a content snippet and render it as a document thumbnail
+    const textEntries = list.filter(e =>
+      e.type === 'text' && !textPreviews[e.uuid] && e.file && !e.file.endsWith('.url')
+    );
+    for (let i = 0; i < textEntries.length; i += BATCH) {
+      if (destroyed) return;
+      const batch = textEntries.slice(i, i + BATCH);
+      const blobs = await Promise.all(batch.map(e => loadBlobByPath(e.file)));
+      if (destroyed) return;
+      const newPreviews = {};
+      for (let j = 0; j < blobs.length; j++) {
+        const blob = blobs[j];
+        if (!(blob instanceof Blob)) continue;
+        const raw = (await blob.text()).slice(0, 800);
+        // If it isn't HTML (legacy markdown / plain), keep newlines as <br>
+        const html = /<\w+[^>]*>/.test(raw)
+          ? raw
+          : raw.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\n/g, '<br>');
+        if (html.trim()) newPreviews[batch[j].uuid] = html;
+      }
+      if (Object.keys(newPreviews).length) textPreviews = { ...textPreviews, ...newPreviews };
       await new Promise(r => setTimeout(r, 0));
     }
   }
@@ -223,7 +249,7 @@
     clearTimeout(thumbSaveTimer);
     document.removeEventListener('keydown', onKeyDown);
     // Persist current state to module cache — keeps URLs and settings alive for next mount
-    _cache = { entries: [...entries], thumbUrls: { ...thumbUrls }, savedAt: Date.now(), viewMode, thumbSize };
+    _cache = { entries: [...entries], thumbUrls: { ...thumbUrls }, textPreviews: { ...textPreviews }, savedAt: Date.now(), viewMode, thumbSize };
   });
 
   async function reload() {
@@ -281,6 +307,30 @@
 
   function sortBy(col) {
     if (sortCol === col) sortAsc = !sortAsc; else { sortCol = col; sortAsc = true; }
+  }
+
+  // ── Recover lost / orphaned files ─────────────────────────────────
+  let recovering = false;
+  async function runRecovery() {
+    if (recovering) return;
+    recovering = true;
+    try {
+      const { relinked, orphans } = await recoverFiles();
+      _cache = null; // force a full re-read so recovered entries appear
+      await reload();
+      const total = relinked + orphans;
+      if (total === 0) {
+        window.alert('No recoverable files found — nothing was missing.');
+      } else {
+        window.alert(`Recovered ${total} file${total === 1 ? '' : 's'}` +
+          (relinked ? `\n• ${relinked} re-linked to blocks (reopen the folder to see them)` : '') +
+          (orphans ? `\n• ${orphans} added to the library` : ''));
+      }
+    } catch (e) {
+      window.alert('Recovery failed: ' + (e?.message || e));
+    } finally {
+      recovering = false;
+    }
   }
 
   // ── Selection ─────────────────────────────────────────────────────
@@ -402,6 +452,10 @@
       <input type="range" min="60" max="400" step="10" bind:value={thumbSize} on:click|stopPropagation />
     </label>
 
+    <button class="recover-btn" on:click|stopPropagation={runRecovery} disabled={recovering} title="Scan for and restore lost / orphaned files">
+      {recovering ? 'Recovering…' : '🔧 Recover files'}
+    </button>
+
     {#if clipboard}
       <span class="clipboard-badge">
         {clipboard.mode==='cut'?'✂':'📋'} {entries.find(e=>e.uuid===clipboard.uuid)?.displayName ?? ''}
@@ -452,6 +506,8 @@
             {#if thumbUrls[entry.uuid]}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <img class="thumb-sm" src={thumbUrls[entry.uuid]} alt="" style="cursor:zoom-in" on:click|stopPropagation={() => openFileLightbox(entry)} />
+            {:else if entry.type === 'text' && textPreviews[entry.uuid]}
+              <div class="text-thumb text-thumb-sm">{@html textPreviews[entry.uuid]}</div>
             {:else}
               {TYPE_ICONS[entry.type]??'📎'}
             {/if}
@@ -506,6 +562,8 @@
             {#if thumbUrls[entry.uuid]}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <img class="thumb-lg" src={thumbUrls[entry.uuid]} alt={entry.displayName} style="cursor:zoom-in" on:click|stopPropagation={() => openFileLightbox(entry)} />
+            {:else if entry.type === 'text' && textPreviews[entry.uuid]}
+              <div class="text-thumb text-thumb-lg">{@html textPreviews[entry.uuid]}</div>
             {:else}
               <span class="thumb-emoji">{TYPE_ICONS[entry.type]??'📎'}</span>
             {/if}
@@ -624,6 +682,20 @@
     cursor: pointer;
     vertical-align: middle;
   }
+
+  .recover-btn {
+    flex-shrink: 0;
+    background: color-mix(in srgb, var(--text) 8%, transparent);
+    color: var(--text);
+    border: 1px solid color-mix(in srgb, var(--text) 20%, transparent);
+    border-radius: 6px;
+    padding: 5px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .recover-btn:hover { background: color-mix(in srgb, var(--text) 16%, transparent); }
+  .recover-btn:disabled { opacity: 0.6; cursor: default; }
 
   .clipboard-badge {
     display: flex; align-items: center; gap: 6px;
@@ -763,6 +835,43 @@
     object-fit: cover;
   }
   .thumb-emoji { font-size: 2rem; opacity: 0.45; }
+
+  /* Text-file "document" thumbnails */
+  .text-thumb {
+    background: #fbfbf8;
+    color: #1a1a1a;
+    overflow: hidden;
+    text-align: left;
+    box-sizing: border-box;
+    pointer-events: none;
+    word-break: break-word;
+  }
+  .text-thumb-sm {
+    width: var(--lt, 42px);
+    height: var(--lt, 42px);
+    border-radius: 4px;
+    padding: 3px 4px;
+    font-size: 3.2px;
+    line-height: 1.25;
+  }
+  .text-thumb-lg {
+    width: 100%;
+    height: 100%;
+    padding: 8px 9px;
+    font-size: 8px;
+    line-height: 1.35;
+  }
+  .text-thumb :global(h1) { font-size: 1.7em; font-weight: 700; margin: 0 0 0.2em; }
+  .text-thumb :global(h2) { font-size: 1.4em; font-weight: 700; margin: 0 0 0.2em; }
+  .text-thumb :global(h3) { font-size: 1.2em; font-weight: 600; margin: 0 0 0.15em; }
+  .text-thumb :global(p) { margin: 0 0 0.25em; }
+  .text-thumb :global(ul), .text-thumb :global(ol) { margin: 0 0 0.25em; padding-left: 1.4em; }
+  .text-thumb :global(strong) { font-weight: 700; }
+  .text-thumb :global(em) { font-style: italic; }
+  .text-thumb :global(code) { background: rgba(0,0,0,0.08); border-radius: 2px; padding: 0 2px; }
+  .text-thumb :global(blockquote) { border-left: 2px solid rgba(0,0,0,0.3); margin: 0 0 0.25em; padding-left: 4px; color: #555; }
+  .text-thumb :global(hr) { border: none; border-top: 1px solid rgba(0,0,0,0.2); margin: 0.3em 0; }
+  .text-thumb :global(img) { max-width: 100%; }
 
   .icon-label { margin-top: 5px; padding: 0 2px; }
   .icon-name {

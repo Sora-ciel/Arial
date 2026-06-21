@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from "svelte";
+  import ColorField from "../components/ColorField.svelte";
 
   const defaultColors = {
     left: {
@@ -126,11 +127,11 @@
       {#each controlFields as field}
         <label>
           <span>{field.label}</span>
-          <input
-            type="color"
-            bind:value={left[field.key]}
-            on:input={(event) =>
-              handleColorChange("left", field.key, event.target.value)}
+          <ColorField
+            value={left[field.key]}
+            title={field.label}
+            on:input={(e) => handleColorChange("left", field.key, e.detail)}
+            on:change={(e) => handleColorChange("left", field.key, e.detail)}
           />
         </label>
       {/each}
@@ -144,11 +145,11 @@
       {#each controlFields as field}
         <label>
           <span>{field.label}</span>
-          <input
-            type="color"
-            bind:value={right[field.key]}
-            on:input={(event) =>
-              handleColorChange("right", field.key, event.target.value)}
+          <ColorField
+            value={right[field.key]}
+            title={field.label}
+            on:input={(e) => handleColorChange("right", field.key, e.detail)}
+            on:change={(e) => handleColorChange("right", field.key, e.detail)}
           />
         </label>
       {/each}
@@ -162,11 +163,11 @@
       {#each canvasFields as field}
         <label>
           <span>{field.label}</span>
-          <input
-            type="color"
-            bind:value={canvas[field.key]}
-            on:input={(event) =>
-              handleColorChange("canvas", field.key, event.target.value)}
+          <ColorField
+            value={canvas[field.key]}
+            title={field.label}
+            on:input={(e) => handleColorChange("canvas", field.key, e.detail)}
+            on:change={(e) => handleColorChange("canvas", field.key, e.detail)}
           />
         </label>
       {/each}

@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -9,6 +10,7 @@
   export let initialContent = '';
   export let focused = false;
   export let canvasScale = 1;
+  export let canvasRotation = 0;
 
   export let initialTitle = 'Embed Block';
 
@@ -27,9 +29,15 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
+    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    const rx = source.clientX * cos - source.clientY * sin;
+    const ry = source.clientX * sin + source.clientY * cos;
     return {
-      x: source.clientX / safeScale,
-      y: source.clientY / safeScale
+      x: rx / safeScale,
+      y: ry / safeScale
     };
   }
   let suppressClick = false;
@@ -300,17 +308,19 @@
         class="gear-btn"
         data-focus-guard
       >⚙︎</button>
-      <input
-        type="color"
-        bind:value={bgColor}
-        on:change={() => sendUpdate(['bgColor'])}
-        data-focus-guard
+      <ColorField
+        value={bgColor}
+        title="Background Color"
+        placement="side"
+        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
       />
-      <input
-        type="color"
-        bind:value={textColor}
-        on:change={() => sendUpdate(['textColor'])}
-        data-focus-guard
+      <ColorField
+        value={textColor}
+        title="Text Color"
+        placement="side"
+        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
       />
       <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>

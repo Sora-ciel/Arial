@@ -21,8 +21,11 @@
       element,
       extensions: [
         StarterKit,
+        // html:true so setContent can parse BOTH legacy markdown content and the
+        // HTML we now store. We store HTML (getHTML) because markdown collapses
+        // consecutive blank lines — HTML keeps every empty paragraph.
         Markdown.configure({
-          html: false,
+          html: true,
           transformCopiedText: true,
           transformPastedText: true,
         }),
@@ -32,9 +35,9 @@
         attributes: { class: 'tiptap-inner', spellcheck: 'false' },
       },
       onUpdate({ editor: e }) {
-        const md = e.storage.markdown.serializer.serialize(e.state.doc);
-        lastPushedContent = md;
-        dispatch('change', md);
+        const html = e.getHTML();
+        lastPushedContent = html;
+        dispatch('change', html);
       },
       onFocus() {
         dispatch('focus');
@@ -68,6 +71,9 @@
 <style>
   .tiptap-wrap {
     flex: 1 1 auto;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
     overflow-y: auto;
     background: var(--active-note-bg, var(--canvas-inner-bg, #000));
     color: var(--active-note-text, var(--mode-text-color, #fff));
@@ -76,17 +82,26 @@
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;
     line-height: 1.6;
+    cursor: text;
+  }
+
+  .tiptap-mount {
+    flex: 1 1 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
   }
 
   :global(.tiptap-inner) {
+    flex: 1 1 auto;
     outline: none;
-    min-height: 100%;
+    min-height: 80px;
     white-space: pre-wrap;
     word-break: break-word;
+    cursor: text;
   }
 
-  :global(.tiptap-inner p) { margin: 0 0 0.5em; }
-  :global(.tiptap-inner p:last-child) { margin-bottom: 0; }
+  :global(.tiptap-inner p) { margin: 0; }
 
   :global(.tiptap-inner h1) { font-size: 1.7em; font-weight: 700; margin: 0.6em 0 0.3em; }
   :global(.tiptap-inner h2) { font-size: 1.35em; font-weight: 700; margin: 0.5em 0 0.25em; }
@@ -137,6 +152,9 @@
   }
 </style>
 
-<div class="tiptap-wrap" bind:this={wrapEl} on:scroll={onScroll}>
-  <div bind:this={element}></div>
+<!-- svelte-ignore a11y-click-events-have-key-events -->
+<!-- svelte-ignore a11y-no-static-element-interactions -->
+<div class="tiptap-wrap" bind:this={wrapEl} on:scroll={onScroll}
+  on:click={() => editor?.commands.focus()}>
+  <div class="tiptap-mount" bind:this={element}></div>
 </div>

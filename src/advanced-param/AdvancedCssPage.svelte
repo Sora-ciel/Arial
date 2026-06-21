@@ -7,6 +7,7 @@
     normalizeControlColors,
     normalizeBlockTheme
   } from '../utils/themeDefaults.js';
+  import ColorField from '../components/ColorField.svelte';
 
   const dispatch = createEventDispatcher();
 
@@ -669,6 +670,16 @@
     flex: 1;
   }
 
+  .color-disabled-swatch {
+    width: 52px;
+    height: 36px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    background: repeating-linear-gradient(45deg, #444 0 6px, #666 6px 12px);
+    flex-shrink: 0;
+    opacity: 0.6;
+  }
+
   .opacity-row {
     display: flex;
     align-items: center;
@@ -902,11 +913,11 @@
             {#each section.fields as field}
               <label>
                 <span>{field.label}</span>
-                <input
-                  type="color"
+                <ColorField
                   value={workingControlColors[section.key]?.[field.key] || CONTROL_COLOR_DEFAULTS[section.key]?.[field.key]}
-                  on:input={(event) =>
-                    updateControlColor(section.key, field.key, event.target.value)}
+                  title={field.label}
+                  on:input={(e) => updateControlColor(section.key, field.key, e.detail)}
+                  on:change={(e) => updateControlColor(section.key, field.key, e.detail)}
                 />
               </label>
             {/each}
@@ -934,11 +945,11 @@
                     {@const colorState = getBlockColorState(field.key)}
                     {#if colorState.editable}
                       <div class="color-input-row">
-                        <input
-                          type="color"
+                        <ColorField
                           value={colorState.hex}
-                          on:input={(event) =>
-                            handleBlockColorChange(field.key, event.target.value, colorState.alpha)}
+                          title={field.label}
+                          on:input={(e) => handleBlockColorChange(field.key, e.detail, colorState.alpha)}
+                          on:change={(e) => handleBlockColorChange(field.key, e.detail, colorState.alpha)}
                         />
                         <input
                           class="color-text-input"
@@ -966,12 +977,10 @@
                       </div>
                     {:else}
                       <div class="color-input-row">
-                        <input
-                          type="color"
-                          disabled
-                          value="#ffffff"
+                        <span
+                          class="color-disabled-swatch"
                           title="Color picker requires a solid hex or rgb value."
-                        />
+                        ></span>
                         <input
                           class="color-text-input"
                           type="text"
@@ -1014,10 +1023,11 @@
         <div class="preview-input">
           <span>Preview background</span>
           {#if previewColorState.editable}
-            <input
-              type="color"
+            <ColorField
               value={previewColorState.hex}
-              on:input={(event) => handlePreviewColorChange(event.target.value)}
+              title="Preview background"
+              on:input={(e) => handlePreviewColorChange(e.detail)}
+              on:change={(e) => handlePreviewColorChange(e.detail)}
             />
             <input
               type="text"
@@ -1039,12 +1049,10 @@
               <span class="opacity-value">{Math.round((previewColorState.alpha ?? 1) * 100)}%</span>
             </div>
           {:else}
-            <input
-              type="color"
-              disabled
-              value="#ffffff"
+            <span
+              class="color-disabled-swatch"
               title="Color picker requires a solid color or rgba value."
-            />
+            ></span>
             <input
               type="text"
               value={localPreviewBg}

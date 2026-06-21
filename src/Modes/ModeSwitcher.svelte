@@ -20,6 +20,8 @@
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
   export let taskAddDirection = 'above';
+  export let canvasRotation = 0;
+  export let singleNoteSettings = {};
   export let currentSaveName = '';
 
   let width = 0;
@@ -56,6 +58,7 @@
     {mode}
     {blocks}
     {focusedBlockId}
+    rotation={canvasRotation}
     bind:canvasRef
     {canvasColors}
     on:touchstart={onTouchStart}
@@ -111,6 +114,7 @@
       bind:canvasRef
       {canvasColors}
       {currentSaveName}
+      {singleNoteSettings}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}
@@ -119,5 +123,6 @@
       on:focusToggle={focusToggleHandler}
       on:addBlock
       on:switchSave
+      on:modeSettingChange
     />
 {/if}

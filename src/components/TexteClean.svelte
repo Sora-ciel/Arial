@@ -1,5 +1,7 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
+  import TipTapEditor from './TipTapEditor.svelte';
+  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -10,6 +12,7 @@
   export let initialScrollTop = 0;
   export let focused = false;
   export let canvasScale = 1;
+  export let canvasRotation = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -18,6 +21,7 @@
   let bgColor = initialBgColor;
   let textColor = initialTextColor;
   let content = initialContent;
+  let scrollTop = initialScrollTop;
 
   let dragging = false, resizing = false;
   let offset = { x: 0, y: 0 }, resizeStart = {};
@@ -25,9 +29,15 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
+    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    const rx = source.clientX * cos - source.clientY * sin;
+    const ry = source.clientX * sin + source.clientY * cos;
     return {
-      x: source.clientX / safeScale,
-      y: source.clientY / safeScale
+      x: rx / safeScale,
+      y: ry / safeScale
     };
   }
   let suppressClick = false;
@@ -35,17 +45,9 @@
   let hasResized = false;
   let showSettings = false;
 
-  let editableDiv;
-
-  onMount(() => {
-    if (editableDiv) editableDiv.innerText = content;
-  });
-
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
-    content = editableDiv?.innerText ?? content;
-
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content, scrollTop: editableDiv?.scrollTop ?? 0 };
+    const detail = { id, position, size, bgColor, textColor, content, scrollTop };
 
     if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
@@ -191,25 +193,17 @@
     handleWrapperClick(event);
   }
 
-  function applySavedScroll() {
-    if (!editableDiv) return;
-    const nextScrollTop = Number(initialScrollTop ?? 0);
-    editableDiv.scrollTop = Number.isFinite(nextScrollTop) ? Math.max(0, nextScrollTop) : 0;
-  }
-
-  function handleEditableScroll() {
-    if (!editableDiv) return;
+  function handleEditableScroll(e) {
+    scrollTop = e.detail;
     sendUpdate(['scrollTop'], { pushToHistory: false });
-  }
-
-  $: if (editableDiv) {
-    applySavedScroll();
   }
 </script>
 
 <style>
   .note {
     position: absolute;
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
     border-radius: var(--block-border-radius, 12px);
     box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
@@ -250,17 +244,16 @@
     border-radius: var(--block-control-radius, 6px);
     background: transparent;
   }
-  .editable {
-    flex: 1;
-    padding: 8px;
-    outline: none;
+  :global(.note .tiptap-wrap) {
     background: transparent;
-    color: inherit;
+    color: var(--text);
     font-size: 1.1rem;
     font-weight: 500;
-    overflow-y: auto;
-    user-select: text;
+    padding: 8px;
     font-family: var(--block-body-font, inherit);
+  }
+  :global(.note .tiptap-inner) {
+    color: var(--text);
   }
   .resize-handle {
     position: absolute;
@@ -339,34 +332,32 @@
       >
         ⚙︎
       </button>
-      <input
-        type="color"
-        bind:value={bgColor}
-        title="BG"
-        on:change={() => sendUpdate(['bgColor'])}
-        data-focus-guard
+      <ColorField
+        value={bgColor}
+        title="Background"
+        placement="side"
+        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
       />
-      <input
-        type="color"
-        bind:value={textColor}
+      <ColorField
+        value={textColor}
         title="Text"
-        on:change={() => sendUpdate(['textColor'])}
-        data-focus-guard
+        placement="side"
+        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
       />
       <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
 
-  <div
-    contenteditable="true"
-    bind:this={editableDiv}
-    class="editable"
-    spellcheck="false"
-    on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+  <TipTapEditor
+    {content}
+    {initialScrollTop}
+    placeholder=""
+    on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
     on:scroll={handleEditableScroll}
     on:focus={ensureFocus}
-    data-focus-guard
-  ></div>
+  />
 
   <div
     class="resize-handle"

@@ -1,6 +1,7 @@
 <script>
   import { createEventDispatcher } from 'svelte';
   import TipTapEditor from './TipTapEditor.svelte';
+  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -11,6 +12,7 @@
   export let initialScrollTop = 0;
   export let focused = false;
   export let canvasScale = 1;
+  export let canvasRotation = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -32,9 +34,15 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
+    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
+    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
+    const cos = Math.cos(theta);
+    const sin = Math.sin(theta);
+    const rx = source.clientX * cos - source.clientY * sin;
+    const ry = source.clientX * sin + source.clientY * cos;
     return {
-      x: source.clientX / safeScale,
-      y: source.clientY / safeScale
+      x: rx / safeScale,
+      y: ry / safeScale
     };
   }
 
@@ -199,6 +207,8 @@
 <style>
   .wrapper {
     position: absolute;
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     border-radius: var(--block-border-radius, 12px);
     background: var(--block-surface, var(--bg));
@@ -310,22 +320,20 @@
   >
     <div>text</div>
     <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
-      <label title="Background Color">
-        <input
-          type="color"
-          bind:value={bgColor}
-          on:change={() => sendUpdate(['bgColor'])}
-          data-focus-guard
-        />
-      </label>
-      <label title="Text Color">
-        <input
-          type="color"
-          bind:value={textColor}
-          on:change={() => sendUpdate(['textColor'])}
-          data-focus-guard
-        />
-      </label>
+      <ColorField
+        value={bgColor}
+        title="Background Color"
+        placement="side"
+        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
+      />
+      <ColorField
+        value={textColor}
+        title="Text Color"
+        placement="side"
+        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
+      />
       <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>

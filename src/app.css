@@ -18,6 +18,30 @@
   user-select: none;
 }
 
+/* ── Scrollbars follow block/mode colors ──────────────────────────
+   Containers set --sb-track (background color of the block) and
+   --sb-thumb (text color of the block). Falls back to subtle defaults. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb, rgba(255, 255, 255, 0.4)) var(--sb-track, transparent);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--sb-track, transparent);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb, rgba(255, 255, 255, 0.4));
+  border-radius: 8px;
+  border: 2px solid var(--sb-track, transparent);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: var(--sb-track, transparent);
+}
+
 
 /* Re-enable for form elements */
 textarea,

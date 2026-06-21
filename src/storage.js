@@ -112,10 +112,25 @@ function makeDisplayName(value, field, descriptor, counts) {
   return `Content ${counts.text}`;
 }
 
+// Text content is stored as HTML (lossless for empty lines) — strip tags for
+// previews / display names so the File Library and sidebars show clean text.
+function htmlToText(html) {
+  return String(html || '')
+    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+
 function makePreview(value, encoding) {
   if (encoding === 'binary') return null;
   if (typeof value === 'string') {
-    const t = value.replace(/\s+/g, ' ').trim();
+    const t = htmlToText(value).replace(/\s+/g, ' ').trim();
     return t.length > 80 ? t.slice(0, 77) + '...' : t || null;
   }
   return null;
@@ -299,8 +314,10 @@ export async function loadBlocks(name) {
       let value;
       if (entry.encoding === 'binary') {
         value = await blobToDataUrl(blob);
-        // Binary fingerprint: size is enough (avoids re-reading the whole blob)
-        _fingerprintCache.set(uuid, `${blob.size}`);
+        // Must match the fingerprint saveBlocks computes from the data URL, or
+        // the next save thinks the image changed and rewrites it every time
+        // (wasteful churn that can drop the image if a save is interrupted).
+        _fingerprintCache.set(uuid, makeFingerprint(value, field));
       } else if (entry.encoding === 'json') {
         const text = await blob.text();
         try { value = JSON.parse(text); } catch { value = text; }
@@ -434,6 +451,125 @@ export async function deleteContentFile(uuid) {
   await writeFileExplorer(driver, registry);
 }
 
+// ---- Recovery / repair ----
+//
+// The old binary-fingerprint bug rewrote images on every save. If a save was
+// interrupted, a layout could end up referencing a content file the registry
+// had dropped — the bytes are still on disk, just unregistered. This rebuilds
+// those registry entries (so blocks resolve again) and surfaces any remaining
+// orphaned files into the File Library.
+
+function mimeFromExt(ext) {
+  const e = String(ext || '').toLowerCase();
+  if (e === 'png') return 'image/png';
+  if (e === 'jpg' || e === 'jpeg') return 'image/jpeg';
+  if (e === 'gif') return 'image/gif';
+  if (e === 'webp') return 'image/webp';
+  if (e === 'svg') return 'image/svg+xml';
+  if (e === 'mp4') return 'video/mp4';
+  if (e === 'webm') return 'video/webm';
+  if (e === 'ogg') return 'video/ogg';
+  if (e === 'json') return 'application/json';
+  if (e === 'url') return 'text/uri-list';
+  return 'text/plain';
+}
+
+function classifyExt(ext) {
+  const mime = mimeFromExt(ext);
+  if (mime.startsWith('image/')) return { type: 'image', encoding: 'binary', mime };
+  if (mime.startsWith('video/')) return { type: 'video', encoding: 'binary', mime };
+  if (mime === 'application/json') return { type: 'json', encoding: 'json', mime };
+  return { type: 'text', encoding: 'text', mime };
+}
+
+export async function recoverFiles() {
+  await ensureMigrated();
+  const registry = await getRegistry();
+
+  // Map every content file currently on disk: uuid -> "uuid.ext"
+  const contentKeys = await driver.list('content/');
+  const fileByUuid = new Map();
+  for (const key of contentKeys) {
+    const file = key.replace(/^content\//, '');
+    if (file === 'File_explorer.json') continue;
+    const uuid = file.replace(/\.[^.]+$/, '');
+    if (uuid) fileByUuid.set(uuid, file);
+  }
+
+  const knownFiles = new Set(
+    Object.values(registry).filter(e => e && e.file).map(e => e.file)
+  );
+
+  let relinked = 0; // layout refs whose registry entry we rebuilt
+  let orphans = 0;  // unreferenced files surfaced into the library
+  const now = Date.now();
+  const referenced = new Set();
+
+  // 1) Re-register content files that layouts reference but the registry lost.
+  const saves = await listSavedBlocks();
+  for (const save of saves) {
+    const layout = await driver.read(`folders/${save}/layout.json`);
+    if (!layout?.blocks) continue;
+    for (const block of layout.blocks) {
+      const refs = block.contentRefs || {};
+      for (const uuid of Object.values(refs)) {
+        referenced.add(uuid);
+        if (registry[uuid]) {
+          if (!registry[uuid].usedBy?.includes(save)) {
+            registry[uuid].usedBy = [...new Set([...(registry[uuid].usedBy || []), save])];
+          }
+          continue;
+        }
+        const file = fileByUuid.get(uuid);
+        if (!file) continue; // bytes truly gone — nothing to recover
+        const blob = await driver.read(`content/${file}`);
+        if (!blob) continue;
+        const ext = file.split('.').pop();
+        const { type, encoding, mime } = classifyExt(ext);
+        let preview = null, displayName = `Recovered ${type}`;
+        if (encoding !== 'binary') {
+          try {
+            const text = await blob.text();
+            preview = makePreview(text, 'text');
+            displayName = makeDisplayName(text, type === 'json' ? 'tasks' : 'content', { encoding, mime }, { text: 1, image: 1, video: 1, json: 1 }) || displayName;
+          } catch {}
+        }
+        registry[uuid] = {
+          displayName, file, mime, type, encoding, preview,
+          createdAt: now, modifiedAt: now, usedBy: [save], recovered: true
+        };
+        knownFiles.add(file);
+        relinked++;
+      }
+    }
+  }
+
+  // 2) Surface still-orphaned content files (not in registry, not referenced).
+  for (const [uuid, file] of fileByUuid) {
+    if (knownFiles.has(file)) continue;
+    if (registry[uuid]) continue;
+    const blob = await driver.read(`content/${file}`);
+    if (!blob) continue;
+    const ext = file.split('.').pop();
+    const { type, encoding, mime } = classifyExt(ext);
+    let preview = null, displayName = `Recovered ${type}`;
+    if (encoding !== 'binary') {
+      try { const text = await blob.text(); preview = makePreview(text, 'text'); } catch {}
+    }
+    registry[uuid] = {
+      displayName, file, mime, type, encoding, preview,
+      createdAt: now, modifiedAt: now, usedBy: [], recovered: true
+    };
+    orphans++;
+  }
+
+  if (relinked || orphans) {
+    await writeFileExplorer(driver, registry);
+    _saveRefs.clear(); // force fresh contentRefs mapping on next save
+  }
+  return { relinked, orphans };
+}
+
 // ---- File Explorer public API ----
 
 export async function getFileExplorer() {
@@ -466,6 +602,100 @@ export async function loadContentBlob(uuid) {
 export async function loadBlobByPath(filePath) {
   await ensureMigrated();
   return (await driver.read(`content/${filePath}`)) ?? null;
+}
+
+// ---- Standalone notes (files that live in the global pool, not in a folder) ----
+//
+// A standalone note is a real registry entry (kind: 'note') with an empty
+// usedBy list — i.e. it belongs to no folder. It is edited directly by
+// reading/writing its content file, and can later be added to folders.
+
+function noteTitleFromContent(content) {
+  const firstLine = htmlToText(content).split('\n')[0]?.trim() || '';
+  if (!firstLine) return 'Untitled note';
+  return firstLine.length > 60 ? firstLine.slice(0, 57) + '...' : firstLine;
+}
+
+export async function createStandaloneNote(content = '') {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const uuid = crypto.randomUUID();
+  const now = Date.now();
+  const text = String(content ?? '');
+  await driver.write(`content/${uuid}.txt`, new Blob([text], { type: 'text/plain' }));
+  registry[uuid] = {
+    displayName: noteTitleFromContent(text),
+    file: `${uuid}.txt`,
+    mime: 'text/plain',
+    type: 'text',
+    encoding: 'text',
+    kind: 'note',
+    autoName: true,
+    preview: makePreview(text, 'text'),
+    tags: [],
+    description: '',
+    createdAt: now,
+    modifiedAt: now,
+    usedBy: []
+  };
+  _fingerprintCache.set(uuid, makeFingerprint(text, 'content'));
+  await writeFileExplorer(driver, registry);
+  return uuid;
+}
+
+export async function getNoteContent(uuid) {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const entry = registry[uuid];
+  if (!entry) return '';
+  const blob = await driver.read(`content/${entry.file}`);
+  return blob ? await blob.text() : '';
+}
+
+export async function setNoteContent(uuid, content) {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const entry = registry[uuid];
+  if (!entry) return;
+  const text = String(content ?? '');
+  await driver.write(`content/${entry.file}`, new Blob([text], { type: entry.mime || 'text/plain' }));
+  entry.preview = makePreview(text, 'text');
+  entry.modifiedAt = Date.now();
+  if (entry.kind === 'note' && entry.autoName !== false) {
+    entry.displayName = noteTitleFromContent(text);
+  }
+  _fingerprintCache.set(uuid, makeFingerprint(text, 'content'));
+  await writeFileExplorer(driver, registry);
+}
+
+// All standalone (unfiled) notes — for the Single Note sidebar / cloud drive.
+export async function listStandaloneNotes() {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const notes = [];
+  for (const [uuid, entry] of Object.entries(registry)) {
+    if (uuid === '_colors' || uuid === '_folders') continue;
+    if (entry?.kind !== 'note') continue;
+    if ((entry.usedBy || []).length !== 0) continue;
+    notes.push({ uuid, ...entry });
+  }
+  return notes;
+}
+
+// Update metadata (display name / tags / description) on any registry file.
+export async function updateFileMeta(uuid, patch = {}) {
+  await ensureMigrated();
+  const registry = await getRegistry();
+  const entry = registry[uuid];
+  if (!entry) return;
+  if (patch.displayName !== undefined) {
+    const trimmed = String(patch.displayName).trim();
+    if (trimmed) { entry.displayName = trimmed; entry.autoName = false; }
+  }
+  if (patch.tags !== undefined) entry.tags = Array.isArray(patch.tags) ? patch.tags : [];
+  if (patch.description !== undefined) entry.description = String(patch.description);
+  entry.modifiedAt = Date.now();
+  await writeFileExplorer(driver, registry);
 }
 
 // ---- Bundle export / import ----

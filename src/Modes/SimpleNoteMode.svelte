@@ -1,7 +1,8 @@
 <script>
-  import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
+  import { createEventDispatcher, onMount, tick } from 'svelte';
   import Lightbox from '../components/Lightbox.svelte';
   import BlockContextMenu from '../components/BlockContextMenu.svelte';
+  import TipTapEditor from '../components/TipTapEditor.svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -185,12 +186,34 @@
       const src = getImageSource(block);
       if (src) await copyImageSrc(src);
     } else if (actionId === 'copyText') {
-      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+      const text = htmlToPlainText(block.content);
+      if (text) await navigator.clipboard.writeText(text).catch(() => {});
     } else if (actionId === 'delete') {
       deleteFromMenu(block.id);
       return;
     }
     closeBlockMenu();
+  }
+
+  function htmlToPlainText(html) {
+    return String(html || '')
+      .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<[^>]*>/g, '')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+      .replace(/\n{2,}/g, '\n')
+      .trim();
+  }
+
+  function handleSimpleColorChange(detail, block) {
+    if (!block) return;
+    const changed = {};
+    if (detail.bgColor !== undefined) changed.bgColor = detail.bgColor;
+    if (detail.textColor !== undefined) changed.textColor = detail.textColor;
+    const keys = Object.keys(changed);
+    if (!keys.length) return;
+    updateBlock(block.id, changed, { pushToHistory: !!detail.commit, changedKeys: keys });
   }
 
   function autoFocusInput(node) {
@@ -249,25 +272,9 @@
     handleBlockClick(event, id);
   }
 
-  function autoResize(textarea) {
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = textarea.scrollHeight + "px";
-  }
-
-  function resizeAllTextareas() {
-    const textareas = canvasRef?.querySelectorAll?.('textarea') ?? [];
-    textareas.forEach(autoResize);
-  }
 
 
 
-
-  function focusScroll(el) {
-    if (!el) return;
-      if (window.innerWidth <= 1024)
-    el.scrollIntoView({ behavior: "smooth", block: "center" });
-  }
 
   function blockKey(block) {
     return `${block.id}-${block._version || 0}`;
@@ -394,10 +401,7 @@
     
     const initializeLayout = async () => {
       await tick();
-      resizeAllTextareas();
-      rafId = requestAnimationFrame(() => {
-        resizeAllTextareas();
-      });
+      rafId = requestAnimationFrame(() => {});
     };
     initializeLayout();
     window.addEventListener('pointerdown', handleGlobalPointerDown);
@@ -411,9 +415,6 @@
     };
   });
 
-  afterUpdate(() => {
-    resizeAllTextareas();
-  });
 </script>
 
 
@@ -437,6 +438,8 @@
   margin: 0;
   min-width: 0;
   box-sizing: border-box;
+  --sb-track: var(--canvas-inner-bg);
+  --sb-thumb: var(--mode-text-color);
 }
 
 .simple-column {
@@ -481,29 +484,23 @@
 
 }
 
-textarea {
-  width: 100%;
-  min-height: 50px;
-  border: none;
-  border-radius: 14px;
-  resize: none;
-  margin: 0;
-  padding: 10px;
+/* TipTap overrides for grid cards */
+:global(.container .tiptap-wrap) {
   background: transparent;
   color: var(--text-color);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 1em;
   font-weight: bold;
-  box-sizing: border-box;
+  padding: 10px;
+  min-height: 50px;
+  /* don't lock height in grid cards — grow with content */
+  flex: unset;
+  overflow-y: visible;
 }
-
-textarea:focus {
-  outline: none;
-}
-
-textarea::selection {
-  background: var(--bg-color);
+:global(.container .tiptap-inner) {
   color: var(--text-color);
+  min-height: 40px;
+  flex: unset;
 }
 
 .container img {
@@ -689,21 +686,14 @@ li {
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
-            <textarea
-              bind:value={block.content}
-              spellcheck="false"
-              rows="1"
-              style="overflow:hidden;"
-              on:input={(e) => {
-                updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-              }}
-              on:focus={(e) => {
-                focusScroll(e.target);
-                ensureFocus(block.id);
-              }}
-              data-focus-guard
+            <TipTapEditor
+              content={block.content}
               placeholder="Type your note here..."
-            ></textarea>
+              on:change={(e) => {
+                updateBlock(block.id, { content: e.detail }, { pushToHistory: false, changedKeys: ['content'] });
+              }}
+              on:focus={() => ensureFocus(block.id)}
+            />
           {:else if block.type === 'image'}
             {#if hasImageSource(block)}
               <img
@@ -806,7 +796,11 @@ li {
       x={blockMenu.x}
       y={blockMenu.y}
       items={buildMenuItems(menuBlock)}
+      colorEdit={true}
+      bgColor={menuBlock?.bgColor || '#000000'}
+      textColor={menuBlock?.textColor || '#ffffff'}
       on:action={(e) => handleMenuAction(e.detail, menuBlock)}
+      on:colorChange={(e) => handleSimpleColorChange(e.detail, menuBlock)}
       on:close={() => { if (blockMenuMode !== 'editUrl') closeBlockMenu(); }}
     />
   {/if}

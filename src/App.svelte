@@ -168,12 +168,31 @@
     },
     task: {
       addDirection: 'above'
+    },
+    canvas: {
+      rotation: 0
+    },
+    single: {
+      backgroundImage: '',
+      bgOpacity: 0.35,
+      bgBlur: 0,
+      bgSize: 'cover'
     }
   };
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
     const incomingTask = settings?.task || {};
+    const incomingCanvas = settings?.canvas || {};
+    const incomingSingle = settings?.single || {};
+    let rotation = Number(incomingCanvas.rotation);
+    if (!Number.isFinite(rotation)) rotation = 0;
+    // keep within -180..180
+    rotation = ((rotation % 360) + 540) % 360 - 180;
+    const clamp01 = (n, fallback) => {
+      const v = Number(n);
+      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
+    };
     return {
       ...DEFAULT_MODE_SETTINGS,
       simple: {
@@ -185,6 +204,19 @@
         ...DEFAULT_MODE_SETTINGS.task,
         ...incomingTask,
         addDirection: incomingTask.addDirection === 'below' ? 'below' : 'above'
+      },
+      canvas: {
+        ...DEFAULT_MODE_SETTINGS.canvas,
+        ...incomingCanvas,
+        rotation
+      },
+      single: {
+        ...DEFAULT_MODE_SETTINGS.single,
+        ...incomingSingle,
+        backgroundImage: typeof incomingSingle.backgroundImage === 'string' ? incomingSingle.backgroundImage : '',
+        bgOpacity: clamp01(incomingSingle.bgOpacity, DEFAULT_MODE_SETTINGS.single.bgOpacity),
+        bgBlur: Math.max(0, Number(incomingSingle.bgBlur) || 0),
+        bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover'
       }
     };
   }
@@ -708,6 +740,8 @@
 
   let controlsRef;
   let canvasRef;
+  let modesRef;
+  let screenshotBusy = false;
   let controlsResizeObserver;
   let observedControlsEl;
 
@@ -715,6 +749,8 @@
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   $: taskAddDirection = modeSettings.task.addDirection;
+  $: canvasRotation = modeSettings.canvas.rotation;
+  $: singleNoteSettings = modeSettings.single;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
   let blocks = [];
@@ -1003,10 +1039,9 @@
 
   // --- Block operations ---
   function addBlock(type = "text") {
+    // Accept either a type string or a { type, ... } detail object
+    if (type && typeof type === "object") type = type.type || "text";
     if (mode === "single") {
-      if (blocks.some(block => block.type === "text" || block.type === "cleantext")) {
-        return;
-      }
       type = "cleantext";
     }
     const newBlock = applyHistoryTriggers({
@@ -1024,6 +1059,46 @@
     blocks = [...blocks, newBlock];
     modeOrders = ensureModeOrders(blocks, modeOrders);
     pushHistory(blocks, modeOrders);
+  }
+
+  // Capture the current mode view (at the zoom/scroll on screen) as a high-res PNG.
+  // Modes like Canvas use position:fixed, so we snapshot the whole document and
+  // crop to the viewport region just below the controls bar.
+  async function handleScreenshot() {
+    if (screenshotBusy) return;
+    screenshotBusy = true;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const controlsH = controlsRef?.offsetHeight || 56;
+      const canvas = await html2canvas(document.body, {
+        backgroundColor: canvasTheme?.outerBg || '#000000',
+        scale: 2, // high quality
+        logging: false,
+        useCORS: true,
+        x: 0,
+        y: controlsH,
+        width: window.innerWidth,
+        height: Math.max(1, window.innerHeight - controlsH),
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+        ignoreElements: (el) => el.classList?.contains('screenshot-btn')
+      });
+      const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      a.href = url;
+      a.download = `${currentSaveName || 'codex'}-${mode}-${stamp}.png`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (e) {
+      console.error('Screenshot failed', e);
+    } finally {
+      screenshotBusy = false;
+    }
   }
 
   function deleteBlockHandler(event) {
@@ -1054,6 +1129,7 @@
       pushToHistory,
       changedKeys,
       id,
+      bumpVersion,
       historyTriggers: incomingHistoryTriggers,
       ...updates
     } = detail;
@@ -1103,7 +1179,8 @@
       ...updates,
       position: { ...existing.position, ...(updates.position || {}) },
       size: { ...existing.size, ...(updates.size || {}) },
-      historyTriggers
+      historyTriggers,
+      ...(bumpVersion ? { _version: (existing._version || 0) + 1 } : {})
     };
 
     const newBlocks = blocks.map((block, index) =>
@@ -1700,6 +1777,14 @@
       patch = { ...patch, task: { ...patch.task, addDirection: detail.taskAddDirection } };
     }
 
+    if (detail.canvasRotation !== undefined) {
+      patch = { ...patch, canvas: { ...patch.canvas, rotation: Number(detail.canvasRotation) || 0 } };
+    }
+
+    if (detail.single && typeof detail.single === 'object') {
+      patch = { ...patch, single: { ...patch.single, ...detail.single } };
+    }
+
     const nextModeSettings = normalizeModeSettings(patch);
     modeSettings = nextModeSettings;
     await persistAutosave(blocks, modeOrders, nextModeSettings, { immediate: true });
@@ -2030,6 +2115,21 @@
   margin-left: auto;
 }
 
+.screenshot-btn {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--left-border-color, #444);
+  background: var(--left-button-bg, #333);
+  color: var(--left-button-text, #fff);
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+}
+.screenshot-btn:hover { filter: brightness(1.12); }
+.screenshot-btn:disabled { opacity: 0.6; cursor: default; }
+
 .startup-warning {
   display: flex;
   align-items: center;
@@ -2117,6 +2217,7 @@
       bind:currentSaveName
       {mode}
       {simpleNoteColumnCount}
+      {canvasRotation}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
@@ -2142,6 +2243,15 @@
       on:moveDown={moveFocusedBlockDown}
       on:modeSettingChange={handleModeSettingChange}
     />
+    <button
+      class="screenshot-btn"
+      on:click={handleScreenshot}
+      disabled={screenshotBusy}
+      title="Screenshot this view (PNG)"
+      aria-label="Screenshot this view"
+    >
+      {screenshotBusy ? '…' : '📷'}
+    </button>
     {#if showRightControls}
     <div class="right-controls">
       <RightControls
@@ -2179,7 +2289,7 @@
     </div>
   {/if}
 
-  <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
+  <div class="modes" bind:this={modesRef} class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
     {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
       <div class="sync-lock-banner">Sync check in progress… editing is temporarily paused.</div>
     {/if}
@@ -2188,6 +2298,8 @@
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
       {taskAddDirection}
+      {canvasRotation}
+      {singleNoteSettings}
       {groupedBlocks}
       {focusedBlockId}
       modeLabels={MODE_LABELS}
