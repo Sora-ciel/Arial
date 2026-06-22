@@ -1,5 +1,8 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
+  import { setCanvasScale, setCanvasRef } from '../canvasState.js';
+  import { MIN_CANVAS_WIDTH, MIN_ZOOM, MAX_ZOOM, getInitialCanvasScale } from '../utils/canvasFit.js';
+  import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import TexteBlock from '../components/TexteBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
   import Texteclean from '../components/TexteClean.svelte';
@@ -17,6 +20,13 @@
   export let focusedBlockId;
   export let canvasColors = {};
   export let rotation = 0;
+  export let refitViewTrigger = 0;
+
+  // Keep shared state module in sync so App can read viewport without bind:this
+  $: setCanvasScale(scale);
+  $: setCanvasRef(canvasRef);
+  // Refit when parent increments the trigger
+  $: if (refitViewTrigger > 0) refitCanvas();
 
   // Rotated bounding box of the scaled canvas — gives the scroll container
   // enough room to reach every corner at any angle. Reduces to the plain
@@ -50,15 +60,12 @@
 
   
 
-  const MIN_CANVAS_WIDTH = 1080;
   const MIN_CANVAS_HEIGHT = 320;
   const BLOCK_MARGIN_LEFT = 5;
   const BLOCK_MARGIN_RIGHT = 5;
   const MOBILE_BREAKPOINT = 1024;
   const BLOCK_MARGIN_BOTTOM = 20;
-  const MIN_ZOOM = 0.2;
-  const MAX_ZOOM = 16;
-  const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+  const WHEEL_ZOOM_SENSITIVITY = 0.00105;
   const EDGE_PAN_ZONE_HORIZONTAL = 550;
   const EDGE_PAN_ZONE_VERTICAL = 350;
   const EDGE_PAN_MAX_SPEED = 50;
@@ -194,11 +201,11 @@
   }
 
   // Deterministic "home" zoom based purely on screen size (not content),
-  // so first mount and the Ctrl+middle-click reset always land on the same zoom.
+  // so first mount and the Ctrl+middle-click reset always land on the same
+  // zoom. Shared with App.svelte's media-fit/placement math (canvasFit.js)
+  // so both pieces always agree on what "the screen at opening zoom" means.
   function getInitialScale() {
-    const availableWidth = Math.max(window.innerWidth, 1);
-    const fitted = availableWidth / MIN_CANVAS_WIDTH;
-    return Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, Math.min(1, fitted)));
+    return getInitialCanvasScale();
   }
 
   function getMinAllowedScale() {
@@ -479,17 +486,6 @@
     clearTimeout(canvasLongPressTimer);
   }
 
-  function htmlToPlainText(html) {
-    return String(html || '')
-      .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
-      .replace(/<br\s*\/?>/gi, '\n')
-      .replace(/<[^>]*>/g, '')
-      .replace(/&nbsp;/gi, ' ')
-      .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
-      .replace(/\n{2,}/g, '\n')
-      .trim();
-  }
-
   function buildCanvasMenuItems(block) {
     if (!block) return [];
     const items = [];
@@ -581,6 +577,7 @@
     contentOffsetX = measured.offsetX ?? 0;
     fitToViewport();
   }
+
 
   const defaultCanvasColors = {
     outerBg: '#000000',

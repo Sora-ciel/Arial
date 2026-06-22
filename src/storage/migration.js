@@ -1,5 +1,6 @@
 import { getDB, LEGACY_BLOCKS_STORE, LEGACY_FILE_STORE, BACKUP_STORE } from './driver.js';
 import { readFileExplorer, writeFileExplorer } from './fileExplorer.js';
+import { htmlToText } from '../utils/htmlToText.js';
 
 const FILE_FIELDS = ['content', 'src', 'trackUrl', 'title', 'tasks'];
 
@@ -125,7 +126,8 @@ function makeDisplayName(value, field, descriptor, counts) {
     return s.length > 60 ? s.slice(0, 57) + '...' : s;
   }
   if (typeof value === 'string' && value.length > 0) {
-    const trimmed = value.replace(/\s+/g, ' ').trim();
+    const trimmed = htmlToText(value).replace(/\s+/g, ' ').trim();
+    if (!trimmed) return `Content ${counts.text}`;
     return trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed;
   }
   return `Content ${counts.text}`;
@@ -134,7 +136,7 @@ function makeDisplayName(value, field, descriptor, counts) {
 function makePreview(value, encoding) {
   if (encoding === 'binary') return null;
   if (typeof value === 'string') {
-    const t = value.replace(/\s+/g, ' ').trim();
+    const t = htmlToText(value).replace(/\s+/g, ' ').trim();
     return t.length > 80 ? t.slice(0, 77) + '...' : t || null;
   }
   return null;

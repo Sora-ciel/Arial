@@ -33,6 +33,9 @@
   } from './utils/themeDefaults.js';
 
   import { MODE_DEFINITIONS, MODE_ORDER, getModeDefinition } from "./Modes/modeRegistry.js";
+  import { getCanvasViewport } from './canvasState.js';
+  import { getOpeningViewportBox } from './utils/canvasFit.js';
+  import { CONTENT_TYPE_TO_BLOCK } from './utils/fileEntry.js';
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -741,6 +744,7 @@
   let controlsRef;
   let canvasRef;
   let modesRef;
+  let refitViewTrigger = 0;
   let screenshotBusy = false;
   let controlsResizeObserver;
   let observedControlsEl;
@@ -1037,21 +1041,141 @@
     }
   }
 
+  // --- Media auto-fit (mirrors ImgBlock's getFittedMediaSize) ---
+  // When an image/video block is created from a real file (drag-drop, paste,
+  // or "add to folder" from the File Library) we must size it from the
+  // media's actual aspect ratio up front — ImgBlock only auto-fits a block
+  // that still sits at its untouched 300x200 default, so handing it an
+  // already-different placeholder size (e.g. 600x400 for side-by-side
+  // packing) permanently skips that auto-fit.
+  const MEDIA_HEADER_HEIGHT = 30;
+  const MEDIA_DEFAULT_WIDTH = 300;
+  const MEDIA_DEFAULT_HEIGHT = 200;
+  const MEDIA_FALLBACK_MAX_WIDTH = 400;
+  const MEDIA_FALLBACK_MAX_HEIGHT = 300;
+  // Slight inset so a pasted/dropped image doesn't sit flush against the
+  // screen edges — "about as tall as the screen", not exactly edge-to-edge.
+  const MEDIA_FIT_MARGIN = 0.94;
+
+  // Height-first fit: aim to fill ~the screen's height at the canvas's
+  // opening zoom (see canvasFit.js), only falling back to width if that
+  // would overflow horizontally (e.g. an ultra-wide panorama).
+  function getFittedMediaBlockSize(naturalWidth, naturalHeight) {
+    if (!naturalWidth || !naturalHeight) {
+      return { width: MEDIA_DEFAULT_WIDTH, height: MEDIA_DEFAULT_HEIGHT };
+    }
+
+    const box = getOpeningViewportBox();
+    const maxW = Math.max(80, (box.width || MEDIA_FALLBACK_MAX_WIDTH) * MEDIA_FIT_MARGIN);
+    const maxH = Math.max(80, (box.height || MEDIA_FALLBACK_MAX_HEIGHT) * MEDIA_FIT_MARGIN) - MEDIA_HEADER_HEIGHT;
+
+    const ratio = naturalWidth / naturalHeight;
+    let targetHeight = maxH;
+    let targetWidth = targetHeight * ratio;
+    if (targetWidth > maxW) {
+      targetWidth = maxW;
+      targetHeight = targetWidth / ratio;
+    }
+
+    return { width: targetWidth, height: targetHeight + MEDIA_HEADER_HEIGHT };
+  }
+
+  function loadMediaNaturalSize(src, isVideo) {
+    return new Promise((resolve) => {
+      if (isVideo) {
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.onloadedmetadata = () => resolve({ width: v.videoWidth, height: v.videoHeight });
+        v.onerror = () => resolve({ width: 0, height: 0 });
+        v.src = src;
+      } else {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve({ width: 0, height: 0 });
+        img.src = src;
+      }
+    });
+  }
+
   // --- Block operations ---
+  // Places a new block without overlapping existing ones. Anchored to the
+  // viewport the user is actually looking at (when on the canvas), with a
+  // fine-grained sweep that finds real gaps instead of jumping to wherever
+  // some unrelated existing block happens to sit — that's what used to send
+  // new blocks far outside the visible/usable area.
+  function findFreePosition(existingBlocks, width, height) {
+    const PADDING = 4;
+    const SWEEP_STEP = 28;
+    const vp = mode === 'default' ? getCanvasViewport() : null;
+
+    function overlaps(x, y) {
+      return existingBlocks.some(b => {
+        const bx = b.position?.x ?? 0;
+        const by = b.position?.y ?? 0;
+        const bw = b.size?.width ?? 420;
+        const bh = b.size?.height ?? 280;
+        return !(x + width + PADDING <= bx || bx + bw + PADDING <= x ||
+                 y + height + PADDING <= by || by + bh + PADDING <= y);
+      });
+    }
+
+    if (!vp) {
+      // No live canvas viewport (different mode, or canvas not mounted yet):
+      // stack below the lowest existing block instead of guessing blindly.
+      const maxY = Math.max(0, ...existingBlocks.map(b => (b.position?.y ?? 0) + (b.size?.height ?? 280)));
+      return { x: 100, y: maxY + PADDING };
+    }
+
+    const originX = Math.max(0, vp.canvasX + PADDING);
+    const originY = Math.max(0, vp.canvasY + PADDING);
+    const sweepMaxX = vp.canvasX + vp.canvasVisibleW - width;
+    // Search a few screens below the fold too, not just the exact visible
+    // area — so a burst of additions (several pastes/drops in a row) tiles
+    // into a grid near the viewport instead of falling straight to the
+    // single-column "stack below" fallback the moment the visible area fills.
+    const sweepMaxY = vp.canvasY + vp.canvasVisibleH * 3 - height;
+
+    if (sweepMaxX >= originX) {
+      for (let y = originY; y <= Math.max(originY, sweepMaxY); y += SWEEP_STEP) {
+        for (let x = originX; x <= sweepMaxX; x += SWEEP_STEP) {
+          if (!overlaps(x, y)) return { x, y };
+        }
+      }
+    }
+
+    // Nothing free inside the current view — extend just past the bottom of
+    // what's visible (only counting blocks that actually overlap the
+    // viewport horizontally) so the new block needs at most a small scroll
+    // to reach, instead of landing next to some block far away on the canvas.
+    const visibleBottom = Math.max(
+      vp.canvasY + vp.canvasVisibleH,
+      ...existingBlocks
+        .filter(b => {
+          const bx = b.position?.x ?? 0;
+          const bw = b.size?.width ?? 420;
+          return bx < vp.canvasX + vp.canvasVisibleW && bx + bw > vp.canvasX;
+        })
+        .map(b => (b.position?.y ?? 0) + (b.size?.height ?? 280))
+    );
+    return { x: originX, y: visibleBottom + PADDING };
+  }
+
   function addBlock(type = "text") {
     // Accept either a type string or a { type, ... } detail object
     if (type && typeof type === "object") type = type.type || "text";
     if (mode === "single") {
       type = "cleantext";
     }
+    const blockW = 600, blockH = 400;
+    const position = mode === 'default' ? findFreePosition(blocks, blockW, blockH) : { x: 100, y: 100 };
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
       content: "",
       src: "",
       ...(type === "task" ? { tasks: [], title: "Task List" } : {}),
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 200 },
+      position,
+      size: { width: blockW, height: blockH },
       bgColor: "#000000",
       textColor: "#ffffff",
       _version: 0
@@ -1072,7 +1196,7 @@
       const controlsH = controlsRef?.offsetHeight || 56;
       const canvas = await html2canvas(document.body, {
         backgroundColor: canvasTheme?.outerBg || '#000000',
-        scale: 2, // high quality
+        scale: 4, // high quality
         logging: false,
         useCORS: true,
         x: 0,
@@ -1173,15 +1297,30 @@
       shouldSnapshot = true;
     }
 
+    // Apply ONLY the keys that actually changed. A child block (e.g. ImgBlock)
+    // always sends its full state in `detail` — src, colors, size, position — so
+    // blindly spreading `...updates` lets a partial update (say, a size-only
+    // change) clobber unrelated fields with the child's current values. During
+    // HMR a transiently re-mounted block can hold empty `src` / default white,
+    // which would then wipe the real image + color and trigger content deletion
+    // on the next save. Restricting to `normalizedChangedKeys` prevents that.
     // ✅ always clone position & size so reactivity triggers
     const updatedBlock = {
       ...existing,
-      ...updates,
-      position: { ...existing.position, ...(updates.position || {}) },
-      size: { ...existing.size, ...(updates.size || {}) },
+      position: { ...existing.position },
+      size: { ...existing.size },
       historyTriggers,
       ...(bumpVersion ? { _version: (existing._version || 0) + 1 } : {})
     };
+    for (const key of normalizedChangedKeys) {
+      if (key === 'position') {
+        updatedBlock.position = { ...existing.position, ...(updates.position || {}) };
+      } else if (key === 'size') {
+        updatedBlock.size = { ...existing.size, ...(updates.size || {}) };
+      } else if (key in updates) {
+        updatedBlock[key] = updates[key];
+      }
+    }
 
     const newBlocks = blocks.map((block, index) =>
       index === idx ? updatedBlock : block
@@ -1217,13 +1356,16 @@
     const src = await readFileAsDataUrl(file);
     if (typeof src !== 'string') return;
 
+    const isVideo = file.type.startsWith('video/');
+    const natural = await loadMediaNaturalSize(src, isVideo);
+    const { width: imgW, height: imgH } = getFittedMediaBlockSize(natural.width, natural.height);
     const mediaBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type: 'image',
       content: '',
       src,
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 200 },
+      position: mode === 'default' ? findFreePosition(blocks, imgW, imgH) : { x: 100, y: 100 },
+      size: { width: imgW, height: imgH },
       bgColor: '#000000',
       textColor: '#ffffff',
       _version: 0
@@ -1236,13 +1378,14 @@
   }
 
   async function addTextBlockFromContent(content) {
+    const txtW = 600, txtH = 400;
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type: 'cleantext',
       content,
       src: '',
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 200 },
+      position: mode === 'default' ? findFreePosition(blocks, txtW, txtH) : { x: 100, y: 100 },
+      size: { width: txtW, height: txtH },
       bgColor: '#000000',
       textColor: '#ffffff',
       _version: 0
@@ -1261,8 +1404,10 @@
     const imageItems = items.filter(i => i.kind === 'file' && i.type.startsWith('image/'));
     const textItem   = items.find(i  => i.kind === 'string' && i.type === 'text/plain');
 
+    let handled = false;
     if (imageItems.length) {
       event.preventDefault();
+      handled = true;
       for (const item of imageItems) {
         const file = item.getAsFile();
         if (file) {
@@ -1270,13 +1415,23 @@
           catch (e) { console.error('Paste image failed:', e); }
         }
       }
-    } else if (textItem) {
+    }
+    if (textItem && !handled) {
       textItem.getAsString(async (text) => {
         const trimmed = text?.trim();
         if (!trimmed) return;
         event.preventDefault();
-        try { await addTextBlockFromContent(trimmed); }
-        catch (e) { console.error('Paste text failed:', e); }
+        // Split on blank lines to create one block per distinct chunk
+        const chunks = trimmed.split(/\n\s*\n/).map(c => c.trim()).filter(Boolean);
+        try {
+          if (chunks.length <= 1) {
+            await addTextBlockFromContent(trimmed);
+          } else {
+            for (const chunk of chunks) {
+              await addTextBlockFromContent(chunk);
+            }
+          }
+        } catch (e) { console.error('Paste text failed:', e); }
       });
     }
   }
@@ -1374,6 +1529,8 @@
         autoSyncDirty = false;
       }
       clearBootLoadGuard();
+      await tick();
+      refitViewTrigger = (refitViewTrigger + 1) | 0;
     } catch (error) {
       console.error('Failed to load save file:', error);
       clearBootLoadGuard();
@@ -1685,13 +1842,6 @@
     showExportImportDialog = true;
   }
 
-  const CONTENT_TYPE_TO_BLOCK = {
-    image: { type: 'image',   field: 'src' },
-    video: { type: 'image',   field: 'src' },
-    text:  { type: 'cleantext', field: 'content' },
-    json:  { type: 'task',    field: 'tasks' },
-  };
-
   async function handleShareContent(event) {
     const { uuid, entry } = event.detail || {};
     if (!uuid || !currentSaveName) return;
@@ -1701,12 +1851,20 @@
     const result = await prepareSharedContent(uuid, field);
     if (!result) return;
 
+    let size = { width: 300, height: 160 };
+    if (blockType === 'image' && typeof result.value === 'string') {
+      const isVideo = result.value.startsWith('data:video');
+      const natural = await loadMediaNaturalSize(result.value, isVideo);
+      size = getFittedMediaBlockSize(natural.width, natural.height);
+    }
+
+    const position = mode === 'default' ? findFreePosition(blocks, size.width, size.height) : { x: 100, y: 100 };
     const newBlock = {
       id: crypto.randomUUID(),
       type: blockType,
       [field]: result.value,
-      position: { x: 120 + Math.round(Math.random() * 80), y: 120 + Math.round(Math.random() * 80) },
-      size: { width: 300, height: blockType === 'image' ? 220 : 160 },
+      position,
+      size,
       bgColor: '#212121',
       textColor: '#f5f5f5',
       _version: 0,
@@ -2249,6 +2407,7 @@
       disabled={screenshotBusy}
       title="Screenshot this view (PNG)"
       aria-label="Screenshot this view"
+      style="background: {leftTheme.buttonBg}; color: {leftTheme.buttonText}; border-color: {leftTheme.borderColor};"
     >
       {screenshotBusy ? '…' : '📷'}
     </button>
@@ -2304,6 +2463,7 @@
       {focusedBlockId}
       modeLabels={MODE_LABELS}
       bind:canvasRef
+      {refitViewTrigger}
       canvasColors={canvasTheme}
       leftControlColors={leftTheme}
       {currentSaveName}

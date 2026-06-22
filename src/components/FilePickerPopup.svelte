@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import { getFileExplorer, loadContentBlob } from '../storage.js';
+  import { TYPE_ICONS, SHAREABLE, CONTENT_TYPE_TO_BLOCK, fileExt, displayFilename } from '../utils/fileEntry.js';
 
   export let currentSaveName = '';
   export let controlColors = {};
@@ -18,18 +19,6 @@
   let sortAsc = true;
   let thumbUrls = {};
 
-  const TYPE_ICONS = { image:'🖼', video:'🎬', text:'📄', json:'📋' };
-  const SHAREABLE = new Set(['image','video','text','json']);
-
-  const CONTENT_TYPE_TO_BLOCK = {
-    image: { type:'image',     field:'src' },
-    video: { type:'image',     field:'src' },
-    text:  { type:'cleantext', field:'content' },
-    json:  { type:'task',      field:'tasks' },
-  };
-
-  function fileExt(e) { return e.file?.split('.').pop() ?? ''; }
-  function displayFilename(e) { return `${e.displayName}.${fileExt(e)}`; }
   function nameMatches(e, q) {
     return displayFilename(e).toLowerCase().includes(q) || e.usedBy?.some(f => f.toLowerCase().includes(q));
   }

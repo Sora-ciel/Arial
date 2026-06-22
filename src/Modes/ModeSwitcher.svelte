@@ -25,6 +25,7 @@
   export let currentSaveName = '';
 
   let width = 0;
+  export let refitViewTrigger = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -60,6 +61,7 @@
     {focusedBlockId}
     rotation={canvasRotation}
     bind:canvasRef
+    {refitViewTrigger}
     {canvasColors}
     on:touchstart={onTouchStart}
     on:touchmove={onTouchMove}

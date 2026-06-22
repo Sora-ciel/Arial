@@ -3,9 +3,10 @@ import { FileSystemDriver } from './storage/FileSystemDriver.js';
 import { runMigrationIfNeeded } from './storage/migration.js';
 import {
   readFileExplorer, writeFileExplorer,
-  getBlockColors, setBlockColor, removeBlockColor
+  getBlockColors, setBlockColor, removeBlockColorForSave
 } from './storage/fileExplorer.js';
 import { readAllSettings, writeAllSettings } from './storage/settings.js';
+import { htmlToText } from './utils/htmlToText.js';
 
 const FILE_FIELDS = ['content', 'src', 'trackUrl', 'title', 'tasks'];
 
@@ -106,25 +107,11 @@ function makeDisplayName(value, field, descriptor, counts) {
     return s.length > 60 ? s.slice(0, 57) + '...' : s;
   }
   if (typeof value === 'string' && value.length > 0) {
-    const trimmed = value.replace(/\s+/g, ' ').trim();
+    const trimmed = htmlToText(value).replace(/\s+/g, ' ').trim();
+    if (!trimmed) return `Content ${counts.text}`;
     return trimmed.length > 50 ? trimmed.slice(0, 47) + '...' : trimmed;
   }
   return `Content ${counts.text}`;
-}
-
-// Text content is stored as HTML (lossless for empty lines) — strip tags for
-// previews / display names so the File Library and sidebars show clean text.
-function htmlToText(html) {
-  return String(html || '')
-    .replace(/<\/(p|div|h[1-6]|li|blockquote|pre)>/gi, '\n')
-    .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<[^>]*>/g, '')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/\n{2,}/g, '\n')
-    .trim();
 }
 
 function makePreview(value, encoding) {
@@ -208,16 +195,35 @@ export async function saveBlocks(name, payload) {
     const contentRefs = {};
 
     if (next.bgColor !== undefined || next.textColor !== undefined) {
-      setBlockColor(registry, next.id, next.bgColor, next.textColor);
+      setBlockColor(registry, next.id, next.bgColor, next.textColor, name);
       delete next.bgColor;
       delete next.textColor;
     }
 
     for (const field of FILE_FIELDS) {
       const value = next[field];
-      if (!shouldPersistAsFile(value)) continue;
-
       const refKey = `${next.id}::${field}`;
+
+      if (!shouldPersistAsFile(value)) {
+        // Safety net: a block that still exists but momentarily lost its file
+        // field (e.g. a transient empty `src` during HMR or a partial update)
+        // must NOT lose its stored content. If we have a previous ref for this
+        // field, preserve it instead of letting the cleanup pass delete the
+        // (irreversible) content file. Only genuinely deleted blocks — absent
+        // from this loop entirely — get their content cleaned up.
+        const keepUuid = prevRefs.get(refKey);
+        if (keepUuid && registry[keepUuid]) {
+          keptUuids.add(keepUuid);
+          contentRefs[field] = keepUuid;
+          nextRefs.set(refKey, keepUuid);
+          const ub = new Set(registry[keepUuid].usedBy || []);
+          ub.add(name);
+          registry[keepUuid].usedBy = [...ub];
+          delete next[field];
+        }
+        continue;
+      }
+
       const newFp = makeFingerprint(value, field);
       const existingUuid = prevRefs.get(refKey);
 
@@ -357,10 +363,12 @@ export async function deleteBlocks(name) {
     }
   }
 
-  // Remove global colors for blocks in this save
+  // Release this save's claim on each block's color — only deletes the
+  // color mapping once no other save (e.g. a "save as" duplicate that
+  // shares the same block ids) still references it.
   if (layout?.blocks) {
     for (const block of layout.blocks) {
-      removeBlockColor(registry, block.id);
+      removeBlockColorForSave(registry, block.id, name);
     }
   }
 

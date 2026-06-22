@@ -8,6 +8,7 @@
   import { getFileExplorer, renameContentFile, loadBlobByPath, deleteContentFile, recoverFiles } from '../storage.js';
   import { readSetting, writeSetting } from '../storage/settings.js';
   import Lightbox from '../components/Lightbox.svelte';
+  import { TYPE_ICONS, SHAREABLE, CONTENT_TYPE_TO_BLOCK, fileExt, stripTags, displayFilename } from '../utils/fileEntry.js';
 
   export let canvasColors = {};
   export let currentSaveName = '';
@@ -152,17 +153,6 @@
   let ctxMenu = null;
   let addingId = null;
 
-  const TYPE_ICONS = { image:'🖼', video:'🎬', text:'📄', json:'📋' };
-  const SHAREABLE = new Set(['image','video','text','json']);
-  const CONTENT_TYPE_TO_BLOCK = {
-    image: { type:'image',    field:'src' },
-    video: { type:'image',    field:'src' },
-    text:  { type:'cleantext', field:'content' },
-    json:  { type:'task',     field:'tasks' },
-  };
-
-  function fileExt(e) { return e.file?.split('.').pop() ?? ''; }
-  function displayFilename(e) { return `${e.displayName}.${fileExt(e)}`; }
   function formatDate(ts) {
     if (!ts) return '—';
     return new Date(ts).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' });
@@ -340,7 +330,7 @@
   async function startRename(uuid) {
     const e = entries.find(x => x.uuid === uuid);
     if (!e) return;
-    renamingId = uuid; renameValue = e.displayName;
+    renamingId = uuid; renameValue = stripTags(e.displayName) || e.displayName;
     await tick(); renameInput?.focus(); renameInput?.select();
   }
   async function commitRename() {
