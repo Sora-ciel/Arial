@@ -22,6 +22,7 @@
     loadRemoteFile,
     loadRemoteIndex,
     saveRemoteFile,
+    saveRemoteFileV2,
     listCloudAttachmentUrls
   } from './firebaseClient.js';
   import {
@@ -786,6 +787,7 @@
   let uploadInProgress = false;
   let downloadInProgress = false;
   let recoverInProgress = false;
+  let v2TestInProgress = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -1898,6 +1900,56 @@
     }
   }
 
+  // Safe, reversible validation of the v2 content-addressed path on ONE folder:
+  // uploads the current folder as v2, reads it back through the version-aware
+  // loader, and reports whether every field round-tripped. Auto-sync must be
+  // off so a v1 upload doesn't clobber the test; a later v1 upload fully
+  // restores the folder, so this is non-destructive.
+  async function testV2RoundTrip() {
+    if (!firebaseReady) { alert('Firebase is not configured yet.'); return; }
+    if (!authUser) { alert('Sign in with Google first.'); return; }
+    if (!currentSaveName) { alert('Open a folder first.'); return; }
+    if (autoSyncEnabled) {
+      alert('Turn Auto Sync OFF before testing v2 — otherwise a v1 upload would overwrite the test.');
+      return;
+    }
+    if (v2TestInProgress) return;
+
+    v2TestInProgress = true;
+    try {
+      const ADDR = ['src', 'trackUrl', 'content', 'tasks'];
+      const nonEmpty = (b, f) => b && b[f] !== undefined && b[f] !== null && b[f] !== '';
+
+      const local = await loadBlocks(currentSaveName);
+      const localBlocks = Array.isArray(local?.blocks) ? local.blocks : [];
+      const localCounts = {};
+      for (const f of ADDR) localCounts[f] = localBlocks.filter(b => nonEmpty(b, f)).length;
+
+      await saveRemoteFileV2(currentSaveName, local);
+      const round = await loadRemoteFile(currentSaveName); // version-aware → resolves v2
+      const roundBlocks = Array.isArray(round?.blocks) ? round.blocks : [];
+      const roundCounts = {};
+      for (const f of ADDR) roundCounts[f] = roundBlocks.filter(b => nonEmpty(b, f)).length;
+
+      const lines = [
+        `schemaVersion: ${round?.schemaVersion}`,
+        `blocks: local ${localBlocks.length} → round-trip ${roundBlocks.length} ${localBlocks.length === roundBlocks.length ? '✓' : '⚠'}`
+      ];
+      for (const f of ADDR) {
+        if (localCounts[f] || roundCounts[f]) {
+          lines.push(`${f}: ${localCounts[f]} → ${roundCounts[f]} ${localCounts[f] === roundCounts[f] ? '✓' : '⚠'}`);
+        }
+      }
+      console.log('[v2 test] local vs round-trip', { local, round });
+      alert('v2 round-trip test\n\n' + lines.join('\n') + '\n\n(full payloads logged to console)');
+    } catch (error) {
+      console.error(error);
+      alert(`v2 test failed: ${error?.message || error}`);
+    } finally {
+      v2TestInProgress = false;
+    }
+  }
+
   async function bootstrapCloudSync() {
     if (!firebaseReady || !authUser) return;
     if (cloudBootstrapInProgress) return;
@@ -2542,12 +2594,14 @@
         {uploadInProgress}
         {downloadInProgress}
         {recoverInProgress}
+        {v2TestInProgress}
         {autoSyncEnabled}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
         on:uploadNow={uploadAllLocalToCloud}
         on:downloadNow={downloadAllCloudToLocal}
         on:recoverAttachments={recoverCloudAttachments}
+        on:testV2={testV2RoundTrip}
         on:toggleAutoSync={toggleAutoSync}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}

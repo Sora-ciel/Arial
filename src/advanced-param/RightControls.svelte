@@ -11,6 +11,7 @@
   export let uploadInProgress = false;
   export let downloadInProgress = false;
   export let recoverInProgress = false;
+  export let v2TestInProgress = false;
   export let autoSyncEnabled = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
@@ -119,6 +120,10 @@
 
   function recoverAttachments() {
     dispatch("recoverAttachments");
+  }
+
+  function testV2() {
+    dispatch("testV2");
   }
 
   function toggleAutoSync() {
@@ -356,6 +361,9 @@
               </button>
               <button class="create-theme-btn" type="button" on:click={recoverAttachments} disabled={recoverInProgress}>
                 {recoverInProgress ? "⏳ Recovering..." : "🔗 Recover Attachments"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={testV2} disabled={v2TestInProgress}>
+                {v2TestInProgress ? "⏳ Testing..." : "🧪 Test v2 (this folder)"}
               </button>
               <button class="create-theme-btn" type="button" on:click={signOut}>🚪 Sign Out</button>
               <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>

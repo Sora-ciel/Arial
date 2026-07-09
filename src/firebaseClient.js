@@ -298,7 +298,14 @@ export async function loadRemoteFile(fileId) {
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))
   );
 
-  return snapshot.exists() ? snapshot.val() : null;
+  if (!snapshot.exists()) return null;
+  const raw = snapshot.val();
+  // v2 payloads carry content by hash; resolve them back to inline values.
+  // v1 (no schemaVersion) already has inline/URL fields — return as-is.
+  if (raw && raw.schemaVersion === CLOUD_SCHEMA_VERSION) {
+    return await resolveRemoteFileV2(raw, ctx, user.uid);
+  }
+  return raw;
 }
 
 export async function loadRemoteIndex() {
@@ -435,6 +442,150 @@ export async function listCloudAttachmentUrls() {
     map[fileId][blockId][field] = url;
   }
   return map;
+}
+
+// ===================== v2: content-addressed cloud =====================
+//
+// Mirrors the local storage.js model in the cloud: each unique file is stored
+// once at content/{sha256}.{ext}, a per-user `registry` maps hash -> { url,
+// mime, kind, usedBy }, and folder payloads carry `contentRefs: { field: hash }`
+// instead of inline data. Identical images/text across blocks and folders
+// collapse to a single object. v1 (inline/URL) payloads still read unchanged;
+// a payload is v2 only when it carries `schemaVersion: 2`.
+export const CLOUD_SCHEMA_VERSION = 2;
+// Which block fields become deduplicated content objects. Small meta (title,
+// colors, positions) stays inline on the block.
+const ADDRESSABLE_FIELDS = ['src', 'trackUrl', 'content', 'tasks'];
+
+async function sha256Hex(arrayBuffer) {
+  const digest = await crypto.subtle.digest('SHA-256', arrayBuffer);
+  return Array.from(new Uint8Array(digest))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
+}
+
+function isEmptyFieldValue(value) {
+  if (value === undefined || value === null || value === '') return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === 'object') return Object.keys(value).length === 0;
+  return false;
+}
+
+// Normalize any block field value into an uploadable blob + descriptor.
+async function fieldValueToBlob(value) {
+  if (typeof value === 'string' && (value.startsWith('data:') || /^https?:\/\//i.test(value))) {
+    const blob = await (await fetch(value)).blob();
+    const mime = blob.type || 'application/octet-stream';
+    return { blob, mime, ext: inferExtensionFromMime(mime), kind: mime.startsWith('video/') ? 'video' : 'image' };
+  }
+  if (value && typeof value === 'object') {
+    const text = JSON.stringify(value);
+    return { blob: new Blob([text], { type: 'application/json' }), mime: 'application/json', ext: 'json', kind: 'json' };
+  }
+  const text = String(value ?? '');
+  return { blob: new Blob([text], { type: 'text/html' }), mime: 'text/html', ext: 'html', kind: 'text' };
+}
+
+async function readCloudRegistry(ctx, uid) {
+  const snap = await ctx.dbApi.get(ctx.dbApi.ref(ctx.db, getUserPath(uid, 'registry')));
+  return snap.exists() ? snap.val() : {};
+}
+
+// Upload a field's content once (keyed by hash); reuse an existing registry
+// entry if the same bytes are already in the cloud. Returns the content hash.
+async function ensureCloudContent(value, ctx, uid, folderId, registry, dirty) {
+  const desc = await fieldValueToBlob(value);
+  const hash = await sha256Hex(await desc.blob.arrayBuffer());
+
+  let entry = registry[hash];
+  if (!entry) {
+    const objectPath = getStorageUserPath(uid, `content/${hash}.${desc.ext}`);
+    const ref = ctx.storageApi.ref(ctx.storage, objectPath);
+    await ctx.storageApi.uploadBytes(ref, desc.blob, {
+      contentType: desc.mime,
+      cacheControl: 'public,max-age=31536000'
+    });
+    const url = await ctx.storageApi.getDownloadURL(ref);
+    entry = { ext: desc.ext, mime: desc.mime, kind: desc.kind, url, usedBy: {} };
+    registry[hash] = entry;
+    dirty.v = true;
+  }
+  if (!entry.usedBy) entry.usedBy = {};
+  if (!entry.usedBy[folderId]) { entry.usedBy[folderId] = true; dirty.v = true; }
+  return hash;
+}
+
+// Write a folder in v2 form: fields are content-addressed, blocks hold
+// contentRefs. Does NOT touch the index/timestamps handling of saveRemoteFile —
+// callers use this deliberately (migration / v2 upload path).
+export async function saveRemoteFileV2(fileId, payload, options = {}) {
+  if (!isFirebaseConfigured()) return null;
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+  const uid = user.uid;
+
+  const registry = await readCloudRegistry(ctx, uid);
+  const dirty = { v: false };
+
+  const blocks = [];
+  for (const block of payload?.blocks || []) {
+    const next = { ...block };
+    const contentRefs = {};
+    for (const field of ADDRESSABLE_FIELDS) {
+      const value = next[field];
+      if (isEmptyFieldValue(value)) { delete next[field]; continue; }
+      contentRefs[field] = await ensureCloudContent(value, ctx, uid, fileId, registry, dirty);
+      delete next[field];
+    }
+    if (Object.keys(contentRefs).length) next.contentRefs = contentRefs;
+    blocks.push(next);
+  }
+
+  if (dirty.v) {
+    await ctx.dbApi.set(ctx.dbApi.ref(ctx.db, getUserPath(uid, 'registry')), registry);
+  }
+
+  const updatedAt = payload?.updatedAt || Date.now();
+  const modifiedAt = payload?.modifiedAt || updatedAt;
+  const lastSyncedAt = Date.now();
+
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(uid, `files/${fileId}`)),
+    { ...payload, blocks, schemaVersion: CLOUD_SCHEMA_VERSION, updatedAt, modifiedAt, lastSyncedAt }
+  );
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(uid, `index/${fileId}`)),
+    { fileId, updatedAt, modifiedAt, lastSyncedAt, schemaVersion: CLOUD_SCHEMA_VERSION, blockCount: blocks.length }
+  );
+
+  return { fileId, updatedAt };
+}
+
+// Resolve a raw v2 payload (blocks with contentRefs) back into an inline
+// payload the local storage layer understands: media -> URL, text -> string,
+// json -> parsed object. Shared by loadRemoteFile's version dispatch.
+async function resolveRemoteFileV2(rawPayload, ctx, uid) {
+  const registry = await readCloudRegistry(ctx, uid);
+  const blocks = [];
+  for (const block of rawPayload?.blocks || []) {
+    const next = { ...block };
+    const refs = next.contentRefs || {};
+    delete next.contentRefs;
+    for (const [field, hash] of Object.entries(refs)) {
+      const entry = registry[hash];
+      if (!entry?.url) continue;
+      if (entry.kind === 'image' || entry.kind === 'video') {
+        next[field] = entry.url;
+      } else if (entry.kind === 'json') {
+        try { next[field] = JSON.parse(await (await fetch(entry.url)).text()); }
+        catch { next[field] = await (await fetch(entry.url)).text(); }
+      } else {
+        next[field] = await (await fetch(entry.url)).text();
+      }
+    }
+    blocks.push(next);
+  }
+  return { ...rawPayload, blocks };
 }
 
 export async function resolveAttachmentUrl(value) {
