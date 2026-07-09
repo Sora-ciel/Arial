@@ -25,7 +25,8 @@
     saveRemoteFileV2,
     listCloudAttachmentUrls,
     loadRemoteAppSettings,
-    saveRemoteAppSettings
+    saveRemoteAppSettings,
+    removeLegacyFileNode
   } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
@@ -2013,14 +2014,16 @@
           ? await loadBlocks(name)
           : await loadRemoteFile(name); // version-aware → inline values
         if (!payload || !Array.isArray(payload.blocks)) continue;
-        await saveRemoteFileV2(name, payload);
+        await saveRemoteFileV2(name, payload); // writes to folders/{name}
+        // Data now lives under folders/{name}; drop the stale legacy node.
+        await removeLegacyFileNode(name);
         rememberCloudSyncForFile(name, Date.now());
         migrated += 1;
       }
 
       cloudSchemaV2 = true;
       writeSetting('cloudSchemaV2', true);
-      alert(`Migration complete. ${migrated} folder(s) are now on the v2 deduplicated format. Auto Sync will use v2 from now on.`);
+      alert(`Migration complete. ${migrated} folder(s) moved to the v2 deduplicated format under folders/, and their old files/ nodes were cleaned up. Auto Sync will use v2 from now on.`);
     } catch (error) {
       console.error(error);
       alert(`Migration failed: ${error?.message || error}`);

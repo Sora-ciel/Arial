@@ -400,6 +400,16 @@ export async function deleteRemoteFile(fileId) {
   return { fileId };
 }
 
+// Remove the legacy files/{id} node after its data has been rewritten under
+// folders/{id}. Safe to call for a folder that has no legacy node (no-op).
+export async function removeLegacyFileNode(fileId) {
+  if (!isFirebaseConfigured()) return null;
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+  await ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)));
+  return { fileId };
+}
+
 export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {
   if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:')) return null;
 
