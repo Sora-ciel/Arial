@@ -126,7 +126,8 @@ const TYPE_CONTENT_FIELDS = {
   embed: ['content'],
   image: ['src'],
   video: ['src'],
-  music: ['src', 'trackUrl']
+  music: ['src', 'trackUrl'],
+  task: ['tasks']
 };
 
 // Guard against the data-loss bug: when a local block lost its stored bytes it
@@ -145,10 +146,7 @@ async function preserveRemoteMediaAttachments(fileId, payload, ctx, uid) {
   });
   if (!atRisk) return payload;
 
-  const snapshot = await ctx.dbApi.get(
-    ctx.dbApi.ref(ctx.db, getUserPath(uid, `files/${fileId}`))
-  );
-  const remote = snapshot.exists() ? snapshot.val() : null;
+  const remote = await getFolderNode(ctx, uid, fileId);
   if (!Array.isArray(remote?.blocks)) return payload;
 
   const remoteById = new Map(remote.blocks.map(b => [b?.id, b]));
@@ -289,17 +287,23 @@ export async function signOutUser() {
   await ctx.authApi.signOut(ctx.auth);
 }
 
+// Read a folder's raw payload, preferring the current `folders/` node and
+// falling back to the legacy `files/` node so data written before the rename
+// still loads during the transition.
+async function getFolderNode(ctx, uid, fileId) {
+  const foldersSnap = await ctx.dbApi.get(ctx.dbApi.ref(ctx.db, getUserPath(uid, `folders/${fileId}`)));
+  if (foldersSnap.exists()) return foldersSnap.val();
+  const filesSnap = await ctx.dbApi.get(ctx.dbApi.ref(ctx.db, getUserPath(uid, `files/${fileId}`)));
+  return filesSnap.exists() ? filesSnap.val() : null;
+}
+
 export async function loadRemoteFile(fileId) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
 
-  const snapshot = await ctx.dbApi.get(
-    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))
-  );
-
-  if (!snapshot.exists()) return null;
-  const raw = snapshot.val();
+  const raw = await getFolderNode(ctx, user.uid, fileId);
+  if (!raw) return null;
   // v2 payloads carry content by hash; resolve them back to inline values.
   // v1 (no schemaVersion) already has inline/URL fields — return as-is.
   if (raw && raw.schemaVersion === CLOUD_SCHEMA_VERSION) {
@@ -320,6 +324,31 @@ export async function loadRemoteIndex() {
   return snapshot.exists() ? snapshot.val() : {};
 }
 
+// ---- Cross-device app settings (theme library, etc.) ----
+//
+// Distinct from per-folder data: a single shared node for account-wide prefs
+// that should follow the user across devices. We deliberately sync only the
+// *library* of custom themes here — never the active selection, which stays
+// per-device (see App.svelte).
+export async function loadRemoteAppSettings() {
+  if (!isFirebaseConfigured()) return null;
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+  const snap = await ctx.dbApi.get(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, 'appSettings')));
+  return snap.exists() ? snap.val() : null;
+}
+
+export async function saveRemoteAppSettings(settings) {
+  if (!isFirebaseConfigured()) return null;
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, 'appSettings')),
+    { ...settings, updatedAt: Date.now() }
+  );
+  return true;
+}
+
 export async function saveRemoteFile(fileId, payload, options = {}) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
@@ -336,7 +365,7 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
   const lastSyncedAt = Date.now();
 
   await ctx.dbApi.set(
-    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `folders/${fileId}`)),
     { ...payloadWithRemoteAttachments, updatedAt, modifiedAt, lastSyncedAt }
   );
 
@@ -363,6 +392,7 @@ export async function deleteRemoteFile(fileId) {
   const user = requireUser(ctx.auth.currentUser);
 
   await Promise.all([
+    ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `folders/${fileId}`))),
     ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))),
     ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `index/${fileId}`)))
   ]);
@@ -429,7 +459,7 @@ export async function listCloudAttachmentUrls() {
     const field = parts[aIdx + 3];
     const name = parts[aIdx + 4];
     const ts = Number(String(name).split('-')[0]) || 0;
-    const key = `${fileId} ${blockId} ${field}`;
+    const key = `${fileId}::${blockId}::${field}`;
     const prev = best.get(key);
     if (!prev || ts > prev.ts) best.set(key, { item, ts, fileId, blockId, field });
   }
@@ -527,15 +557,52 @@ export async function saveRemoteFileV2(fileId, payload, options = {}) {
   const registry = await readCloudRegistry(ctx, uid);
   const dirty = { v: false };
 
+  // Lost-field guard (same intent as preserveRemoteMediaAttachments, at the
+  // contentRef level): if a content-bearing block lost its field locally, keep
+  // the cloud's content rather than dropping it. Only read remote when a block
+  // is actually missing an expected field.
+  let remoteByBlock = null;
+  const needGuard = (payload?.blocks || []).some(block => {
+    const fields = TYPE_CONTENT_FIELDS[block?.type];
+    return fields && fields.some(f => isEmptyFieldValue(block?.[f]));
+  });
+  if (needGuard) {
+    const remote = await getFolderNode(ctx, uid, fileId);
+    if (Array.isArray(remote?.blocks)) {
+      const isV2 = remote.schemaVersion === CLOUD_SCHEMA_VERSION;
+      remoteByBlock = new Map(remote.blocks.map(rb => [rb?.id, { isV2, block: rb }]));
+    }
+  }
+
   const blocks = [];
   for (const block of payload?.blocks || []) {
     const next = { ...block };
     const contentRefs = {};
+    const expected = TYPE_CONTENT_FIELDS[block?.type] || [];
     for (const field of ADDRESSABLE_FIELDS) {
       const value = next[field];
-      if (isEmptyFieldValue(value)) { delete next[field]; continue; }
-      contentRefs[field] = await ensureCloudContent(value, ctx, uid, fileId, registry, dirty);
       delete next[field];
+
+      if (!isEmptyFieldValue(value)) {
+        contentRefs[field] = await ensureCloudContent(value, ctx, uid, fileId, registry, dirty);
+        continue;
+      }
+
+      // Field is empty locally. If the block type should carry it (a genuine
+      // loss, not merely a field it never has) and the cloud still holds it,
+      // preserve the cloud copy.
+      if (!expected.includes(field) || !remoteByBlock?.has(block?.id)) continue;
+      const { isV2, block: rb } = remoteByBlock.get(block.id);
+      if (isV2) {
+        const hash = rb?.contentRefs?.[field];
+        if (hash && registry[hash]) {
+          contentRefs[field] = hash;
+          if (!registry[hash].usedBy) registry[hash].usedBy = {};
+          if (!registry[hash].usedBy[fileId]) { registry[hash].usedBy[fileId] = true; dirty.v = true; }
+        }
+      } else if (!isEmptyFieldValue(rb?.[field])) {
+        contentRefs[field] = await ensureCloudContent(rb[field], ctx, uid, fileId, registry, dirty);
+      }
     }
     if (Object.keys(contentRefs).length) next.contentRefs = contentRefs;
     blocks.push(next);
@@ -550,7 +617,7 @@ export async function saveRemoteFileV2(fileId, payload, options = {}) {
   const lastSyncedAt = Date.now();
 
   await ctx.dbApi.set(
-    ctx.dbApi.ref(ctx.db, getUserPath(uid, `files/${fileId}`)),
+    ctx.dbApi.ref(ctx.db, getUserPath(uid, `folders/${fileId}`)),
     { ...payload, blocks, schemaVersion: CLOUD_SCHEMA_VERSION, updatedAt, modifiedAt, lastSyncedAt }
   );
   await ctx.dbApi.set(

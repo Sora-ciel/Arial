@@ -23,7 +23,9 @@
     loadRemoteIndex,
     saveRemoteFile,
     saveRemoteFileV2,
-    listCloudAttachmentUrls
+    listCloudAttachmentUrls,
+    loadRemoteAppSettings,
+    saveRemoteAppSettings
   } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
@@ -341,28 +343,57 @@
     }
   }
 
+  function serializeCustomThemes(themes) {
+    return themes.map(({
+      id, name, description, controlColors, blockTheme, previewBg, createdAt
+    }) => ({ id, name, description, controlColors, blockTheme, previewBg, createdAt }));
+  }
+
   function persistCustomThemes(themes) {
     try {
-      const serializable = themes.map(({
-        id,
-        name,
-        description,
-        controlColors,
-        blockTheme,
-        previewBg,
-        createdAt
-      }) => ({
-        id,
-        name,
-        description,
-        controlColors,
-        blockTheme,
-        previewBg,
-        createdAt
-      }));
-      writeSetting('customThemes', serializable);
+      writeSetting('customThemes', serializeCustomThemes(themes));
     } catch (error) {
       /* ignore persistence failures */
+    }
+    // Mirror the theme *library* to the cloud so it follows the user across
+    // devices. The active selection stays local (never synced).
+    pushCustomThemesToCloud();
+  }
+
+  async function pushCustomThemesToCloud() {
+    if (!firebaseReady || !authUser) return;
+    try {
+      await saveRemoteAppSettings({ customThemes: serializeCustomThemes(customThemes) });
+    } catch (error) {
+      console.error('Theme library cloud push failed:', error);
+    }
+  }
+
+  // Merge the cloud theme library into the local one (union by id; local wins
+  // on conflict so this device's edits survive), then push the union back so
+  // both sides converge. Runs on sign-in. Never touches selectedThemeId.
+  async function mergeRemoteCustomThemes() {
+    if (!firebaseReady || !authUser) return;
+    try {
+      const remote = await loadRemoteAppSettings();
+      const remoteThemes = Array.isArray(remote?.customThemes) ? remote.customThemes : [];
+      if (!remoteThemes.length) {
+        if (customThemes.length) await pushCustomThemesToCloud();
+        return;
+      }
+      const byId = new Map();
+      for (const theme of remoteThemes) if (theme?.id && theme?.name) byId.set(theme.id, theme);
+      for (const theme of customThemes) if (theme?.id && theme?.name) byId.set(theme.id, theme);
+      customThemes = [...byId.values()].map(theme => ({
+        ...theme,
+        controlColors: normalizeControlColors(theme.controlColors),
+        blockTheme: normalizeBlockTheme(theme.blockTheme),
+        isCustom: true
+      }));
+      writeSetting('customThemes', serializeCustomThemes(customThemes));
+      await pushCustomThemesToCloud();
+    } catch (error) {
+      console.error('Theme library merge failed:', error);
     }
   }
 
@@ -788,6 +819,10 @@
   let downloadInProgress = false;
   let recoverInProgress = false;
   let v2TestInProgress = false;
+  let migrateV2InProgress = false;
+  // When on, cloud uploads use the v2 content-addressed schema. Flipped on by
+  // the one-time "Migrate cloud to v2" action; reads are always version-aware.
+  let cloudSchemaV2 = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -821,7 +856,9 @@
   }
 
   async function saveRemoteFileWithMemory(fileName, payload, options = {}) {
-    const result = await saveRemoteFile(fileName, payload, options);
+    const result = cloudSchemaV2
+      ? await saveRemoteFileV2(fileName, payload, options)
+      : await saveRemoteFile(fileName, payload, options);
     const syncedAt = Date.now();
     rememberCloudSyncForFile(fileName, syncedAt);
     return result;
@@ -1458,7 +1495,7 @@
 
     const trimmedName = proposedName.trim();
     if (!trimmedName) {
-      alert('File name cannot be empty.');
+      alert('Folder name cannot be empty.');
       return;
     }
 
@@ -1950,6 +1987,48 @@
     }
   }
 
+  // One-time migration: re-upload every folder (local ∪ cloud) in v2 form and
+  // switch the upload path to v2 for good. Local is the source of truth, so
+  // this re-uploads from local when available and from the (resolved) cloud
+  // copy otherwise. Old duplicated attachments/ objects are left in place.
+  async function migrateCloudToV2() {
+    if (!firebaseReady) { alert('Firebase is not configured yet.'); return; }
+    if (!authUser) { alert('Sign in with Google first.'); return; }
+    if (autoSyncEnabled) {
+      alert('Turn Auto Sync OFF before migrating, then turn it back on when done.');
+      return;
+    }
+    if (migrateV2InProgress) return;
+    if (!confirm('Migrate all cloud folders to the deduplicated v2 format? This re-uploads every folder. Your existing data is used as the source; old files are left untouched.')) return;
+
+    migrateV2InProgress = true;
+    try {
+      const localNames = await listSavedBlocks();
+      const remoteIndex = await loadRemoteIndex();
+      const allNames = [...new Set([...localNames, ...Object.keys(remoteIndex || {})])];
+
+      let migrated = 0;
+      for (const name of allNames) {
+        const payload = localNames.includes(name)
+          ? await loadBlocks(name)
+          : await loadRemoteFile(name); // version-aware → inline values
+        if (!payload || !Array.isArray(payload.blocks)) continue;
+        await saveRemoteFileV2(name, payload);
+        rememberCloudSyncForFile(name, Date.now());
+        migrated += 1;
+      }
+
+      cloudSchemaV2 = true;
+      writeSetting('cloudSchemaV2', true);
+      alert(`Migration complete. ${migrated} folder(s) are now on the v2 deduplicated format. Auto Sync will use v2 from now on.`);
+    } catch (error) {
+      console.error(error);
+      alert(`Migration failed: ${error?.message || error}`);
+    } finally {
+      migrateV2InProgress = false;
+    }
+  }
+
   async function bootstrapCloudSync() {
     if (!firebaseReady || !authUser) return;
     if (cloudBootstrapInProgress) return;
@@ -1997,6 +2076,8 @@
       cloudBootstrapComplete = true;
     } finally {
       cloudBootstrapInProgress = false;
+      // Sync the shared theme library across devices (selection stays local).
+      await mergeRemoteCustomThemes();
     }
   }
 
@@ -2229,14 +2310,16 @@
       fsFolderName = getFileSystemFolderName();
     }
 
-    const [savedSyncMemory, savedAutoSync, savedBirthday] = await Promise.all([
+    const [savedSyncMemory, savedAutoSync, savedBirthday, savedSchemaV2] = await Promise.all([
       readSetting('cloudSyncMemoryByFile'),
       readSetting('autoSyncEnabled'),
-      readSetting('birthdayModeAccess')
+      readSetting('birthdayModeAccess'),
+      readSetting('cloudSchemaV2')
     ]);
     cloudSyncMemoryByFile = savedSyncMemory ?? {};
     autoSyncEnabled = savedAutoSync ?? true;
     birthdayUnlockExpiry = savedBirthday ?? 0;
+    cloudSchemaV2 = savedSchemaV2 ?? false;
 
     savedList = await listSavedBlocks();
     const storedLastSave = await readSetting('lastLoadedSave');
@@ -2595,6 +2678,8 @@
         {downloadInProgress}
         {recoverInProgress}
         {v2TestInProgress}
+        {migrateV2InProgress}
+        {cloudSchemaV2}
         {autoSyncEnabled}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
@@ -2602,6 +2687,7 @@
         on:downloadNow={downloadAllCloudToLocal}
         on:recoverAttachments={recoverCloudAttachments}
         on:testV2={testV2RoundTrip}
+        on:migrateV2={migrateCloudToV2}
         on:toggleAutoSync={toggleAutoSync}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}

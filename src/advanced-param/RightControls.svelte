@@ -12,6 +12,8 @@
   export let downloadInProgress = false;
   export let recoverInProgress = false;
   export let v2TestInProgress = false;
+  export let migrateV2InProgress = false;
+  export let cloudSchemaV2 = false;
   export let autoSyncEnabled = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
@@ -124,6 +126,10 @@
 
   function testV2() {
     dispatch("testV2");
+  }
+
+  function migrateV2() {
+    dispatch("migrateV2");
   }
 
   function toggleAutoSync() {
@@ -328,9 +334,9 @@
     <div class="dropdown-content">
       <div class="controls-scroll">
         <div class="tab-section">
-          <h4>📂 Saved Files</h4>
+          <h4>📂 Folders</h4>
           <button class="create-theme-btn" type="button" on:click={handleCreateNewFile}>
-            ➕ New File
+            ➕ New Folder
           </button>
           {#if savedList.length}
             <ul>
@@ -342,7 +348,7 @@
               {/each}
             </ul>
           {:else}
-            <p class="empty-state">No saved scenes yet.</p>
+            <p class="empty-state">No folders yet.</p>
           {/if}
         </div>
 
@@ -364,6 +370,9 @@
               </button>
               <button class="create-theme-btn" type="button" on:click={testV2} disabled={v2TestInProgress}>
                 {v2TestInProgress ? "⏳ Testing..." : "🧪 Test v2 (this folder)"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={migrateV2} disabled={migrateV2InProgress}>
+                {migrateV2InProgress ? "⏳ Migrating..." : (cloudSchemaV2 ? "✅ v2 active — re-migrate" : "⬆² Migrate cloud to v2")}
               </button>
               <button class="create-theme-btn" type="button" on:click={signOut}>🚪 Sign Out</button>
               <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>

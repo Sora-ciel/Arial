@@ -683,7 +683,7 @@ onMount(() => {
       bind:this={fileInputRef}
       style="display: none"
     />
-    <input bind:value={currentSaveName} placeholder="File name" />
+    <input bind:value={currentSaveName} placeholder="Folder name" />
     {#if isSimpleNoteMode}
       <label class="simple-columns-control mobile-only">
         Columns
