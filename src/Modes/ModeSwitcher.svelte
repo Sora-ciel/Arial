@@ -20,9 +20,9 @@
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
   export let taskAddDirection = 'above';
-  export let canvasRotation = 0;
   export let singleNoteSettings = {};
   export let currentSaveName = '';
+  export let syncRevision = 0;
 
   let width = 0;
   export let refitViewTrigger = 0;
@@ -59,7 +59,6 @@
     {mode}
     {blocks}
     {focusedBlockId}
-    rotation={canvasRotation}
     bind:canvasRef
     {refitViewTrigger}
     {canvasColors}
@@ -117,6 +116,7 @@
       {canvasColors}
       {currentSaveName}
       {singleNoteSettings}
+      {syncRevision}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}

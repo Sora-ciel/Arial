@@ -16,6 +16,7 @@
   export let canvasRef;
   export let currentSaveName = '';
   export let singleNoteSettings = {};
+  export let syncRevision = 0;
 
   // Per-file background image settings
   $: bgImage = singleNoteSettings?.backgroundImage || '';
@@ -64,13 +65,22 @@
   let activeFileContent = '';      // standalone note content (loaded async)
   let noteSaveTimer = null;
 
-  // Auto-select a freshly added note (count grows by one)
-  let _prevNoteCount = 0;
+  // Auto-select a freshly added note by tracking which IDs we've already seen.
+  // Using a Set of IDs (vs a count) means a soft-reload that replaces blocks
+  // in-place won't falsely trigger the auto-jump.
+  let _knownNoteIds = new Set();
   $: {
-    if (editingKind === 'block' && noteBlocks.length === _prevNoteCount + 1 && _prevNoteCount > 0) {
-      selectedNoteId = noteBlocks[noteBlocks.length - 1].id;
+    if (editingKind === 'block' && noteBlocks.length > 0) {
+      const newIds = noteBlocks.filter(b => !_knownNoteIds.has(b.id));
+      if (newIds.length === 1 && _knownNoteIds.size > 0) {
+        // Exactly one genuinely new note arrived while the folder was already
+        // loaded — this is the user adding a note on THIS instance.
+        selectedNoteId = newIds[0].id;
+      }
+      _knownNoteIds = new Set(noteBlocks.map(b => b.id));
+    } else if (noteBlocks.length === 0) {
+      _knownNoteIds = new Set();
     }
-    _prevNoteCount = noteBlocks.length;
   }
   $: if (editingKind === 'block' && !selectedNoteId && noteBlocks.length) {
     selectedNoteId = noteBlocks[0].id;
@@ -86,6 +96,14 @@
     editingKind === 'block'
       ? (noteBlocks.find(block => block.id === selectedNoteId) || null)
       : null;
+
+  // When the folder changes, reset known-IDs so the first note in the new
+  // folder is auto-selected cleanly without the "new note" jump logic firing.
+  let _loadedSaveForIds = '';
+  $: if (currentSaveName !== _loadedSaveForIds) {
+    _knownNoteIds = new Set();
+    _loadedSaveForIds = currentSaveName;
+  }
 
   // The content shown in the editor (block content or standalone file content)
   $: editorContent = editingKind === 'note' ? activeFileContent : (noteBlock?.content ?? '');
@@ -121,6 +139,13 @@
   // duplicates) and the new one never appears.
   $: if (sidebarOpen && currentSaveName !== _loadedForSave && !loadingAll) {
     loadAllFolderNotes();
+  }
+
+  // When a cloud sync pulls new data, refresh sidebar lists so new notes
+  // from other devices appear without requiring the user to close+reopen.
+  $: if (syncRevision && sidebarOpen) {
+    refreshStandaloneNotes();
+    _loadedForSave = null; // force other-folder list to reload too
   }
 
   async function loadAllFolderNotes() {
@@ -615,7 +640,7 @@
     flex: 1 1 0;
     min-width: 0;
     height: 100%;
-    background: var(--canvas-inner-bg, #000000);
+    background: var(--active-note-bg, var(--canvas-inner-bg, #000000));
     color: var(--mode-text-color, #ffffff);
     box-sizing: border-box;
     --sb-track: var(--active-note-bg);
@@ -639,6 +664,10 @@
   .single-note > .note-meta,
   .single-note > .note-editor-area,
   .single-note > .note-footer { position: relative; z-index: 1; }
+  /* The bg-settings popover drops down from the top bar over the note; give
+     the top bar a higher stacking layer so the popover sits above the
+     editor/meta surfaces below it instead of behind them. */
+  .single-note > .note-top-bar { z-index: 20; }
 
   .note-editor-area {
     display: flex;

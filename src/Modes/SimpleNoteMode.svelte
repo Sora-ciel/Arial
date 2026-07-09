@@ -192,6 +192,132 @@
     dispatch('update', detail);
   }
 
+  // Task blocks — same data model, interactivity, and drag-reorder as the
+  // canvas TaskBlock widget, kept in sync so both feel like the same feature.
+  let newTaskTextByBlock = {};
+
+  function updateTasks(block, nextTasks) {
+    updateBlock(block.id, { tasks: nextTasks }, { pushToHistory: true, changedKeys: ['tasks'] });
+  }
+
+  // Matches the canvas TaskBlock: checking a task off removes it from view
+  // entirely, rather than leaving a struck-through item in the list.
+  function visibleTasks(block) {
+    return Array.isArray(block?.tasks) ? block.tasks.filter(t => !t.done) : [];
+  }
+
+  function toggleTask(block, taskId) {
+    const tasks = Array.isArray(block.tasks) ? block.tasks : [];
+    updateTasks(block, tasks.map(task => task.id === taskId ? { ...task, done: !task.done } : task));
+  }
+
+  function deleteTask(block, taskId) {
+    const tasks = Array.isArray(block.tasks) ? block.tasks : [];
+    updateTasks(block, tasks.filter(task => task.id !== taskId));
+  }
+
+  function addTask(block) {
+    const trimmed = (newTaskTextByBlock[block.id] || '').trim();
+    if (!trimmed) return;
+    const tasks = Array.isArray(block.tasks) ? block.tasks : [];
+    const item = { id: crypto.randomUUID(), text: trimmed, done: false };
+    const direction = block.addDirection === 'below' ? 'below' : 'above';
+    updateTasks(block, direction === 'above' ? [item, ...tasks] : [...tasks, item]);
+    newTaskTextByBlock = { ...newTaskTextByBlock, [block.id]: '' };
+  }
+
+  function toggleTaskDirection(block) {
+    const next = block.addDirection === 'below' ? 'above' : 'below';
+    updateBlock(block.id, { addDirection: next }, { pushToHistory: false, changedKeys: ['addDirection'] });
+  }
+
+  function handleAddTaskKeydown(event, block) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addTask(block);
+  }
+
+  // ── Inline edit (double-click a task to rewrite it) — same as the
+  // canvas TaskBlock and Task Mode so tasks are editable everywhere. ──────
+  let editingTaskId = null;
+  let editText = '';
+
+  function startEditTask(task) { editingTaskId = task.id; editText = task.text; }
+
+  function commitEditTask(block) {
+    if (!editingTaskId) return;
+    const trimmed = editText.trim();
+    const tasks = Array.isArray(block.tasks) ? block.tasks : [];
+    if (trimmed) {
+      updateTasks(block, tasks.map(t => t.id === editingTaskId ? { ...t, text: trimmed } : t));
+    }
+    editingTaskId = null; editText = '';
+  }
+
+  function cancelEditTask() { editingTaskId = null; editText = ''; }
+
+  function handleEditKeydown(event, block) {
+    if (event.key === 'Enter') { event.preventDefault(); commitEditTask(block); }
+    else if (event.key === 'Escape') { event.preventDefault(); cancelEditTask(); }
+  }
+
+  // ── Reordering (drag the handle) — scoped per block since several task
+  // lists can be visible at once in this grid. ──────────────────────────
+  let dragBlockId = null;
+  let draggingTaskId = null;
+  let dragOverTaskId = null;
+  let dragOverPos = null;
+
+  function startTaskDrag(e, block, taskId) {
+    e.preventDefault();
+    e.stopPropagation();
+    ensureFocus(block.id);
+    dragBlockId = block.id;
+    draggingTaskId = taskId;
+    window.addEventListener('pointermove', onTaskDragMove);
+    window.addEventListener('pointerup', onTaskDragEnd);
+  }
+
+  function onTaskDragMove(e) {
+    if (!draggingTaskId) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const itemEl = el?.closest('.task-item');
+    if (!itemEl) { dragOverTaskId = null; dragOverPos = null; return; }
+    const overId = itemEl.dataset.taskId;
+    if (!overId || overId === draggingTaskId) return;
+    const rect = itemEl.getBoundingClientRect();
+    dragOverPos = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    dragOverTaskId = overId;
+  }
+
+  function onTaskDragEnd() {
+    window.removeEventListener('pointermove', onTaskDragMove);
+    window.removeEventListener('pointerup', onTaskDragEnd);
+    if (dragBlockId && draggingTaskId && dragOverTaskId && draggingTaskId !== dragOverTaskId) {
+      const block = blocks.find(b => b.id === dragBlockId);
+      if (block) reorderTask(block, draggingTaskId, dragOverTaskId, dragOverPos);
+    }
+    dragBlockId = null;
+    draggingTaskId = null;
+    dragOverTaskId = null;
+    dragOverPos = null;
+  }
+
+  function reorderTask(block, draggedId, targetId, pos) {
+    const list = [...(Array.isArray(block.tasks) ? block.tasks : [])];
+    const fromIdx = list.findIndex(t => t.id === draggedId);
+    if (fromIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    let toIdx = list.findIndex(t => t.id === targetId);
+    if (toIdx === -1) {
+      list.push(moved);
+    } else {
+      if (pos === 'after') toIdx++;
+      list.splice(toIdx, 0, moved);
+    }
+    updateTasks(block, list);
+  }
+
   function toggleFocus(id) {
     dispatch('focusToggle', { id });
   }
@@ -510,15 +636,138 @@ li {
 .task-list-title {
   font-weight: 700;
   padding: 6px 8px 2px;
+  font-family: Arial, Helvetica, sans-serif;
 }
 
 .task-item {
-  padding: 4px 8px;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 8px 4px 2px;
   border-radius: 8px;
   margin-top: 4px;
   background: color-mix(in srgb, var(--text-color) 10%, transparent);
   font-size: 0.95rem;
+  box-sizing: border-box;
+  transition: box-shadow 0.1s ease, opacity 0.1s ease;
 }
+
+.task-item.task-empty {
+  opacity: 0.65;
+}
+
+.task-item.dragging { opacity: 0.4; }
+.task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--text-color); }
+.task-item.drag-over-after { box-shadow: inset 0 -2px 0 0 var(--text-color); }
+
+.drag-handle {
+  flex-shrink: 0;
+  width: 18px;
+  align-self: stretch;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: grab;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
+  opacity: 0.35;
+}
+.drag-handle:active { cursor: grabbing; opacity: 0.75; }
+
+.task-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  margin-right: 6px;
+  border: none;
+  background: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.task-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  white-space: normal;
+  line-height: 1.4;
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: bold;
+  cursor: text;
+}
+
+.task-text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--text-color) 35%, transparent);
+  border-radius: 6px;
+  color: var(--text-color);
+  font-family: Arial, Helvetica, sans-serif;
+  font-weight: bold;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  padding: 2px 6px;
+  box-sizing: border-box;
+}
+
+.task-delete {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-color);
+  opacity: 0.6;
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0 2px;
+  cursor: pointer;
+}
+.task-delete:hover {
+  opacity: 1;
+}
+
+.task-add-row {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.task-add-row input {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--text-color) 35%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-color);
+  padding: 4px 8px;
+  font-size: 0.9rem;
+}
+
+.task-add-row button {
+  flex-shrink: 0;
+  border: 1px solid color-mix(in srgb, var(--text-color) 35%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-color);
+  padding: 4px 10px;
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.dir-btn {
+  width: 32px;
+  padding: 4px 0 !important;
+  text-align: center;
+  opacity: 0.8;
+}
+.dir-btn:hover { opacity: 1; }
 
 .edit-button {
   display: none;
@@ -705,15 +954,96 @@ li {
           {:else if block.type === 'task'}
             <div class="task-list-title">{block.title || 'Task List'}</div>
             <div class="task-list">
-              {#if Array.isArray(block.tasks) && block.tasks.length}
-                {#each block.tasks as task (task.id)}
-                  <div class="task-item">
-                    {task.done ? '✅' : '⬜'} {task.text}
+              {#if visibleTasks(block).length}
+                {#each visibleTasks(block) as task (task.id)}
+                  <div
+                    class="task-item"
+                    data-task-id={task.id}
+                    class:dragging={draggingTaskId === task.id}
+                    class:drag-over-before={dragOverTaskId === task.id && dragOverPos === 'before'}
+                    class:drag-over-after={dragOverTaskId === task.id && dragOverPos === 'after'}
+                  >
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="drag-handle"
+                      data-focus-guard
+                      aria-label="Drag to reorder"
+                      on:pointerdown={(e) => startTaskDrag(e, block, task.id)}
+                    >
+                      <svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor">
+                        <circle cx="2" cy="2" r="1.3"/><circle cx="8" cy="2" r="1.3"/>
+                        <circle cx="2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
+                        <circle cx="2" cy="14" r="1.3"/><circle cx="8" cy="14" r="1.3"/>
+                      </svg>
+                    </button>
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="task-check"
+                      data-focus-guard
+                      on:click|stopPropagation={() => toggleTask(block, task.id)}
+                      aria-label="Mark complete"
+                    >
+                      <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--text-color)" stroke-width="1.5" stroke-opacity="0.6"/>
+                      </svg>
+                    </button>
+                    {#if editingTaskId === task.id}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <input
+                        class="task-text-input"
+                        type="text"
+                        bind:value={editText}
+                        data-focus-guard
+                        on:click|stopPropagation
+                        on:keydown|stopPropagation={(e) => handleEditKeydown(e, block)}
+                        on:blur={() => commitEditTask(block)}
+                        use:autoFocusInput
+                      />
+                    {:else}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <span
+                        class="task-text"
+                        data-focus-guard
+                        title="Double-click to edit"
+                        on:dblclick|stopPropagation={() => startEditTask(task)}
+                        on:click|stopPropagation
+                      >{task.text}</span>
+                    {/if}
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="task-delete"
+                      data-focus-guard
+                      aria-label="Delete task"
+                      on:click|stopPropagation={() => deleteTask(block, task.id)}
+                    >
+                      ×
+                    </button>
                   </div>
                 {/each}
               {:else}
-                <div class="task-item">No tasks yet</div>
+                <div class="task-item task-empty">No tasks yet</div>
               {/if}
+              <div class="task-add-row" data-focus-guard>
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <button
+                  class="dir-btn"
+                  data-focus-guard
+                  on:click|stopPropagation={() => toggleTaskDirection(block)}
+                  title={block.addDirection === 'below' ? 'Adding at bottom' : 'Adding at top'}
+                  aria-label={block.addDirection === 'below' ? 'Adding at bottom' : 'Adding at top'}
+                >{block.addDirection === 'below' ? '↓' : '↑'}</button>
+                <input
+                  type="text"
+                  placeholder="Add task"
+                  value={newTaskTextByBlock[block.id] || ''}
+                  on:input={(e) => (newTaskTextByBlock = { ...newTaskTextByBlock, [block.id]: e.target.value })}
+                  on:keydown={(e) => handleAddTaskKeydown(e, block)}
+                  on:focus={() => ensureFocus(block.id)}
+                  data-focus-guard
+                />
+                <!-- svelte-ignore a11y-click-events-have-key-events -->
+                <button data-focus-guard on:click|stopPropagation={() => addTask(block)}>Add</button>
+              </div>
             </div>
           {/if}
 

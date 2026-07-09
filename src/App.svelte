@@ -21,7 +21,8 @@
     signOutUser,
     loadRemoteFile,
     loadRemoteIndex,
-    saveRemoteFile
+    saveRemoteFile,
+    listCloudAttachmentUrls
   } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
@@ -172,9 +173,7 @@
     task: {
       addDirection: 'above'
     },
-    canvas: {
-      rotation: 0
-    },
+    canvas: {},
     single: {
       backgroundImage: '',
       bgOpacity: 0.35,
@@ -188,10 +187,6 @@
     const incomingTask = settings?.task || {};
     const incomingCanvas = settings?.canvas || {};
     const incomingSingle = settings?.single || {};
-    let rotation = Number(incomingCanvas.rotation);
-    if (!Number.isFinite(rotation)) rotation = 0;
-    // keep within -180..180
-    rotation = ((rotation % 360) + 540) % 360 - 180;
     const clamp01 = (n, fallback) => {
       const v = Number(n);
       return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
@@ -211,7 +206,6 @@
       canvas: {
         ...DEFAULT_MODE_SETTINGS.canvas,
         ...incomingCanvas,
-        rotation
       },
       single: {
         ...DEFAULT_MODE_SETTINGS.single,
@@ -753,7 +747,6 @@
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   $: taskAddDirection = modeSettings.task.addDirection;
-  $: canvasRotation = modeSettings.canvas.rotation;
   $: singleNoteSettings = modeSettings.single;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
@@ -792,6 +785,7 @@
   let authUser = null;
   let uploadInProgress = false;
   let downloadInProgress = false;
+  let recoverInProgress = false;
   let fileInputRef;
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
@@ -813,6 +807,7 @@
   let lastAutoSyncFingerprint = '';
   let lastAutoSyncAttachmentFingerprint = '';
   let lastRemoteSyncFingerprint = '';
+  let syncRevision = 0;
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
   function rememberCloudSyncForFile(fileName, syncedAt = Date.now()) {
@@ -1668,13 +1663,43 @@
   }
 
 
+  // Soft reload: update blocks/orders in place without wiping currentSaveName.
+  // Used for sync downloads so modes (SingleNoteMode, TaskMode) keep their
+  // selected-note / selected-task state instead of resetting to item[0].
+  async function syncReloadCurrentSave() {
+    if (!currentSaveName) return;
+    try {
+      const loaded = await loadBlocks(currentSaveName);
+      const loadedBlocks = Array.isArray(loaded)
+        ? loaded
+        : Array.isArray(loaded?.blocks) ? loaded.blocks : [];
+      const loadedOrders = !Array.isArray(loaded) ? loaded?.modeOrders : {};
+      const loadedModeSettings = !Array.isArray(loaded) ? loaded?.modeSettings : null;
+
+      blocks = loadedBlocks.map(b => ({ ...applyHistoryTriggers(b), _version: 0 }));
+      modeOrders = ensureModeOrders(blocks, loadedOrders);
+      if (loadedModeSettings) modeSettings = normalizeModeSettings(loadedModeSettings);
+
+      // Add snapshot without re-persisting (data already on disk from the download)
+      await pushHistory(blocks, modeOrders, { persist: false });
+      autoSyncDirty = false;
+      syncRevision = (syncRevision + 1) | 0;
+    } catch (error) {
+      console.error('Sync reload failed:', error);
+    }
+  }
+
   async function remountCurrentSaveIfLoaded() {
     if (!currentSaveName || !savedList.includes(currentSaveName)) return;
-    await load(currentSaveName, { skipCloudUpload: true });
+    await syncReloadCurrentSave();
   }
 
   async function pullRemoteUpdatesIfNeeded(options = {}) {
-    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return false;
+    // `force` is used by the manual "Download from cloud" action: it re-pulls
+    // every folder regardless of timestamps, and works even when auto-sync is
+    // switched off. Auto-sync ticks pass no force and stay timestamp-gated.
+    const force = options.force === true;
+    if ((!autoSyncEnabled && !force) || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return false;
 
     const remoteIndex = await loadRemoteIndex();
     const remoteEntries = Object.entries(remoteIndex || {});
@@ -1683,7 +1708,7 @@
       .sort()
       .join('|');
 
-    if (remoteFingerprint === lastRemoteSyncFingerprint) return false;
+    if (!force && remoteFingerprint === lastRemoteSyncFingerprint) return false;
 
     let downloadedAny = false;
     for (const [fileName, remoteMeta] of remoteEntries) {
@@ -1691,10 +1716,15 @@
       const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
       const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
 
-      if (!localPayload || remoteModifiedAt > localModifiedAt) {
+      // Timestamp-gated for auto-sync; force pulls every folder so cloud
+      // attachments that never made it down (e.g. a folder whose structure
+      // synced but whose images failed an earlier fetch) are refreshed.
+      if (force || !localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
-        await saveBlocks(fileName, remotePayload);
+        // On a forced pull, rewrite content so lost-but-referenced attachments
+        // are actually re-fetched from the cloud, not skipped as "unchanged".
+        await saveBlocks(fileName, remotePayload, { forceContent: force });
         rememberCloudSyncForFile(fileName, Number(remoteMeta?.lastSyncedAt || Date.now()));
         downloadedAny = true;
       }
@@ -1775,12 +1805,96 @@
 
     downloadInProgress = true;
     try {
-      await pullRemoteUpdatesIfNeeded({ showInfo: true });
+      await pullRemoteUpdatesIfNeeded({ showInfo: true, force: true });
     } catch (error) {
       console.error(error);
       alert(`Download failed: ${error?.message || error}`);
     } finally {
       downloadInProgress = false;
+    }
+  }
+
+  // Recover attachments whose Realtime-DB links were wiped by re-reading the
+  // Firebase Storage object paths (which still encode folder→block→field) and
+  // writing the surviving download URLs back into each empty block — locally
+  // and in the cloud. Only fills fields that are currently empty, so intact
+  // images are never touched.
+  async function recoverCloudAttachments() {
+    if (!firebaseReady) {
+      alert('Firebase is not configured yet.');
+      return;
+    }
+    if (!authUser) {
+      alert('Sign in with Google first.');
+      return;
+    }
+    if (recoverInProgress) return;
+
+    recoverInProgress = true;
+    try {
+      const map = await listCloudAttachmentUrls();
+      const fileIds = Object.keys(map);
+      if (!fileIds.length) {
+        alert('No cloud attachments were found in Storage to recover.');
+        return;
+      }
+
+      const localNames = await listSavedBlocks();
+      let restored = 0;
+      let touchedFolders = 0;
+
+      for (const fileId of fileIds) {
+        const blockMap = map[fileId];
+        // Prefer the local copy so we keep local structure; fall back to remote.
+        const payload = localNames.includes(fileId)
+          ? await loadBlocks(fileId)
+          : await loadRemoteFile(fileId);
+        if (!payload || !Array.isArray(payload.blocks)) continue;
+
+        let patched = 0;
+        const blocks = [];
+        for (const block of payload.blocks) {
+          const fields = blockMap[block?.id];
+          if (!fields) { blocks.push(block); continue; }
+          let next = block;
+          for (const [field, url] of Object.entries(fields)) {
+            const cur = block?.[field];
+            const isEmpty = cur === undefined || cur === null || cur === '';
+            if (!isEmpty) continue;
+            // `content` is stored in Storage as the actual text, so fetch it
+            // back inline; media fields (src/trackUrl) keep pointing at the URL.
+            let value = url;
+            if (field === 'content') {
+              try { value = await (await fetch(url)).text(); } catch { value = null; }
+            }
+            if (value === undefined || value === null || value === '') continue;
+            if (next === block) next = { ...block };
+            next[field] = value;
+            patched += 1;
+          }
+          blocks.push(next);
+        }
+        if (!patched) continue;
+
+        const stamp = Date.now();
+        const nextPayload = { ...payload, blocks, modifiedAt: stamp, updatedAt: stamp };
+        // Push the restored URLs to the cloud first (repairs the DB links),
+        // then persist locally with forceContent so the bytes are re-fetched.
+        await saveRemoteFileWithMemory(fileId, nextPayload, { uploadAttachments: false });
+        await saveBlocks(fileId, nextPayload, { forceContent: true });
+        rememberCloudSyncForFile(fileId, stamp);
+        restored += patched;
+        touchedFolders += 1;
+      }
+
+      savedList = await listSavedBlocks();
+      await remountCurrentSaveIfLoaded();
+      alert(`Recovery complete. Restored ${restored} item(s) across ${touchedFolders} folder(s).`);
+    } catch (error) {
+      console.error(error);
+      alert(`Recovery failed: ${error?.message || error}`);
+    } finally {
+      recoverInProgress = false;
     }
   }
 
@@ -1933,10 +2047,6 @@
 
     if (detail.taskAddDirection !== undefined) {
       patch = { ...patch, task: { ...patch.task, addDirection: detail.taskAddDirection } };
-    }
-
-    if (detail.canvasRotation !== undefined) {
-      patch = { ...patch, canvas: { ...patch.canvas, rotation: Number(detail.canvasRotation) || 0 } };
     }
 
     if (detail.single && typeof detail.single === 'object') {
@@ -2172,7 +2282,7 @@
       autoSyncUploadTick().catch(error => {
         console.error('Auto sync upload tick failed:', error);
       });
-    }, 10_000);
+    }, 3_000);
 
     autoSyncDownloadTick().catch(error => {
       console.error('Initial auto sync download tick failed:', error);
@@ -2275,17 +2385,18 @@
 
 .screenshot-btn {
   flex-shrink: 0;
-  min-height: 42px;
+  min-height: 40px;
   padding: 8px 12px;
-  border-radius: 6px;
-  border: 1px solid var(--left-border-color, #444);
+  border-radius: 8px;
+  border: none;
   background: var(--left-button-bg, #333);
   color: var(--left-button-text, #fff);
   cursor: pointer;
   font-size: 1.05rem;
   line-height: 1;
+  transition: filter 0.15s ease;
 }
-.screenshot-btn:hover { filter: brightness(1.12); }
+.screenshot-btn:hover { filter: brightness(1.18); }
 .screenshot-btn:disabled { opacity: 0.6; cursor: default; }
 
 .startup-warning {
@@ -2359,6 +2470,12 @@
     overflow-x: auto;
   }
 
+  /* Push the camera to the end of the button flow (just before Settings)
+     instead of letting space-between strand it in the middle of the row. */
+  .screenshot-btn {
+    margin-left: auto;
+  }
+
   .right-controls {
     margin-left: 0;
   }
@@ -2375,7 +2492,6 @@
       bind:currentSaveName
       {mode}
       {simpleNoteColumnCount}
-      {canvasRotation}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
@@ -2425,11 +2541,13 @@
         {authUser}
         {uploadInProgress}
         {downloadInProgress}
+        {recoverInProgress}
         {autoSyncEnabled}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
         on:uploadNow={uploadAllLocalToCloud}
         on:downloadNow={downloadAllCloudToLocal}
+        on:recoverAttachments={recoverCloudAttachments}
         on:toggleAutoSync={toggleAutoSync}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
@@ -2457,7 +2575,6 @@
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
       {taskAddDirection}
-      {canvasRotation}
       {singleNoteSettings}
       {groupedBlocks}
       {focusedBlockId}
@@ -2467,6 +2584,7 @@
       canvasColors={canvasTheme}
       leftControlColors={leftTheme}
       {currentSaveName}
+      {syncRevision}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}

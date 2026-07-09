@@ -9,9 +9,9 @@
   export let initialTextColor = '#ffffff';
   export let initialTasks = [];
   export let initialTitle = 'Task List';
+  export let initialAddDirection = 'above';
   export let focused = false;
   export let canvasScale = 1;
-  export let canvasRotation = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -21,6 +21,7 @@
   let textColor = initialTextColor;
   let tasks = Array.isArray(initialTasks) ? [...initialTasks] : [];
   let title = initialTitle || 'Task List';
+  let addDirection = initialAddDirection === 'below' ? 'below' : 'above';
   let newTaskText = '';
 
   let dragging = false;
@@ -34,16 +35,7 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
-    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
-    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const rx = source.clientX * cos - source.clientY * sin;
-    const ry = source.clientX * sin + source.clientY * cos;
-    return {
-      x: rx / safeScale,
-      y: ry / safeScale
-    };
+    return { x: source.clientX / safeScale, y: source.clientY / safeScale };
   }
 
   const todoTasks = () => tasks.filter(task => !task.done);
@@ -56,7 +48,8 @@
       bgColor,
       textColor,
       tasks,
-      title
+      title,
+      addDirection
     };
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
 
@@ -209,11 +202,17 @@
   function addTask() {
     const trimmed = newTaskText.trim();
     if (!trimmed) return;
+    const item = { id: crypto.randomUUID(), text: trimmed, done: false };
     updateTasks(
-      [...tasks, { id: crypto.randomUUID(), text: trimmed, done: false }],
+      addDirection === 'above' ? [item, ...tasks] : [...tasks, item],
       { pushToHistory: true }
     );
     newTaskText = '';
+  }
+
+  function toggleDirection() {
+    addDirection = addDirection === 'above' ? 'below' : 'above';
+    sendUpdate(['addDirection'], { pushToHistory: false });
   }
 
   function toggleTask(taskId) {
@@ -227,11 +226,87 @@
     updateTasks(tasks.filter(task => task.id !== taskId), { pushToHistory: true });
   }
 
+  // ── Reordering (drag the handle) ────────────────────────────────
+  let draggingTaskId = null;
+  let dragOverTaskId = null;
+  let dragOverPos = null;
+
+  function startDrag(e, taskId) {
+    e.preventDefault();
+    e.stopPropagation();
+    ensureFocus();
+    draggingTaskId = taskId;
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', onDragEnd);
+  }
+
+  function onDragMove(e) {
+    if (!draggingTaskId) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const itemEl = el?.closest('.task-item');
+    if (!itemEl) { dragOverTaskId = null; dragOverPos = null; return; }
+    const overId = itemEl.dataset.taskId;
+    if (!overId || overId === draggingTaskId) return;
+    const rect = itemEl.getBoundingClientRect();
+    dragOverPos = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    dragOverTaskId = overId;
+  }
+
+  function onDragEnd() {
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', onDragEnd);
+    if (draggingTaskId && dragOverTaskId && draggingTaskId !== dragOverTaskId) {
+      reorderTask(draggingTaskId, dragOverTaskId, dragOverPos);
+    }
+    draggingTaskId = null;
+    dragOverTaskId = null;
+    dragOverPos = null;
+  }
+
+  function reorderTask(draggedId, targetId, pos) {
+    const list = [...tasks];
+    const fromIdx = list.findIndex(t => t.id === draggedId);
+    if (fromIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    let toIdx = list.findIndex(t => t.id === targetId);
+    if (toIdx === -1) {
+      list.push(moved);
+    } else {
+      if (pos === 'after') toIdx++;
+      list.splice(toIdx, 0, moved);
+    }
+    updateTasks(list);
+  }
+
   function handleAddTaskKeydown(event) {
     if (event.key !== 'Enter') return;
     event.preventDefault();
     addTask();
   }
+
+  // ── Inline edit (double-click a task to rewrite it) ─────────────
+  let editingTaskId = null;
+  let editText = '';
+
+  function startEditTask(task) { editingTaskId = task.id; editText = task.text; }
+
+  function commitEditTask() {
+    if (!editingTaskId) return;
+    const trimmed = editText.trim();
+    if (trimmed) {
+      updateTasks(tasks.map(t => t.id === editingTaskId ? { ...t, text: trimmed } : t));
+    }
+    editingTaskId = null; editText = '';
+  }
+
+  function cancelEditTask() { editingTaskId = null; editText = ''; }
+
+  function handleEditKeydown(e) {
+    if (e.key === 'Enter') { e.preventDefault(); commitEditTask(); }
+    else if (e.key === 'Escape') { e.preventDefault(); cancelEditTask(); }
+  }
+
+  function autoFocusInput(node) { node.focus(); node.select(); }
 
   $: title = initialTitle || 'Task List';
 
@@ -240,6 +315,8 @@
 <style>
   .wrapper {
     position: absolute;
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     border-radius: var(--block-border-radius, 12px);
     background: var(--block-surface, var(--bg));
@@ -333,8 +410,9 @@
     padding: 6px 8px;
   }
 
-  .task-input input::placeholder{
+  .task-input input::placeholder {
     color: var(--text);
+    opacity: 0.45;
   }
 
   .task-input button {
@@ -346,33 +424,96 @@
     cursor: pointer;
   }
 
+  .dir-btn {
+    flex-shrink: 0;
+    width: 32px;
+    padding: 6px 0 !important;
+    text-align: center;
+    opacity: 0.8;
+  }
+  .dir-btn:hover { opacity: 1; }
+
   .task-list {
     list-style: none;
     margin: 0;
-    padding: 0;
+    padding: 0 8px 2px 0;
     display: flex;
     flex-direction: column;
     gap: 6px;
     overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
   }
 
   .task-item {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 6px;
-    padding: 4px 6px;
+    gap: 2px;
+    padding: 4px 6px 4px 2px;
     border-radius: 8px;
     background: var(--bg);
     border: 1px solid var(--text);
+    box-sizing: border-box;
+    transition: box-shadow 0.1s ease, opacity 0.1s ease;
   }
+
+  .task-item.dragging { opacity: 0.4; }
+  .task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--text); }
+  .task-item.drag-over-after { box-shadow: inset 0 -2px 0 0 var(--text); }
+
+  .drag-handle {
+    flex-shrink: 0;
+    width: 18px;
+    align-self: stretch;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: grab;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text);
+    opacity: 0.35;
+  }
+  .drag-handle:active { cursor: grabbing; opacity: 0.75; }
 
   .task-item label {
     display: flex;
     align-items: center;
     gap: 6px;
     flex: 1 1 auto;
+    min-width: 0;
     font-size: 0.85rem;
+  }
+
+  .task-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    word-break: break-word;
+    white-space: normal;
+    line-height: 1.4;
+    cursor: text;
+    /* Match the normal text block's body type (size + weight + themed font) */
+    font-family: var(--block-body-font, inherit);
+    font-size: 1.1rem;
+    font-weight: 500;
+  }
+
+  .task-text-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    background: var(--bg);
+    border: 1px solid var(--text);
+    border-radius: 6px;
+    color: var(--text);
+    font-family: var(--block-body-font, inherit);
+    font-size: 1.1rem;
+    font-weight: 500;
+    line-height: 1.4;
+    padding: 2px 6px;
+    box-sizing: border-box;
   }
 
   .circle-check {
@@ -447,6 +588,14 @@
 
   <div class="content">
     <div class="task-input">
+      <!-- svelte-ignore a11y-click-events-have-key-events -->
+      <button
+        class="dir-btn"
+        on:click|stopPropagation={toggleDirection}
+        data-focus-guard
+        title={addDirection === 'above' ? 'Adding at top' : 'Adding at bottom'}
+        aria-label={addDirection === 'above' ? 'Adding at top' : 'Adding at bottom'}
+      >{addDirection === 'above' ? '↑' : '↓'}</button>
       <input
         type="text"
         bind:value={newTaskText}
@@ -457,8 +606,27 @@
       <button on:click={addTask} data-focus-guard>Add</button>
     </div>
     <ul class="task-list">
-      {#each todoTasks() as task}
-        <li class="task-item">
+      {#each todoTasks() as task (task.id)}
+        <li
+          class="task-item"
+          data-task-id={task.id}
+          class:dragging={draggingTaskId === task.id}
+          class:drag-over-before={dragOverTaskId === task.id && dragOverPos === 'before'}
+          class:drag-over-after={dragOverTaskId === task.id && dragOverPos === 'after'}
+        >
+          <!-- svelte-ignore a11y-click-events-have-key-events -->
+          <button
+            class="drag-handle"
+            data-focus-guard
+            aria-label="Drag to reorder"
+            on:pointerdown={(e) => startDrag(e, task.id)}
+          >
+            <svg viewBox="0 0 10 16" width="8" height="13" fill="currentColor">
+              <circle cx="2" cy="2" r="1.3"/><circle cx="8" cy="2" r="1.3"/>
+              <circle cx="2" cy="8" r="1.3"/><circle cx="8" cy="8" r="1.3"/>
+              <circle cx="2" cy="14" r="1.3"/><circle cx="8" cy="14" r="1.3"/>
+            </svg>
+          </button>
           <label>
             <!-- svelte-ignore a11y-click-events-have-key-events -->
             <button
@@ -478,7 +646,28 @@
                 </svg>
               {/if}
             </button>
-            <span>{task.text}</span>
+            {#if editingTaskId === task.id}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <input
+                class="task-text-input"
+                type="text"
+                bind:value={editText}
+                data-focus-guard
+                on:click|stopPropagation
+                on:keydown|stopPropagation={handleEditKeydown}
+                on:blur={commitEditTask}
+                use:autoFocusInput
+              />
+            {:else}
+              <!-- svelte-ignore a11y-click-events-have-key-events -->
+              <span
+                class="task-text"
+                data-focus-guard
+                title="Double-click to edit"
+                on:dblclick|stopPropagation={() => startEditTask(task)}
+                on:click|stopPropagation
+              >{task.text}</span>
+            {/if}
           </label>
           <button
             aria-label="Delete task"

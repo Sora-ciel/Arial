@@ -19,7 +19,6 @@
   export let canvasRef;
   export let focusedBlockId;
   export let canvasColors = {};
-  export let rotation = 0;
   export let refitViewTrigger = 0;
 
   // Keep shared state module in sync so App can read viewport without bind:this
@@ -28,37 +27,10 @@
   // Refit when parent increments the trigger
   $: if (refitViewTrigger > 0) refitCanvas();
 
-  // Rotated bounding box of the scaled canvas — gives the scroll container
-  // enough room to reach every corner at any angle. Reduces to the plain
-  // scaled size when rotation is 0, so the un-rotated case is unchanged.
-  $: _rad = (Number(rotation) || 0) * Math.PI / 180;
-  $: _absCos = Math.abs(Math.cos(_rad));
-  $: _absSin = Math.abs(Math.sin(_rad));
-  $: shellWidth = (canvasWidth * _absCos + canvasHeight * _absSin) * scale;
-  $: shellHeight = (canvasWidth * _absSin + canvasHeight * _absCos) * scale;
-  // Center the (scaled, rotated) content inside the bounding-box shell.
-  // At rotation 0 this resolves to the content sitting flush at the shell's
-  // top-left (0,0), so the existing pan/zoom/scroll math is unchanged.
-  $: innerTranslateX = (shellWidth - canvasWidth) / 2;
-  $: innerTranslateY = (shellHeight - canvasHeight) / 2;
+  $: shellWidth = canvasWidth * scale;
+  $: shellHeight = canvasHeight * scale;
 
-  // Keep the rotation pivot at the middle of the screen: whenever the angle
-  // changes, scroll so the content's center sits at the viewport center.
-  let _prevRotation = rotation;
-  $: if (canvasRef && rotation !== _prevRotation) {
-    _prevRotation = rotation;
-    centerOnViewport();
-  }
 
-  function centerOnViewport() {
-    requestAnimationFrame(() => {
-      if (!canvasRef) return;
-      canvasRef.scrollLeft = Math.max(0, (shellWidth - canvasRef.clientWidth) / 2);
-      canvasRef.scrollTop = Math.max(0, (shellHeight - canvasRef.clientHeight) / 2);
-    });
-  }
-
-  
 
   const MIN_CANVAS_HEIGHT = 320;
   const BLOCK_MARGIN_LEFT = 5;
@@ -66,9 +38,6 @@
   const MOBILE_BREAKPOINT = 1024;
   const BLOCK_MARGIN_BOTTOM = 20;
   const WHEEL_ZOOM_SENSITIVITY = 0.00105;
-  const EDGE_PAN_ZONE_HORIZONTAL = 550;
-  const EDGE_PAN_ZONE_VERTICAL = 350;
-  const EDGE_PAN_MAX_SPEED = 50;
 
   let scale = 1;
   let lastDistance = null;
@@ -76,9 +45,6 @@
   let canvasWidth = MIN_CANVAS_WIDTH;
   let canvasHeight = MIN_CANVAS_HEIGHT;
   let contentOffsetX = 0;
-  let edgePanRaf = null;
-  let edgePanVelocityX = 0;
-  let edgePanVelocityY = 0;
 
   // ── Lightbox ─────────────────────────────────────────────────────
   let lbOpen = false;
@@ -104,6 +70,7 @@
 
   // Right-click grab pan
   let isPanning = false;
+  let panHasMoved = false;
   let panStartX = 0;
   let panStartY = 0;
   let panScrollLeft = 0;
@@ -318,80 +285,10 @@
   }
 
 
-  function getEdgePanStrength(distanceToEdge, zoneSize) {
-    const normalized = Math.max(0, Math.min(1, (zoneSize - distanceToEdge) / zoneSize));
-    return normalized * normalized;
-  }
-
-  function stopEdgePan() {
-    edgePanVelocityX = 0;
-    edgePanVelocityY = 0;
-
-    if (edgePanRaf !== null) {
-      cancelAnimationFrame(edgePanRaf);
-      edgePanRaf = null;
-    }
-  }
-
-  function stepEdgePan() {
-    if (!canvasRef || !edgePanVelocityX && !edgePanVelocityY) {
-      edgePanRaf = null;
-      return;
-    }
-
-    canvasRef.scrollLeft += edgePanVelocityX;
-    canvasRef.scrollTop += edgePanVelocityY;
-    edgePanRaf = requestAnimationFrame(stepEdgePan);
-  }
-
-
-  function canCtrlEdgePan() {
-    if (!canvasRef) return false;
-
-    const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
-    const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
-
-    return scale > getViewportScaleFloor() || canScrollHorizontally || canScrollVertically;
-  }
-
-  function updateEdgePanFromPointer(event) {
-    if (!canvasRef) return;
-    if (!event.ctrlKey || !canCtrlEdgePan()) {
-      stopEdgePan();
-      return;
-    }
-
-    const rect = canvasRef.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
-
-    if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
-      stopEdgePan();
-      return;
-    }
-
-    const leftStrength = getEdgePanStrength(localX, EDGE_PAN_ZONE_HORIZONTAL);
-    const rightStrength = getEdgePanStrength(rect.width - localX, EDGE_PAN_ZONE_HORIZONTAL);
-    const topStrength = getEdgePanStrength(localY, EDGE_PAN_ZONE_VERTICAL);
-    const bottomStrength = getEdgePanStrength(rect.height - localY, EDGE_PAN_ZONE_VERTICAL);
-
-    edgePanVelocityX = (rightStrength - leftStrength) * EDGE_PAN_MAX_SPEED;
-    edgePanVelocityY = (bottomStrength - topStrength) * EDGE_PAN_MAX_SPEED;
-
-    if (!edgePanVelocityX && !edgePanVelocityY) {
-      stopEdgePan();
-      return;
-    }
-
-    if (edgePanRaf === null) {
-      edgePanRaf = requestAnimationFrame(stepEdgePan);
-    }
-  }
-
-
   function startRightClickPan(event) {
     if (!canvasRef) return;
     isPanning = true;
+    panHasMoved = false;
     panStartX = event.clientX;
     panStartY = event.clientY;
     panScrollLeft = canvasRef.scrollLeft;
@@ -402,8 +299,19 @@
 
   function onPanMove(event) {
     if (!isPanning || !canvasRef) return;
-    canvasRef.scrollLeft = panScrollLeft - (event.clientX - panStartX);
-    canvasRef.scrollTop  = panScrollTop  - (event.clientY - panStartY);
+    // event.buttons reflects the OS's live button state, unlike mouseup —
+    // which never fires if the button was released outside the browser
+    // window. Catches "drag out of bounds, release, come back" leaving a
+    // stuck pan.
+    if (!(event.buttons & 2)) {
+      stopRightClickPan();
+      return;
+    }
+    const dx = event.clientX - panStartX;
+    const dy = event.clientY - panStartY;
+    if (!panHasMoved && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) panHasMoved = true;
+    canvasRef.scrollLeft = panScrollLeft - dx;
+    canvasRef.scrollTop  = panScrollTop  - dy;
   }
 
   function stopRightClickPan() {
@@ -416,7 +324,6 @@
   function onMouseDown(event) {
     if (event.ctrlKey && event.button === 1) {
       if (event.cancelable) event.preventDefault();
-      stopEdgePan();
       // Reset to the deterministic screen-based home zoom (same as first mount)
       if (canvasRef) {
         scale = getInitialScale();
@@ -429,14 +336,6 @@
       event.preventDefault();
       startRightClickPan(event);
     }
-  }
-
-  function onMouseMove(event) {
-    updateEdgePanFromPointer(event);
-  }
-
-  function onMouseLeave() {
-    stopEdgePan();
   }
 
   // Canvas block context menu
@@ -459,7 +358,9 @@
 
   function onContextMenu(event) {
     event.preventDefault();
+    const wasPan = panHasMoved;
     stopRightClickPan();
+    if (wasPan) return;
     const blockEl = event.target?.closest?.('[data-block-id]');
     if (!blockEl) return;
     openCanvasCtxMenuForBlock(blockEl.dataset.blockId, event.clientX, event.clientY);
@@ -484,6 +385,18 @@
 
   function onCanvasTouchEnd() {
     clearTimeout(canvasLongPressTimer);
+  }
+
+  function extensionFromMime(mime = '') {
+    const m = mime.toLowerCase();
+    if (m.includes('jpeg')) return 'jpg';
+    if (m.includes('png')) return 'png';
+    if (m.includes('gif')) return 'gif';
+    if (m.includes('webp')) return 'webp';
+    if (m.includes('svg')) return 'svg';
+    if (m.includes('mp4')) return 'mp4';
+    if (m.includes('webm')) return 'webm';
+    return 'bin';
   }
 
   function buildCanvasMenuItems(block) {
@@ -527,12 +440,27 @@
     } else if (actionId === 'saveMedia') {
       const src = typeof block.src === 'string' ? block.src : (block.resolvedSrc || '');
       if (src) {
-        const a = document.createElement('a');
-        a.href = src;
-        a.download = 'image';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
+        try {
+          // A cross-origin href (any remote Firebase Storage URL) makes the
+          // browser ignore the download attribute entirely and just
+          // navigate to it instead — which also surfaces that URL (a bearer
+          // token good for permanent access to the file) in the address bar
+          // and browsing history. Fetching the real bytes and downloading a
+          // same-origin blob: URL sidesteps both problems: it always forces
+          // an instant local download, and the raw storage URL never
+          // becomes visible anywhere in the browser UI.
+          const blob = await (await fetch(src)).blob();
+          const objectUrl = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = objectUrl;
+          a.download = `image.${extensionFromMime(blob.type)}`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(objectUrl);
+        } catch (error) {
+          console.error('Failed to save image:', error);
+        }
       }
     } else if (actionId === 'copyMedia') {
       const src = typeof block.src === 'string' ? block.src : (block.resolvedSrc || '');
@@ -587,27 +515,19 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
-  // Stop edge-pan the moment Ctrl is released or the window loses focus,
-  // even if the pointer doesn't move (the rAF loop otherwise keeps scrolling).
-  function handleKeyUp(event) {
-    if (event.key === 'Control' || event.key === 'Meta') stopEdgePan();
-  }
+  // Cancel an in-progress right-click pan if the window loses focus mid-drag
+  // (the document mouseup may never arrive in that case).
   function handleWindowBlur() {
-    stopEdgePan();
+    stopRightClickPan();
   }
 
   onMount(() => {
     refitCanvas();
-    // If a rotation was restored from the saved file, center it on screen
-    if (rotation) centerOnViewport();
 
-    window.addEventListener('keyup', handleKeyUp);
     window.addEventListener('blur', handleWindowBlur);
 
     return () => {
-      stopEdgePan();
       stopRightClickPan();
-      window.removeEventListener('keyup', handleKeyUp);
       window.removeEventListener('blur', handleWindowBlur);
     };
   });
@@ -641,7 +561,7 @@
 .canvas-inner {
   position: absolute;
   inset: 0 auto auto 0;
-  transform-origin: center center;
+  transform-origin: top left;
   background: var(--canvas-inner-bg, #000000);
 }
 
@@ -690,8 +610,6 @@
   on:touchmove={(e) => { onTouchMove(e); onCanvasTouchMove(); }}
   on:touchend={(e) => { onTouchEnd(e); onCanvasTouchEnd(); }}
   on:wheel|nonpassive={onWheel}
-  on:mousemove={onMouseMove}
-  on:mouseleave={onMouseLeave}
   on:mousedown={onMouseDown}
   on:contextmenu={onContextMenu}
 >
@@ -704,7 +622,7 @@
         class="canvas-inner"
         style:width={`${canvasWidth}px`}
         style:height={`${canvasHeight}px`}
-        style:transform={`translate(${innerTranslateX}px, ${innerTranslateY}px) scale(${scale}) rotate(${rotation}deg)`}
+        style:transform={`scale(${scale})`}
         style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
@@ -720,7 +638,6 @@
             initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -738,7 +655,6 @@
             initialAttachmentRequiresAuth={block.attachmentRequiresAuth}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -755,7 +671,6 @@
             initialScrollTop={block.scrollTop}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -771,7 +686,6 @@
             initialContent={block.content}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -786,7 +700,6 @@
             initialContent={block.content}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
@@ -800,9 +713,9 @@
             initialTextColor={block.textColor}
             initialTasks={block.tasks}
             initialTitle={block.title}
+            initialAddDirection={block.addDirection}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
-            canvasRotation={rotation}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}

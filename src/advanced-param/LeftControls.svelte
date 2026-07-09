@@ -8,7 +8,6 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let simpleNoteColumnCount = 2;
-  export let canvasRotation = 0;
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
@@ -127,15 +126,6 @@
     dispatch("modeSettingChange", { columnCount: next });
   }
 
-  function handleCanvasRotationInput(event) {
-    const next = Number.parseInt(event.currentTarget.value, 10) || 0;
-    dispatch("modeSettingChange", { canvasRotation: next });
-  }
-
-  function resetCanvasRotation() {
-    dispatch("modeSettingChange", { canvasRotation: 0 });
-  }
-
   function checkWidth() {
     compactUI = window.innerWidth <= 1024;
   }
@@ -210,16 +200,14 @@ onMount(() => {
     align-items: center;
     gap: 8px;
     flex-wrap: wrap;
-    flex-grow: 1;
     color: var(--left-text-color, inherit);
   }
 
 
   .left-controls-wrapper button,
   .left-controls-wrapper input {
-    border-radius: 6px;
-    border: 1px solid var(--left-border-color, #444444);
-    transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+    border-radius: 8px;
+    transition: background 0.15s ease, filter 0.15s ease, border-color 0.2s ease;
   }
 
   .mode-switcher {
@@ -319,20 +307,30 @@ onMount(() => {
   .left-controls-wrapper button {
     background: var(--left-button-bg, #333333);
     color: var(--left-button-text, #ffffff);
+    border: none;
     padding: 8px 12px;
-    min-height: 42px;
+    min-height: 40px;
+    font-weight: 500;
     cursor: pointer;
   }
 
+  .left-controls-wrapper button:hover {
+    filter: brightness(1.18);
+  }
+
   .left-controls-wrapper button:disabled {
-    opacity: 0.5;
+    opacity: 0.45;
     cursor: not-allowed;
+    filter: none;
   }
 
   .left-controls-wrapper input {
     background: var(--left-input-bg, #1d1d1d);
     color: var(--left-text-color, #ffffff);
-    padding: 6px 8px;
+    border: 1px solid var(--left-border-color, #444444);
+    padding: 8px 10px;
+    min-height: 40px;
+    box-sizing: border-box;
   }
 
 
@@ -392,32 +390,30 @@ onMount(() => {
     align-items: center;
     gap: 8px;
     color: var(--left-text-color, #ffffff);
-    font-weight: 700;
+    font-weight: 500;
     background: var(--left-button-bg, #333333);
-    border: 1px solid var(--left-border-color, #444444);
-    border-radius: 6px;
-    padding: 8px 10px;
-    min-height: 42px;
+    border-radius: 8px;
+    padding: 8px 12px;
+    min-height: 40px;
     box-sizing: border-box;
   }
 
   .simple-columns-control input[type="range"] {
     width: min(150px, 18vw);
-    max-height:0.2em;
+    height: auto;
+    min-height: 0;
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
     accent-color: var(--left-text-color, #ffffff);
     cursor: pointer;
+    box-sizing: content-box;
   }
 
   .simple-columns-value {
     min-width: 1.25rem;
     text-align: center;
-  }
-
-  .rotation-reset {
-    min-height: 0 !important;
-    padding: 2px 8px !important;
-    font-size: 1rem;
-    line-height: 1;
   }
 
   @media (max-width: 1024px) {
@@ -701,26 +697,6 @@ onMount(() => {
         />
         <span class="simple-columns-value">{simpleNoteColumnCount}</span>
       </label>
-    {/if}
-    {#if isCanvasMode}
-      <div class="simple-columns-control mobile-only">
-        <button
-          class="rotation-reset"
-          on:click={resetCanvasRotation}
-          title="Reset rotation"
-          aria-label="Reset rotation"
-        >⟳</button>
-        <input
-          type="range"
-          min="-180"
-          max="180"
-          step="1"
-          value={canvasRotation}
-          on:input={handleCanvasRotationInput}
-          title="Rotate canvas"
-        />
-        <span class="simple-columns-value">{canvasRotation}°</span>
-      </div>
     {/if}
 
   </div>

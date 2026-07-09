@@ -1,10 +1,38 @@
 <script>
-  import { createEventDispatcher, onDestroy } from 'svelte';
+  import { createEventDispatcher, onDestroy, onMount } from 'svelte';
   import Eyedropper from './Eyedropper.svelte';
 
   export let value = '#000000';
 
   const dispatch = createEventDispatcher();
+
+  // Chromium's native EyeDropper reads real screen pixels (not a DOM
+  // reconstruction), so it can't suffer the cross-browser sampling drift
+  // our custom picker hit (e.g. Vivaldi vs Opera GX disagreeing on the same
+  // pixel) — prefer it wherever it exists. The custom loupe stays as the
+  // fallback for browsers without it (Firefox, Safari/WebKit).
+  const hasNativeEyeDropper = typeof window !== 'undefined' && 'EyeDropper' in window;
+
+  // The custom picker's first click pays for importing html2canvas on top
+  // of capturing the page — noticeably laggy for a "click and go" tool.
+  // Only worth prewarming on browsers that will actually fall back to it;
+  // no point paying that cost on browsers using the native picker.
+  onMount(() => {
+    if (!hasNativeEyeDropper) import('html2canvas');
+  });
+
+  async function startEyedropper() {
+    if (hasNativeEyeDropper) {
+      try {
+        const result = await new window.EyeDropper().open();
+        onEyedropperPick({ detail: result.sRGBHex });
+      } catch {
+        // user cancelled — no-op, same as closing the custom overlay
+      }
+      return;
+    }
+    eyedropping = true;
+  }
 
   const FORMATS = ['hex', 'rgb', 'hsl'];
   const FORMAT_KEY = 'cp-format';
@@ -232,7 +260,7 @@
 
   <div class="cp-controls">
     <!-- svelte-ignore a11y-click-events-have-key-events -->
-    <button class="cp-eyedropper" title="Pick a color from the screen" on:click|stopPropagation={() => (eyedropping = true)}>
+    <button class="cp-eyedropper" title="Pick a color from the screen" on:click|stopPropagation={startEyedropper}>
       <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <path d="M2 22l1-4 11-11 3 3L6 21l-4 1z" />
         <path d="M15 6l3-3a2.1 2.1 0 0 1 3 3l-3 3" />

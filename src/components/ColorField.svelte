@@ -8,6 +8,20 @@
 
   const dispatch = createEventDispatcher();
 
+  // Move the popover to <body>. A `position: fixed` element is normally
+  // relative to the viewport, but a scaled/transformed ancestor (e.g. the
+  // zoomed canvas) becomes its containing block instead — which throws the
+  // popover's position and size off by the canvas zoom factor. Rendering it
+  // straight on <body> keeps it correctly viewport-fixed at any zoom level.
+  function portal(node) {
+    document.body.appendChild(node);
+    return {
+      destroy() {
+        if (node.parentNode) node.parentNode.removeChild(node);
+      }
+    };
+  }
+
   let open = false;
   let btnEl, popEl;
   let px = 0, py = 0;
@@ -80,7 +94,7 @@
 ></button>
 
 {#if open}
-  <div class="cp-popover" bind:this={popEl} style="left:{px}px; top:{py}px;">
+  <div class="cp-popover" bind:this={popEl} use:portal style="left:{px}px; top:{py}px;">
     <ColorPicker {value} on:input={onInput} on:change={onChange} />
   </div>
 {/if}

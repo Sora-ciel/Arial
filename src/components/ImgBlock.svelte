@@ -12,7 +12,6 @@
   export let initialAttachmentRequiresAuth = false;
   export let focused = false;
   export let canvasScale = 1;
-  export let canvasRotation = 0;
 
   const dispatch = createEventDispatcher();
   const HEADER_HEIGHT = 30;
@@ -42,16 +41,7 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
-    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
-    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const rx = source.clientX * cos - source.clientY * sin;
-    const ry = source.clientX * sin + source.clientY * cos;
-    return {
-      x: rx / safeScale,
-      y: ry / safeScale
-    };
+    return { x: source.clientX / safeScale, y: source.clientY / safeScale };
   }
 
   $: mediaSrc = typeof src === 'string' ? src : resolvedSrc || '';
@@ -315,15 +305,17 @@ function onResizeEnd() {
     ensureFocus();
   }
 
-  // Click on the media content:
-  //   - When NOT focused: focus the block (next click will open lightbox)
-  //   - When focused: open lightbox if there's a source
+  // A single click on the media always just focuses the block — never opens
+  // the lightbox, even if it's already focused. Opening requires an actual
+  // double-click (two clicks in quick succession), consistently, regardless
+  // of focus state.
   function handleMediaClick() {
-    if (!focused) {
-      ensureFocus();
-    } else if (mediaSrc) {
-      dispatch('lightbox', { src: mediaSrc });
-    }
+    ensureFocus();
+  }
+
+  function handleMediaDblClick() {
+    ensureFocus();
+    if (mediaSrc) dispatch('lightbox', { src: mediaSrc });
   }
 
   function handleWrapperKeydown(event) {
@@ -522,6 +514,7 @@ function onResizeEnd() {
           class:clickable={true}
           autoplay loop muted playsinline
           on:click|stopPropagation={handleMediaClick}
+          on:dblclick|stopPropagation={handleMediaDblClick}
         ></video>
       {:else}
         <!-- svelte-ignore a11y-click-events-have-key-events -->
@@ -531,6 +524,7 @@ function onResizeEnd() {
           alt=""
           class:clickable={true}
           on:click|stopPropagation={handleMediaClick}
+          on:dblclick|stopPropagation={handleMediaDblClick}
         />
       {/if}
     {:else if hasStorageAttachment}

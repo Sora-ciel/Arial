@@ -17,9 +17,13 @@
     "vite": "^6.3.5"
   },
   "dependencies": {
+    "@capacitor-firebase/authentication": "^7.5.0",
     "@capacitor/android": "^7.4.2",
     "@capacitor/cli": "^7.4.2",
     "@capacitor/core": "^7.4.2",
+    "@fabianlars/tauri-plugin-oauth": "^2.0.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
+    "firebase": "^11.7.0",
     "@tiptap/core": "^3.0.7",
     "@tiptap/extension-color": "^3.0.7",
     "@tiptap/extension-text-style": "^3.0.7",

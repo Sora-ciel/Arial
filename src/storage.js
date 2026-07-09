@@ -75,11 +75,35 @@ function shouldPersistAsFile(value) {
   return true;
 }
 
-function valueToBlobDescriptor(value, field) {
+async function tryDownloadAsBlob(url) {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return await res.blob();
+  } catch (error) {
+    console.warn('[storage] could not download remote attachment for local caching:', url, error?.message);
+    return null;
+  }
+}
+
+async function valueToBlobDescriptor(value, field) {
   if (field === 'src' && typeof value === 'string' && value.startsWith('data:')) {
     const blob = dataUrlToBlob(value);
     const mime = blob.type || 'application/octet-stream';
     return { blob, ext: extensionFromMime(mime), encoding: 'binary', mime };
+  }
+  if (field === 'src' && typeof value === 'string' && /^https?:\/\//i.test(value)) {
+    // A synced-in attachment still points at its remote URL the first time we
+    // see it locally — download it once so it becomes a real local file from
+    // here on, exactly like one picked from disk: works offline, no repeated
+    // network fetches on every view, and safe for canvas ops (a live remote
+    // <img> risks CORS/tainting). Falls back to storing the URL itself if the
+    // download fails (e.g. offline) so nothing breaks either way.
+    const blob = await tryDownloadAsBlob(value);
+    if (blob) {
+      const mime = blob.type || 'application/octet-stream';
+      return { blob, ext: extensionFromMime(mime), encoding: 'binary', mime };
+    }
   }
   if (typeof value === 'object') {
     const blob = new Blob([JSON.stringify(value)], { type: 'application/json' });
@@ -171,8 +195,14 @@ function makeFingerprint(value, field) {
 
 // ---- Public API ----
 
-export async function saveBlocks(name, payload) {
+export async function saveBlocks(name, payload, options = {}) {
   await ensureMigrated();
+  // forceContent: rewrite every content file from the incoming payload instead
+  // of reusing what's already stored. Used by the manual "Download from cloud"
+  // action so a folder whose registry ref survived but whose bytes were lost
+  // (an old interrupted-save bug) actually re-fetches the attachment rather
+  // than trusting the stale ref via the unchanged short-circuit below.
+  const forceRewrite = options.forceContent === true;
   const normalized = asPayloadWithTimestamp(payload, Date.now());
   const registry = await getRegistry();
 
@@ -226,9 +256,21 @@ export async function saveBlocks(name, payload) {
 
       const newFp = makeFingerprint(value, field);
       const existingUuid = prevRefs.get(refKey);
+      // Once a remote src is downloaded, loadBlocks() hands back a data: URL
+      // (so it behaves like a local file) — which permanently changes what
+      // makeFingerprint() sees for it. Comparing the *original* remote URL
+      // against a stored sourceUrl instead means an unrelated edit syncing
+      // in again doesn't look like a changed attachment and re-download an
+      // image that's already cached locally.
+      const isRemoteSrc = field === 'src' && typeof value === 'string' && /^https?:\/\//i.test(value);
+      const unchanged = !forceRewrite && existingUuid && registry[existingUuid] && (
+        isRemoteSrc
+          ? registry[existingUuid].sourceUrl === value
+          : _fingerprintCache.get(existingUuid) === newFp
+      );
 
       // Reuse UUID if content is unchanged
-      if (existingUuid && registry[existingUuid] && _fingerprintCache.get(existingUuid) === newFp) {
+      if (unchanged) {
         keptUuids.add(existingUuid);
         contentRefs[field] = existingUuid;
         nextRefs.set(refKey, existingUuid);
@@ -240,7 +282,7 @@ export async function saveBlocks(name, payload) {
       }
 
       // Content changed — write new file
-      const descriptor = valueToBlobDescriptor(value, field);
+      const descriptor = await valueToBlobDescriptor(value, field);
       const contentType = resolveContentType(descriptor.encoding, descriptor.mime);
       counts[contentType === 'image' ? 'image' : contentType === 'video' ? 'video' : contentType === 'json' ? 'json' : 'text']++;
 
@@ -258,7 +300,8 @@ export async function saveBlocks(name, payload) {
         encoding: descriptor.encoding,
         preview: makePreview(value, descriptor.encoding),
         createdAt: now,
-        usedBy: [name]
+        usedBy: [name],
+        ...(isRemoteSrc && descriptor.encoding === 'binary' ? { sourceUrl: value } : {})
       };
 
       contentRefs[field] = uuid;

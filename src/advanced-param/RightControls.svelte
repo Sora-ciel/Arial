@@ -10,6 +10,7 @@
   export let authUser = null;
   export let uploadInProgress = false;
   export let downloadInProgress = false;
+  export let recoverInProgress = false;
   export let autoSyncEnabled = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
@@ -116,6 +117,10 @@
     dispatch("downloadNow");
   }
 
+  function recoverAttachments() {
+    dispatch("recoverAttachments");
+  }
+
   function toggleAutoSync() {
     dispatch("toggleAutoSync");
   }
@@ -154,17 +159,21 @@
 
   .right-controls summary {
     all: unset; /* remove browser default styles */
-    display: block;
+    display: inline-flex;
+    align-items: center;
     cursor: pointer;
-    padding: 6px 12px;
+    padding: 8px 12px;
     background: var(--right-button-bg, #222222);
     color: var(--right-button-text, #ffffff);
-    border-radius: 6px;
-    border: 1px solid var(--right-border-color, #444444);
-    font-weight: bold;
-    transition: background 0.2s ease;
-    min-height: 42px;
+    border-radius: 8px;
+    font-weight: 500;
+    transition: filter 0.15s ease;
+    min-height: 40px;
     box-sizing: border-box;
+  }
+
+  .right-controls summary:hover {
+    filter: brightness(1.18);
   }
 
   .right-controls details[open] .dropdown-content {
@@ -344,6 +353,9 @@
               </button>
               <button class="create-theme-btn" type="button" on:click={downloadNow} disabled={downloadInProgress}>
                 {downloadInProgress ? "⏳ Downloading..." : "⤵ Download from Cloud"}
+              </button>
+              <button class="create-theme-btn" type="button" on:click={recoverAttachments} disabled={recoverInProgress}>
+                {recoverInProgress ? "⏳ Recovering..." : "🔗 Recover Attachments"}
               </button>
               <button class="create-theme-btn" type="button" on:click={signOut}>🚪 Sign Out</button>
               <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>

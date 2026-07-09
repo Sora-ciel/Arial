@@ -12,7 +12,6 @@
   export let initialScrollTop = 0;
   export let focused = false;
   export let canvasScale = 1;
-  export let canvasRotation = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -29,16 +28,7 @@
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
     const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
-    // Un-rotate the pointer so drag/resize deltas map to canvas-space at any angle
-    const theta = -(Number(canvasRotation) || 0) * Math.PI / 180;
-    const cos = Math.cos(theta);
-    const sin = Math.sin(theta);
-    const rx = source.clientX * cos - source.clientY * sin;
-    const ry = source.clientX * sin + source.clientY * cos;
-    return {
-      x: rx / safeScale,
-      y: ry / safeScale
-    };
+    return { x: source.clientX / safeScale, y: source.clientY / safeScale };
   }
   let suppressClick = false;
   let hasDragged = false;
