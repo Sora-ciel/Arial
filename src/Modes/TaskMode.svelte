@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -51,6 +52,55 @@
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
 
     dispatch('update', detail);
+  }
+
+  // ── Right-click context menu (color edit + copy as markdown) ──────────
+  let ctxMenu = { open: false, x: 0, y: 0 };
+
+  function handleContextMenu(e) {
+    if (!taskBlock) return;
+    e.preventDefault();
+    ctxMenu = { open: true, x: e.clientX, y: e.clientY };
+  }
+
+  function closeCtxMenu() { ctxMenu = { open: false, x: 0, y: 0 }; }
+
+  function setTaskColor(field, value) {
+    if (!selectedTaskId) return;
+    updateBlock(selectedTaskId, { [field]: value }, { changedKeys: [field], pushToHistory: false });
+  }
+
+  function commitTaskColor(field, value) {
+    if (!selectedTaskId) return;
+    updateBlock(selectedTaskId, { [field]: value }, { changedKeys: [field], pushToHistory: true });
+  }
+
+  function handleCtxColor(detail) {
+    if (detail.bgColor !== undefined) {
+      if (detail.commit) commitTaskColor('bgColor', detail.bgColor);
+      else setTaskColor('bgColor', detail.bgColor);
+    }
+    if (detail.textColor !== undefined) {
+      if (detail.commit) commitTaskColor('textColor', detail.textColor);
+      else setTaskColor('textColor', detail.textColor);
+    }
+  }
+
+  // Serialize the list to plain markdown — unchecked and checked tasks as
+  // GitHub-style task items so it drops straight into any markdown editor.
+  function tasksToMarkdown(block) {
+    const title = (block?.title || 'Task List').trim();
+    const list = Array.isArray(block?.tasks) ? block.tasks : [];
+    const lines = [`# ${title}`, ''];
+    for (const t of list) lines.push(`- [${t.done ? 'x' : ' '}] ${t.text}`);
+    return lines.join('\n');
+  }
+
+  async function handleCtxAction(id) {
+    if (id === 'copyMd' && taskBlock) {
+      const md = tasksToMarkdown(taskBlock);
+      try { await navigator.clipboard.writeText(md); } catch {}
+    }
   }
 
   function updateTasks(nextTasks, { pushToHistory = true } = {}) {
@@ -341,7 +391,7 @@
   }
 </style>
 
-<div class="task-mode" bind:this={canvasRef} style={canvasCssVars}>
+<div class="task-mode" bind:this={canvasRef} style={canvasCssVars} on:contextmenu={handleContextMenu}>
   {#if taskBlocks.length}
     <div class="task-tabs" role="tablist">
       {#each taskBlocks as block, index}
@@ -467,3 +517,17 @@
     </div>
   {/if}
 </div>
+
+{#if ctxMenu.open && taskBlock}
+  <BlockContextMenu
+    x={ctxMenu.x}
+    y={ctxMenu.y}
+    items={[{ id: 'copyMd', label: 'Copy as Markdown' }]}
+    colorEdit={true}
+    bgColor={taskBlock.bgColor || '#000000'}
+    textColor={taskBlock.textColor || '#ffffff'}
+    on:action={(e) => handleCtxAction(e.detail)}
+    on:colorChange={(e) => handleCtxColor(e.detail)}
+    on:close={closeCtxMenu}
+  />
+{/if}
