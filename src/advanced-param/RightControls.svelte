@@ -198,7 +198,7 @@
   .dropdown-content {
     display: none;
     position: fixed;
-    top: 56px; /* same as controls height */
+    top: var(--controls-height, 56px);
     right: 0;
     bottom: 0;
     width: 260px;

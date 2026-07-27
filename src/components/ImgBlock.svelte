@@ -1,5 +1,7 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, getContext } from 'svelte';
+
+  const appDialogs = getContext('appDialogs');
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -65,13 +67,13 @@
   }
 
 
-  function onMediaChange(e) {
+  async function onMediaChange(e) {
     ensureFocus();
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (file.type.startsWith('video/') && file.size > MAX_VIDEO_BYTES) {
-      alert('Video files must be 100MB or smaller to render.');
+      await appDialogs.alert('Video files must be 100MB or smaller to render.');
       e.target.value = '';
       return;
     }

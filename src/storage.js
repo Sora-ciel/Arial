@@ -3,7 +3,12 @@ import { openDB } from 'idb';
 const DB_NAME = 'codex-db';
 const STORE_NAME = 'blocks';
 const FILE_STORE_NAME = 'block-files';
-const DB_VERSION = 2;
+// Bumped from 2: this DB name/origin was previously shared with an unrelated
+// project that left an IndexedDB at version 5 on some machines, and IndexedDB
+// refuses to open at a lower version than what already exists there
+// (VersionError). The upgrade callback below is idempotent (only creates
+// stores if missing), so raising this is safe and doesn't touch existing data.
+const DB_VERSION = 6;
 const FILE_FIELDS = ['content', 'src', 'trackUrl', 'title', 'tasks'];
 
 function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {

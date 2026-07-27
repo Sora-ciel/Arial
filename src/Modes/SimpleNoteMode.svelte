@@ -263,6 +263,46 @@
     }
   }
 
+  function handleColorChange(block, key, value) {
+    updateBlock(block.id, { [key]: value });
+  }
+
+  function handleMusicFileChange(event, block) {
+    ensureFocus(block.id);
+    const file = event.target.files?.[0];
+    if (!file) return;
+    updateBlock(block.id, { trackUrl: URL.createObjectURL(file) }, { changedKeys: ['trackUrl'] });
+    event.target.value = '';
+  }
+
+  let newTaskTextByBlock = {};
+
+  function addTask(block) {
+    const trimmed = (newTaskTextByBlock[block.id] || '').trim();
+    if (!trimmed) return;
+    const nextTasks = [...(Array.isArray(block.tasks) ? block.tasks : []), { id: crypto.randomUUID(), text: trimmed, done: false }];
+    updateBlock(block.id, { tasks: nextTasks }, { pushToHistory: true, changedKeys: ['tasks'] });
+    newTaskTextByBlock[block.id] = '';
+  }
+
+  function handleAddTaskKeydown(event, block) {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    addTask(block);
+  }
+
+  function toggleTask(block, taskId) {
+    const nextTasks = (block.tasks || []).map(task =>
+      task.id === taskId ? { ...task, done: !task.done } : task
+    );
+    updateBlock(block.id, { tasks: nextTasks }, { pushToHistory: true, changedKeys: ['tasks'] });
+  }
+
+  function deleteTask(block, taskId) {
+    const nextTasks = (block.tasks || []).filter(task => task.id !== taskId);
+    updateBlock(block.id, { tasks: nextTasks }, { pushToHistory: true, changedKeys: ['tasks'] });
+  }
+
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
   $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
@@ -471,6 +511,91 @@ li {
   align-self: flex-start;
 }
 
+.block-header {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  width: 100%;
+  padding: 0 2px 4px;
+  box-sizing: border-box;
+}
+
+.block-header input[type="color"] {
+  width: 22px;
+  height: 22px;
+  border: 1px solid color-mix(in srgb, var(--text-color) 35%, transparent);
+  padding: 0;
+  cursor: pointer;
+  border-radius: 6px;
+  background: transparent;
+}
+
+.block-delete-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-color);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 2px 6px;
+}
+
+.task-add-row {
+  display: flex;
+  gap: 6px;
+  width: 100%;
+  padding: 0 8px;
+  box-sizing: border-box;
+}
+
+.task-add-row input[type="text"] {
+  flex: 1 1 auto;
+  margin-top: 0;
+}
+
+.task-add-row button {
+  border: none;
+  border-radius: 6px;
+  background: var(--bg-color);
+  color: var(--text-color);
+  padding: 6px 10px;
+  cursor: pointer;
+}
+
+.task-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.task-item label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+}
+
+.task-item button {
+  border: none;
+  background: transparent;
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.music-content, .embed-content {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0 8px 8px;
+}
+
+.music-content audio {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
 .block-menu {
   position: fixed;
   z-index: 1200;
@@ -553,6 +678,11 @@ li {
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
+            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
+              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
+              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
+            </div>
             <textarea
               bind:value={block.content}
               spellcheck="false"
@@ -569,6 +699,11 @@ li {
               placeholder="Type your note here..."
             ></textarea>
           {:else if block.type === 'image'}
+            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
+              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
+              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
+            </div>
             {#if hasImageSource(block)}
               <img
                 src={getImageSource(block)}
@@ -604,7 +739,7 @@ li {
                   updateBlock(block.id, { editing: !block.editing })
                 }
               >
-                {block.editing ? 'Done' : 'Edit'}
+                {block.editing ? 'Done' : (hasImageSource(block) ? 'Change (URL)' : 'Set URL')}
               </button>
               {#if block.editing}
                 <input
@@ -619,16 +754,96 @@ li {
             </li>
 
           {:else if block.type === 'music'}
-            <p>🎵 {block.content}</p>
+            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
+              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
+              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
+            </div>
+            <div class="music-content" data-focus-guard>
+              <audio controls src={block.trackUrl} data-focus-guard></audio>
+              <input
+                type="text"
+                placeholder="Title"
+                value={block.title || ''}
+                on:input={(e) => updateBlock(block.id, { title: e.target.value })}
+                on:focus={() => ensureFocus(block.id)}
+                data-focus-guard
+              />
+              <input
+                type="text"
+                placeholder="Track URL"
+                value={block.trackUrl || ''}
+                on:input={(e) => updateBlock(block.id, { trackUrl: e.target.value })}
+                on:focus={() => ensureFocus(block.id)}
+                data-focus-guard
+              />
+              <input
+                type="file"
+                accept="audio/*"
+                on:change={(event) => handleMusicFileChange(event, block)}
+                data-focus-guard
+              />
+            </div>
           {:else if block.type === 'embed'}
-            <p>[Embed: {block.content}]</p>
+            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
+              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
+              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
+            </div>
+            <div class="embed-content" data-focus-guard>
+              {#if block.content}
+                <div>{@html block.content}</div>
+              {:else}
+                <p style="opacity:0.6;">No embed URL set</p>
+              {/if}
+              <input
+                type="text"
+                placeholder="Embed URL"
+                value={block.content || ''}
+                on:input={(e) => updateBlock(block.id, { content: e.target.value })}
+                on:focus={() => ensureFocus(block.id)}
+                data-focus-guard
+              />
+            </div>
           {:else if block.type === 'task'}
+            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
+              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
+              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
+            </div>
             <div class="task-list-title">{block.title || 'Task List'}</div>
+            <div class="task-add-row" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+              <input
+                type="text"
+                placeholder="Add task"
+                value={newTaskTextByBlock[block.id] || ''}
+                on:input={(e) => (newTaskTextByBlock[block.id] = e.target.value)}
+                on:keydown={(e) => handleAddTaskKeydown(e, block)}
+                on:focus={() => ensureFocus(block.id)}
+                data-focus-guard
+              />
+              <button data-focus-guard on:click|stopPropagation={() => addTask(block)}>Add</button>
+            </div>
             <div class="task-list">
               {#if Array.isArray(block.tasks) && block.tasks.length}
                 {#each block.tasks as task (task.id)}
-                  <div class="task-item">
-                    {task.done ? '✅' : '⬜'} {task.text}
+                  <div class="task-item" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={task.done}
+                        on:change={() => toggleTask(block, task.id)}
+                        data-focus-guard
+                      />
+                      <span>{task.text}</span>
+                    </label>
+                    <button
+                      aria-label="Delete task"
+                      data-focus-guard
+                      on:click|stopPropagation={() => deleteTask(block, task.id)}
+                    >
+                      ×
+                    </button>
                   </div>
                 {/each}
               {:else}

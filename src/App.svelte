@@ -1,5 +1,5 @@
 <script>
-  import { onMount, onDestroy, tick } from 'svelte';
+  import { onMount, onDestroy, tick, setContext } from 'svelte';
   import RightControls from './advanced-param/RightControls.svelte';
   import LeftControls from './advanced-param/LeftControls.svelte';
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
@@ -362,7 +362,7 @@
     await pushHistory(blocks, modeOrders);
 
     if (reason) {
-      alert(`Opened ${FALLBACK_SAVE_NAME} because "${reason}" could not be loaded.`);
+      await appAlert(`Opened ${FALLBACK_SAVE_NAME} because "${reason}" could not be loaded.`);
     }
   }
 
@@ -858,6 +858,64 @@
   let uploadInProgress = false;
   let downloadInProgress = false;
   let fileInputRef;
+
+  // Native window.alert/confirm/prompt are unreliable (or entirely non-functional)
+  // inside Capacitor's Android WebView and Tauri's WebView2 host - they must be
+  // replaced with an in-app dialog that works the same everywhere.
+  let dialogState = null;
+  let dialogInputValue = '';
+  $: dialogInputValue = dialogState?.defaultValue ?? '';
+
+  function autofocusAction(node) {
+    node.focus();
+    node.select?.();
+  }
+
+  function showDialog(type, message, defaultValue = '') {
+    return new Promise((resolve) => {
+      dialogState = { type, message, defaultValue, resolve };
+    });
+  }
+
+  function appAlert(message) {
+    return showDialog('alert', message);
+  }
+
+  function appConfirm(message) {
+    return showDialog('confirm', message);
+  }
+
+  function appPrompt(message, defaultValue = '') {
+    return showDialog('prompt', message, defaultValue);
+  }
+
+  function resolveDialog(value) {
+    dialogState?.resolve?.(value);
+    dialogState = null;
+  }
+
+  function handleDialogConfirm(inputValue) {
+    if (!dialogState) return;
+    if (dialogState.type === 'prompt') {
+      resolveDialog(inputValue);
+    } else if (dialogState.type === 'confirm') {
+      resolveDialog(true);
+    } else {
+      resolveDialog(undefined);
+    }
+  }
+
+  function handleDialogCancel() {
+    if (!dialogState) return;
+    if (dialogState.type === 'confirm') {
+      resolveDialog(false);
+    } else {
+      resolveDialog(null);
+    }
+  }
+
+  setContext('appDialogs', { alert: appAlert, confirm: appConfirm, prompt: appPrompt });
+
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
@@ -866,6 +924,8 @@
   let birthdayUnlockMessage = "";
   let deferredLastSaveName = '';
   let deferredLastSaveReason = '';
+  let deferredLastSaveTimer = null;
+  const DEFERRED_LAST_SAVE_AUTO_DISMISS_MS = 20000;
   let cloudNeedsAttachmentUpload = false;
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
@@ -1232,19 +1292,19 @@
   }
 
   async function createNewFile() {
-    const proposedName = window.prompt('Enter a name for the new file:');
-    if (proposedName === null) {
+    const proposedName = await appPrompt('Enter a name for the new file:');
+    if (proposedName === null || proposedName === undefined) {
       return;
     }
 
     const trimmedName = proposedName.trim();
     if (!trimmedName) {
-      alert('File name cannot be empty.');
+      await appAlert('File name cannot be empty.');
       return;
     }
 
     if (savedList.includes(trimmedName)) {
-      const shouldOverwrite = window.confirm(`"${trimmedName}" already exists. Overwrite it with a blank file?`);
+      const shouldOverwrite = await appConfirm(`"${trimmedName}" already exists. Overwrite it with a blank file?`);
       if (!shouldOverwrite) {
         return;
       }
@@ -1323,6 +1383,21 @@
     await load(name);
   }
 
+  function dismissDeferredLastSave() {
+    deferredLastSaveName = '';
+    deferredLastSaveReason = '';
+  }
+
+  function scheduleDeferredLastSaveAutoDismiss(hasPending) {
+    window.clearTimeout(deferredLastSaveTimer);
+    deferredLastSaveTimer = hasPending
+      ? window.setTimeout(() => {
+          deferredLastSaveTimer = null;
+          dismissDeferredLastSave();
+        }, DEFERRED_LAST_SAVE_AUTO_DISMISS_MS)
+      : null;
+  }
+
   async function deleteSave(name) {
     const deletingCurrent = currentSaveName === name;
     await deleteBlocks(name);
@@ -1350,7 +1425,7 @@
 
   async function signInGoogle() {
     if (!firebaseReady) {
-      alert('Firebase is not configured yet.');
+      await appAlert('Firebase is not configured yet.');
       return;
     }
 
@@ -1359,7 +1434,7 @@
       await bootstrapCloudSync();
     } catch (error) {
       console.error(error);
-      alert(`Google sign-in failed: ${error?.message || error}`);
+      await appAlert(`Google sign-in failed: ${error?.message || error}`);
     }
   }
 
@@ -1368,18 +1443,18 @@
       await signOutUser();
     } catch (error) {
       console.error(error);
-      alert(`Sign out failed: ${error?.message || error}`);
+      await appAlert(`Sign out failed: ${error?.message || error}`);
     }
   }
 
   async function uploadAllLocalToCloud(showInfo = true, options = {}) {
     if (!firebaseReady) {
-      alert('Firebase is not configured yet.');
+      await appAlert('Firebase is not configured yet.');
       return;
     }
 
     if (!authUser) {
-      alert('Sign in with Google first.');
+      await appAlert('Sign in with Google first.');
       return;
     }
 
@@ -1401,13 +1476,13 @@
       }
 
       if (showInfo) {
-        alert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
+        await appAlert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
       }
       autoSyncDirty = false;
     } catch (error) {
       console.error(error);
       if (showInfo) {
-        alert(`Upload failed: ${error?.message || error}`);
+        await appAlert(`Upload failed: ${error?.message || error}`);
       }
     } finally {
       uploadInProgress = false;
@@ -1482,7 +1557,7 @@
       savedList = await listSavedBlocks();
       await remountCurrentSaveIfLoaded();
       if (options.showInfo) {
-        alert('Cloud download complete. Newer cloud updates were applied.');
+        await appAlert('Cloud download complete. Newer cloud updates were applied.');
       }
     }
 
@@ -1520,7 +1595,7 @@
     }
 
     if (!firebaseReady || !authUser) {
-      alert('Sign in with Google first.');
+      await appAlert('Sign in with Google first.');
       return;
     }
 
@@ -1538,12 +1613,12 @@
 
   async function downloadAllCloudToLocal() {
     if (!firebaseReady) {
-      alert('Firebase is not configured yet.');
+      await appAlert('Firebase is not configured yet.');
       return;
     }
 
     if (!authUser) {
-      alert('Sign in with Google first.');
+      await appAlert('Sign in with Google first.');
       return;
     }
 
@@ -1554,7 +1629,7 @@
       await pullRemoteUpdatesIfNeeded({ showInfo: true });
     } catch (error) {
       console.error(error);
-      alert(`Download failed: ${error?.message || error}`);
+      await appAlert(`Download failed: ${error?.message || error}`);
     } finally {
       downloadInProgress = false;
     }
@@ -1658,10 +1733,10 @@
           history = [];
           historyIndex = -1;
           await pushHistory(blocks, modeOrders);
-          alert("Imported successfully!");
-        } else alert("Invalid file structure!");
+          await appAlert("Imported successfully!");
+        } else await appAlert("Invalid file structure!");
       } catch {
-        alert("Invalid JSON file!");
+        await appAlert("Invalid JSON file!");
       }
     };
     reader.readAsText(file);
@@ -1923,7 +1998,13 @@
       window.clearInterval(autoSyncUploadIntervalId);
       autoSyncUploadIntervalId = null;
     }
+    if (deferredLastSaveTimer !== null) {
+      window.clearTimeout(deferredLastSaveTimer);
+      deferredLastSaveTimer = null;
+    }
   });
+
+  $: scheduleDeferredLastSaveAutoDismiss(!!deferredLastSaveName);
 
   $: if (firebaseReady && authUser && !cloudBootstrapComplete && !cloudBootstrapInProgress) {
     bootstrapCloudSync();
@@ -1989,6 +2070,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 10px;
+  padding-top: max(8px, env(safe-area-inset-top));
   background: var(--controls-bg, #111);
   border-bottom: 1px solid var(--controls-border, #333);
   overscroll-behavior: contain;
@@ -2020,6 +2102,20 @@
 
 .startup-warning button:hover {
   filter: brightness(1.08);
+}
+
+.startup-warning-dismiss {
+  margin-left: auto;
+  background: transparent !important;
+  color: #ffe6a3 !important;
+  font-weight: 700 !important;
+  padding: 4px 8px !important;
+  line-height: 1;
+}
+
+.startup-warning-dismiss:hover {
+  filter: none !important;
+  background: rgba(255, 230, 163, 0.15) !important;
 }
 
 .modes {
@@ -2064,6 +2160,7 @@
     min-height: 55px;
     flex-wrap: nowrap;
     padding: 8px 10px;
+    padding-top: max(8px, env(safe-area-inset-top));
     justify-content: space-between;
     align-items: center;
     gap: 8px;
@@ -2073,6 +2170,72 @@
   .right-controls {
     margin-left: 0;
   }
+}
+
+.app-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 3000;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.app-dialog {
+  background: #17171a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 18px;
+  width: 100%;
+  max-width: 360px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+  box-sizing: border-box;
+}
+
+.app-dialog-message {
+  margin: 0 0 12px;
+  color: #f0f0f0;
+  font-size: 0.95rem;
+  white-space: pre-wrap;
+}
+
+.app-dialog-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #444;
+  background: #101012;
+  color: #f0f0f0;
+  font-size: 1rem;
+  margin-bottom: 14px;
+}
+
+.app-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.app-dialog-btn {
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.app-dialog-cancel {
+  background: #2a2a2a;
+  color: #f0f0f0;
+}
+
+.app-dialog-ok {
+  background: #ad7a00;
+  color: #1e1500;
 }
 
 </style>
@@ -2139,6 +2302,14 @@
       <button on:click={openDeferredLastSave}>
         Click to open last file
       </button>
+      <button
+        class="startup-warning-dismiss"
+        type="button"
+        aria-label="Dismiss"
+        on:click={dismissDeferredLastSave}
+      >
+        ✕
+      </button>
     </div>
   {/if}
 
@@ -2163,6 +2334,32 @@
     />
   </div>
 </div>
+
+{#if dialogState}
+  <div class="app-dialog-overlay" role="presentation" on:click={handleDialogCancel}>
+    <div class="app-dialog" role="dialog" aria-modal="true" on:click|stopPropagation>
+      <p class="app-dialog-message">{dialogState.message}</p>
+      {#if dialogState.type === 'prompt'}
+        <input
+          type="text"
+          class="app-dialog-input"
+          bind:value={dialogInputValue}
+          on:keydown={(e) => {
+            if (e.key === 'Enter') handleDialogConfirm(dialogInputValue);
+            if (e.key === 'Escape') handleDialogCancel();
+          }}
+          use:autofocusAction
+        />
+      {/if}
+      <div class="app-dialog-actions">
+        {#if dialogState.type !== 'alert'}
+          <button type="button" class="app-dialog-btn app-dialog-cancel" on:click={handleDialogCancel}>Cancel</button>
+        {/if}
+        <button type="button" class="app-dialog-btn app-dialog-ok" on:click={() => handleDialogConfirm(dialogInputValue)}>OK</button>
+      </div>
+    </div>
+  </div>
+{/if}
 
 {#if showAdvancedCssPage}
   <AdvancedCssPage

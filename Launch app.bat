@@ -1,4 +1,4 @@
 @echo off
 setlocal
-cd "C:/My programs/codex-pwa-main\src"
+cd /d "%~dp0"
 npm run dev 

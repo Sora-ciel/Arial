@@ -1,5 +1,5 @@
 @echo off
-cd /d "C:\My programs\codex-pwa-main"
+cd /d "%~dp0"
 
 echo.
 echo ===== FORCING LOCAL STATE TO REMOTE MAIN =====

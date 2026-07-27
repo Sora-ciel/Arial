@@ -1,6 +1,55 @@
-import { firebaseConfig, firebaseSyncNamespace } from '../firebase.ts';
+import { Capacitor } from '@capacitor/core';
+import { firebaseConfig, firebaseSyncNamespace, googleWebClientId } from '../firebase.ts';
 
 export { firebaseConfig, firebaseSyncNamespace };
+
+let socialLoginPlugin = null;
+let socialLoginInitPromise;
+
+function loadSocialLogin() {
+  return import('@capgo/capacitor-social-login');
+}
+
+async function ensureNativeGoogleAuthInitialized() {
+  // Capacitor plugin proxies expose a callable property for any method name
+  // accessed on them, including "then" - so a plugin object must never be
+  // returned as a Promise resolution value. JS's Promise "thenable
+  // assimilation" would call `plugin.then(...)` to try to unwrap it, which
+  // hits the native bridge as a bogus "then" method call and throws
+  // "X.then() is not implemented on android". Keep the plugin instance in a
+  // plain module-level variable instead, and only ever resolve this promise
+  // to a primitive.
+  if (!socialLoginInitPromise) {
+    socialLoginInitPromise = loadSocialLogin().then(async (mod) => {
+      socialLoginPlugin = mod.SocialLogin;
+      await socialLoginPlugin.initialize({ google: { webClientId: googleWebClientId } });
+      return true;
+    });
+  }
+  await socialLoginInitPromise;
+}
+
+async function signInWithGoogleNative(ctx) {
+  if (!googleWebClientId) {
+    throw new Error('Google sign-in is not configured for this app (missing web client ID).');
+  }
+
+  await ensureNativeGoogleAuthInitialized();
+  // The plugin already requests email/profile/openid scopes by default.
+  // Passing custom `scopes` here triggers a native check that requires
+  // modifying MainActivity to implement ModifiedMainActivityForSocialLoginPlugin,
+  // which isn't needed since the defaults already cover what we use.
+  const { result } = await socialLoginPlugin.login({
+    provider: 'google'
+  });
+
+  const idToken = result?.idToken;
+  if (!idToken) throw new Error('Google sign-in did not return an ID token.');
+
+  const credential = ctx.authApi.GoogleAuthProvider.credential(idToken);
+  const signInResult = await ctx.authApi.signInWithCredential(ctx.auth, credential);
+  return signInResult.user;
+}
 
 const REQUIRED_FIREBASE_KEYS = [
   'apiKey',
@@ -146,6 +195,10 @@ export async function signInWithGoogle() {
   const ctx = await getFirebaseContext();
   if (!ctx) throw new Error('Firebase is not configured.');
 
+  if (Capacitor.isNativePlatform()) {
+    return signInWithGoogleNative(ctx);
+  }
+
   const provider = new ctx.authApi.GoogleAuthProvider();
   const result = await ctx.authApi.signInWithPopup(ctx.auth, provider);
   return result.user;
@@ -154,6 +207,12 @@ export async function signInWithGoogle() {
 export async function signOutUser() {
   const ctx = await getFirebaseContext();
   if (!ctx) return;
+
+  if (Capacitor.isNativePlatform() && socialLoginInitPromise) {
+    await socialLoginInitPromise;
+    await socialLoginPlugin?.logout({ provider: 'google' }).catch(() => {});
+  }
+
   await ctx.authApi.signOut(ctx.auth);
 }
 
