@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -244,15 +245,6 @@
     gap: 8px;
     align-items: center;
   }
-  input[type="color"] {
-    width: 28px;
-    height: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    padding: 0;
-    cursor: pointer;
-    border-radius: var(--block-control-radius, 6px);
-    background: transparent;
-  }
   button.delete-btn {
     background: var(--block-accent-color, #ff5f5f);
     color: var(--block-accent-text, #ffffff);
@@ -304,6 +296,7 @@
 <div
   class="wrapper"
   class:focused={focused}
+  data-block-id={id}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
   role="button"
   tabindex="0"
@@ -320,22 +313,20 @@
   >
     <div>text</div>
     <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
-      <label title="Background Color">
-        <input
-          type="color"
-          bind:value={bgColor}
-          on:change={() => sendUpdate(['bgColor'])}
-          data-focus-guard
-        />
-      </label>
-      <label title="Text Color">
-        <input
-          type="color"
-          bind:value={textColor}
-          on:change={() => sendUpdate(['textColor'])}
-          data-focus-guard
-        />
-      </label>
+      <ColorField
+        value={bgColor}
+        title="Background Color"
+        placement="side"
+        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
+      />
+      <ColorField
+        value={textColor}
+        title="Text Color"
+        placement="side"
+        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
+      />
       <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>

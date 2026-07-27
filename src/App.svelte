@@ -985,17 +985,66 @@
     }
   }
 
-  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings) {
+  // ---- Save queue: prevents concurrent writes that cause missing chars ----
+  let _saveInFlight = false;
+  let _pendingSave = null;       // latest payload waiting to run
+  let _debounceTimer = null;     // for non-critical (typing) saves
+
+  async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings, { immediate = false } = {}) {
     if (!currentSaveName) return;
     persistLastSaveName(currentSaveName);
-    const normalizedOrders = ensureModeOrders(blocksToPersist, ordersToPersist);
-    await saveBlocks(currentSaveName, {
+
+    const payload = {
       blocks: blocksToPersist,
-      modeOrders: normalizedOrders,
-      modeSettings: normalizeModeSettings(settingsToPersist)
-    });
-    savedList = await listSavedBlocks();
-    autoSyncDirty = true;
+      orders: ordersToPersist,
+      modeSettings: settingsToPersist
+    };
+
+    if (!immediate) {
+      // Debounce: replace any queued save, schedule flush
+      _pendingSave = payload;
+      if (_debounceTimer) return;
+      _debounceTimer = setTimeout(() => {
+        _debounceTimer = null;
+        if (_pendingSave) {
+          const p = _pendingSave;
+          _pendingSave = null;
+          _runSave(p);
+        }
+      }, 300);
+      return;
+    }
+
+    // Immediate: flush debounce timer, run (or queue behind in-flight save)
+    clearTimeout(_debounceTimer);
+    _debounceTimer = null;
+    _pendingSave = null;
+    await _runSave(payload);
+  }
+
+  async function _runSave(payload) {
+    if (_saveInFlight) {
+      _pendingSave = payload; // queue behind in-flight save
+      return;
+    }
+    _saveInFlight = true;
+    try {
+      const normalizedOrders = ensureModeOrders(payload.blocks, payload.orders);
+      await saveBlocks(currentSaveName, {
+        blocks: payload.blocks,
+        modeOrders: normalizedOrders,
+        modeSettings: normalizeModeSettings(payload.modeSettings)
+      });
+      savedList = await listSavedBlocks();
+      autoSyncDirty = true;
+    } finally {
+      _saveInFlight = false;
+      if (_pendingSave) {
+        const next = _pendingSave;
+        _pendingSave = null;
+        _runSave(next);
+      }
+    }
   }
 
   function markCloudAttachmentDirty() {
@@ -1011,7 +1060,7 @@
       blocks = stateSnapshot.blocks;
       modeOrders = stateSnapshot.modeOrders;
       if (options.persist !== false) {
-        await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+        await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, modeSettings, { immediate: true });
       }
       hasUnsnapshottedChanges = false;
       return;
@@ -1027,7 +1076,7 @@
     blocks = stateSnapshot.blocks;
     modeOrders = stateSnapshot.modeOrders;
     if (options.persist !== false) {
-      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders);
+      await persistAutosave(stateSnapshot.blocks, stateSnapshot.modeOrders, modeSettings, { immediate: true });
     }
     hasUnsnapshottedChanges = false;
   }
@@ -1084,7 +1133,7 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, modeSettings, { immediate: true });
     }
   }
 
@@ -1099,7 +1148,7 @@
       );
       blocks = [...snapshotBlocks];
       modeOrders = cloneModeOrders(snapshotOrders);
-      await persistAutosave(snapshotBlocks, snapshotOrders);
+      await persistAutosave(snapshotBlocks, snapshotOrders, modeSettings, { immediate: true });
     }
   }
 
@@ -1170,6 +1219,7 @@
       pushToHistory,
       changedKeys,
       id,
+      bumpVersion,
       historyTriggers: incomingHistoryTriggers,
       ...updates
     } = detail;
@@ -1213,14 +1263,30 @@
       shouldSnapshot = true;
     }
 
+    // Apply ONLY the keys that actually changed. A child block (e.g. ImgBlock)
+    // always sends its full state in `detail` — src, colors, size, position — so
+    // blindly spreading `...updates` lets a partial update (say, a size-only
+    // change) clobber unrelated fields with the child's current values. During
+    // HMR a transiently re-mounted block can hold empty `src` / default white,
+    // which would then wipe the real image + color and trigger content deletion
+    // on the next save. Restricting to `normalizedChangedKeys` prevents that.
     // ✅ always clone position & size so reactivity triggers
     const updatedBlock = {
       ...existing,
-      ...updates,
-      position: { ...existing.position, ...(updates.position || {}) },
-      size: { ...existing.size, ...(updates.size || {}) },
-      historyTriggers
+      position: { ...existing.position },
+      size: { ...existing.size },
+      historyTriggers,
+      ...(bumpVersion ? { _version: (existing._version || 0) + 1 } : {})
     };
+    for (const key of normalizedChangedKeys) {
+      if (key === 'position') {
+        updatedBlock.position = { ...existing.position, ...(updates.position || {}) };
+      } else if (key === 'size') {
+        updatedBlock.size = { ...existing.size, ...(updates.size || {}) };
+      } else if (key in updates) {
+        updatedBlock[key] = updates[key];
+      }
+    }
 
     const newBlocks = blocks.map((block, index) =>
       index === idx ? updatedBlock : block
@@ -1774,7 +1840,7 @@
       }
     });
     modeSettings = nextModeSettings;
-    await persistAutosave(blocks, modeOrders, nextModeSettings);
+    await persistAutosave(blocks, modeOrders, nextModeSettings, { immediate: true });
   }
 
   function setupControlsObserver() {

@@ -1,5 +1,7 @@
 <script>
   import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
+  import Lightbox from '../components/Lightbox.svelte';
+  import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -71,15 +73,20 @@
     x: 0,
     y: 0
   };
+  let blockMenuMode = 'menu'; // 'menu' | 'editUrl'
+  let blockMenuUrlDraft = '';
   let touchHoldTimer;
   let touchHoldTriggered = false;
 
   function openBlockMenu(blockId, x, y) {
     blockMenu = { blockId, x, y };
+    blockMenuMode = 'menu';
   }
 
   function closeBlockMenu() {
     blockMenu = { blockId: null, x: 0, y: 0 };
+    blockMenuMode = 'menu';
+    blockMenuUrlDraft = '';
   }
 
   function handleContextMenu(event, blockId) {
@@ -112,6 +119,88 @@
 
   function deleteFromMenu(blockId) {
     deleteBlock(blockId);
+    closeBlockMenu();
+  }
+
+  function downloadSrc(src, name = 'media') {
+    const a = document.createElement('a');
+    a.href = src;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
+  async function copyImageSrc(src) {
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      if (blob.type.startsWith('image/')) {
+        await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+        return;
+      }
+    } catch {}
+    try { await navigator.clipboard.writeText(src); } catch {}
+  }
+
+  function buildMenuItems(block) {
+    if (!block) return [];
+    const items = [];
+    if (block.type === 'image') {
+      items.push({ id: 'edit', label: 'Edit image URL' });
+      const src = getImageSource(block);
+      if (src) {
+        items.push({ id: 'saveMedia', label: 'Save image' });
+        items.push({ id: 'copyMedia', label: 'Copy to clipboard' });
+      }
+    }
+    if (block.type === 'text' || block.type === 'cleantext') {
+      if (block.content) items.push({ id: 'copyText', label: 'Copy text' });
+    }
+    items.push({ id: 'delete', label: 'Delete block', variant: 'danger' });
+    return items;
+  }
+
+  async function handleMenuAction(actionId, block) {
+    if (!block) { closeBlockMenu(); return; }
+    if (actionId === 'edit') {
+      blockMenuUrlDraft = getImageSource(block);
+      blockMenuMode = 'editUrl';
+      return;
+    } else if (actionId === 'saveMedia') {
+      const src = getImageSource(block);
+      if (src) downloadSrc(src, 'image');
+    } else if (actionId === 'copyMedia') {
+      const src = getImageSource(block);
+      if (src) await copyImageSrc(src);
+    } else if (actionId === 'copyText') {
+      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+    } else if (actionId === 'delete') {
+      deleteFromMenu(block.id);
+      return;
+    }
+    closeBlockMenu();
+  }
+
+  function handleSimpleColorChange(detail, block) {
+    if (!block) return;
+    const changed = {};
+    if (detail.bgColor !== undefined) changed.bgColor = detail.bgColor;
+    if (detail.textColor !== undefined) changed.textColor = detail.textColor;
+    const keys = Object.keys(changed);
+    if (!keys.length) return;
+    updateBlock(block.id, changed, { pushToHistory: !!detail.commit, changedKeys: keys });
+  }
+
+  function autoFocusInput(node) {
+    requestAnimationFrame(() => { node.focus(); node.select(); });
+  }
+
+  function confirmUrlEdit() {
+    const menuBlock = blocks.find(b => b.id === blockMenu.blockId);
+    if (menuBlock) {
+      updateBlock(menuBlock.id, { src: blockMenuUrlDraft });
+    }
     closeBlockMenu();
   }
 
@@ -185,6 +274,23 @@
 
   let imageInputRefs = {};
   let imageTapTracker = {};
+
+  // ── Lightbox ──────────────────────────────────────────────────────
+  let lbOpen = false;
+  let lbImages = [];
+  let lbStart = 0;
+
+  function openLightbox(block) {
+    const src = getImageSource(block);
+    if (!src) return;
+    const imageSrcs = blocks
+      .filter(b => b.type === 'image' && hasImageSource(b))
+      .map(getImageSource);
+    lbStart = imageSrcs.indexOf(src);
+    if (lbStart < 0) lbStart = 0;
+    lbImages = imageSrcs;
+    lbOpen = true;
+  }
 
   function setImageInputRef(blockId, node) {
     if (node) {
@@ -260,11 +366,9 @@
     if (currentTap - previousTap <= 300) {
       event.preventDefault();
       openImagePicker(block.id);
+    } else {
+      openLightbox(block);
     }
-  }
-
-  function handleColorChange(block, key, value) {
-    updateBlock(block.id, { [key]: value });
   }
 
   function handleMusicFileChange(event, block) {
@@ -312,11 +416,14 @@
   onMount(() => {
     let rafId;
     const handleGlobalPointerDown = (event) => {
-      if (event.target?.closest?.('.block-menu')) return;
+      if (event.target?.closest?.('.ctx-menu, .url-edit-popup')) return;
       if (blockMenu.blockId) closeBlockMenu();
     };
     const handleEsc = (event) => {
-      if (event.key === 'Escape' && blockMenu.blockId) closeBlockMenu();
+      if (event.key === 'Escape') {
+        if (lbOpen) return; // Lightbox component handles this via stopImmediatePropagation
+        if (blockMenu.blockId) closeBlockMenu();
+      }
     };
     
     const initializeLayout = async () => {
@@ -521,16 +628,6 @@ li {
   box-sizing: border-box;
 }
 
-.block-header input[type="color"] {
-  width: 22px;
-  height: 22px;
-  border: 1px solid color-mix(in srgb, var(--text-color) 35%, transparent);
-  padding: 0;
-  cursor: pointer;
-  border-radius: 6px;
-  background: transparent;
-}
-
 .block-delete-btn {
   background: transparent;
   border: none;
@@ -585,6 +682,19 @@ li {
   font-size: 1rem;
 }
 
+.circle-check {
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .music-content, .embed-content {
   width: 100%;
   box-sizing: border-box;
@@ -596,31 +706,59 @@ li {
   margin-bottom: 6px;
 }
 
-.block-menu {
+.url-edit-popup {
   position: fixed;
-  z-index: 1200;
-  min-width: 110px;
-  background: #101010;
-  border: 1px solid #2a2a2a;
-  border-radius: 10px;
-  padding: 6px;
-  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.45);
+  z-index: 9100;
+  background: #111111;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 240px;
 }
 
-.block-menu button {
+.url-edit-input {
   width: 100%;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 8px;
+  color: #f0f0f0;
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  outline: none;
+}
+
+.url-edit-input:focus {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.url-edit-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.url-edit-cancel,
+.url-edit-confirm {
   border: none;
   border-radius: 8px;
-  padding: 8px 10px;
-  font-size: 0.9rem;
-  text-align: left;
-  color: #ff8b8b;
-  background: transparent;
+  padding: 6px 12px;
+  font-size: 0.85rem;
   cursor: pointer;
 }
 
-.block-menu button:hover {
+.url-edit-cancel {
   background: rgba(255, 255, 255, 0.08);
+  color: #aaa;
+}
+
+.url-edit-confirm {
+  background: rgba(255, 255, 255, 0.15);
+  color: #f0f0f0;
 }
 
 @media (max-width: 1023px) {
@@ -679,8 +817,6 @@ li {
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
             <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
-              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
               <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
             </div>
             <textarea
@@ -700,8 +836,6 @@ li {
             ></textarea>
           {:else if block.type === 'image'}
             <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
-              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
               <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
             </div>
             {#if hasImageSource(block)}
@@ -709,8 +843,10 @@ li {
                 src={getImageSource(block)}
                 alt=""
                 data-focus-guard
+                on:click|stopPropagation={() => openLightbox(block)}
                 on:dblclick|stopPropagation={() => openImagePicker(block.id)}
                 on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
+                style="cursor:zoom-in"
               />
             {:else}
               <div class="image-empty-state" data-focus-guard>
@@ -755,8 +891,6 @@ li {
 
           {:else if block.type === 'music'}
             <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
-              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
               <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
             </div>
             <div class="music-content" data-focus-guard>
@@ -786,8 +920,6 @@ li {
             </div>
           {:else if block.type === 'embed'}
             <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
-              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
               <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
             </div>
             <div class="embed-content" data-focus-guard>
@@ -807,8 +939,6 @@ li {
             </div>
           {:else if block.type === 'task'}
             <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <input type="color" value={block.bgColor} on:input={(e) => handleColorChange(block, 'bgColor', e.target.value)} data-focus-guard title="Background color" />
-              <input type="color" value={block.textColor} on:input={(e) => handleColorChange(block, 'textColor', e.target.value)} data-focus-guard title="Text color" />
               <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
             </div>
             <div class="task-list-title">{block.title || 'Task List'}</div>
@@ -829,12 +959,24 @@ li {
                 {#each block.tasks as task (task.id)}
                   <div class="task-item" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
                     <label>
-                      <input
-                        type="checkbox"
-                        checked={task.done}
-                        on:change={() => toggleTask(block, task.id)}
+                      <!-- svelte-ignore a11y-click-events-have-key-events -->
+                      <button
+                        class="circle-check"
+                        on:click|stopPropagation={() => toggleTask(block, task.id)}
                         data-focus-guard
-                      />
+                        aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+                      >
+                        {#if task.done}
+                          <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="10" cy="10" r="9" fill="var(--text-color)" stroke="var(--text-color)" stroke-width="1"/>
+                            <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--bg-color)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                          </svg>
+                        {:else}
+                          <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--text-color)" stroke-width="1.5" stroke-opacity="0.5"/>
+                          </svg>
+                        {/if}
+                      </button>
                       <span>{task.text}</span>
                     </label>
                     <button
@@ -861,7 +1003,38 @@ li {
 </div>
 
 {#if blockMenu.blockId}
-  <div class="block-menu" style={`left:${blockMenu.x}px; top:${blockMenu.y}px;`}>
-    <button on:click={() => deleteFromMenu(blockMenu.blockId)}>Delete block</button>
-  </div>
+  {#if blockMenuMode === 'editUrl'}
+    <!-- svelte-ignore a11y-no-static-element-interactions -->
+    <div class="url-edit-popup" style="left:{blockMenu.x}px; top:{blockMenu.y}px;">
+      <input
+        class="url-edit-input"
+        type="text"
+        bind:value={blockMenuUrlDraft}
+        placeholder="Paste image URL…"
+        on:keydown={(e) => { if (e.key === 'Enter') confirmUrlEdit(); if (e.key === 'Escape') closeBlockMenu(); }}
+        use:autoFocusInput
+      />
+      <div class="url-edit-actions">
+        <button class="url-edit-cancel" on:click={closeBlockMenu}>Cancel</button>
+        <button class="url-edit-confirm" on:click={confirmUrlEdit}>Done</button>
+      </div>
+    </div>
+  {:else}
+    {@const menuBlock = blocks.find(b => b.id === blockMenu.blockId)}
+    <BlockContextMenu
+      x={blockMenu.x}
+      y={blockMenu.y}
+      items={buildMenuItems(menuBlock)}
+      colorEdit={true}
+      bgColor={menuBlock?.bgColor || '#000000'}
+      textColor={menuBlock?.textColor || '#ffffff'}
+      on:action={(e) => handleMenuAction(e.detail, menuBlock)}
+      on:colorChange={(e) => handleSimpleColorChange(e.detail, menuBlock)}
+      on:close={() => { if (blockMenuMode !== 'editUrl') closeBlockMenu(); }}
+    />
+  {/if}
+{/if}
+
+{#if lbOpen}
+  <Lightbox images={lbImages} startIndex={lbStart} on:close={() => lbOpen = false} />
 {/if}

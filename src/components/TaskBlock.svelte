@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -275,16 +276,6 @@
     align-items: center;
   }
 
-  .header-controls  input[type="color"] {
-    width: 28px;
-    height: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    padding: 0;
-    cursor: pointer;
-    border-radius: var(--block-control-radius, 6px);
-    background: transparent;
-  }
-
 
   button.delete-btn {
     background: var(--block-accent-color, var(--text));
@@ -363,11 +354,17 @@
     font-size: 0.85rem;
   }
 
-  .task-item input[type='checkbox'] {
-    width: 14px;
-    height: 14px;
-    color: var(--text);
-    accent-color: var(--block-accent-color, var(--text));
+  .circle-check {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .task-item button {
@@ -392,6 +389,7 @@
 <div
   class="wrapper"
   class:focused={focused}
+  data-block-id={id}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
   role="button"
   tabindex="0"
@@ -408,22 +406,20 @@
   >
     <div class="header-title">{title || 'Task List'}</div>
     <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
-      <label title="Background Color">
-        <input
-          type="color"
-          bind:value={bgColor}
-          on:change={() => sendUpdate(['bgColor'])}
-          data-focus-guard
-        />
-      </label>
-      <label title="Text Color">
-        <input
-          type="color"
-          bind:value={textColor}
-          on:change={() => sendUpdate(['textColor'])}
-          data-focus-guard
-        />
-      </label>
+      <ColorField
+        value={bgColor}
+        title="Background Color"
+        placement="side"
+        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
+      />
+      <ColorField
+        value={textColor}
+        title="Text Color"
+        placement="side"
+        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
+      />
       <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
     </div>
   </div>
@@ -443,12 +439,24 @@
       {#each todoTasks() as task}
         <li class="task-item">
           <label>
-            <input
-              type="checkbox"
-              checked={task.done}
-              on:change={() => toggleTask(task.id)}
+            <!-- svelte-ignore a11y-click-events-have-key-events -->
+            <button
+              class="circle-check"
+              on:click|stopPropagation={() => toggleTask(task.id)}
               data-focus-guard
-            />
+              aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+            >
+              {#if task.done}
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="9" fill="var(--text)" stroke="var(--text)" stroke-width="1"/>
+                  <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--bg)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              {:else}
+                <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--text)" stroke-width="1.5" stroke-opacity="0.6"/>
+                </svg>
+              {/if}
+            </button>
             <span>{task.text}</span>
           </label>
           <button

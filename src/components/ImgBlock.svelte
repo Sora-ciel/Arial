@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher, getContext } from 'svelte';
+  import ColorField from './ColorField.svelte';
 
   const appDialogs = getContext('appDialogs');
 
@@ -299,6 +300,17 @@ function onResizeEnd() {
     }
   }
 
+  // Click on the media content:
+  //   - When NOT focused: focus the block (next click will open lightbox)
+  //   - When focused: open lightbox if there's a source
+  function handleMediaClick() {
+    if (!focused) {
+      ensureFocus();
+    } else if (mediaSrc) {
+      dispatch('lightbox', { src: mediaSrc });
+    }
+  }
+
   function handleWrapperClick(event) {
     if (suppressClick) return;
     if (event.defaultPrevented) return;
@@ -372,16 +384,6 @@ function onResizeEnd() {
     align-items: center;
   }
 
-  input[type="color"] {
-    width: 28px;
-    height: 22px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    padding: 0;
-    cursor: pointer;
-    border-radius: var(--block-control-radius, 6px);
-    background: transparent;
-  }
-
   input[type="file"] {
     display: none;
   }
@@ -414,13 +416,27 @@ function onResizeEnd() {
     filter: brightness(1.08);
   }
 
-  img {
-    background-color: var(--bg);
-    flex-grow: 1;
+  .media-container {
+    flex: 1 1 0;
+    min-height: 0;
+    position: relative;
+  }
+
+  /* Use absolute fill so height:100% resolves correctly regardless of parent sizing method */
+  .media-container img,
+  .media-container video {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: contain;
-    background: transparent;
+    display: block;
+    cursor: default;
+  }
+
+  .media-container img.clickable,
+  .media-container video.clickable {
+    cursor: zoom-in;
   }
 
   .resize-handle {
@@ -440,6 +456,7 @@ function onResizeEnd() {
 <div
   class="wrapper"
   class:focused={focused}
+  data-block-id={id}
   style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor}"
   role="button"
   tabindex="0"
@@ -452,17 +469,19 @@ function onResizeEnd() {
     <div>image</div>
     <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
 
-        <input
-          type="color"
-          bind:value={bgColor}
-          on:change={() => sendUpdate(['bgColor'])}
-          data-focus-guard
+        <ColorField
+          value={bgColor}
+          title="Background Color"
+          placement="side"
+          on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
+          on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
         />
-        <input
-          type="color"
-          bind:value={textColor}
-          on:change={() => sendUpdate(['textColor'])}
-          data-focus-guard
+        <ColorField
+          value={textColor}
+          title="Text Color"
+          placement="side"
+          on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
+          on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
         />
 
       <label title="Change Image" class="media-btn" data-focus-guard on:click|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation>
@@ -474,12 +493,27 @@ function onResizeEnd() {
     </div>
   </div>
 
-  <div class="media-container" style="flex-grow:1;">
+  <div class="media-container">
     {#if mediaSrc}
       {#if mediaSrc.startsWith('data:video')}
-        <video src={mediaSrc} autoplay loop muted playsinline style="width:100%; height:100%; object-fit:contain;"></video>
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <!-- svelte-ignore a11y-media-has-caption -->
+        <video
+          src={mediaSrc}
+          class:clickable={true}
+          autoplay loop muted playsinline
+          on:click|stopPropagation={handleMediaClick}
+        ></video>
       {:else}
-        <img src={mediaSrc} alt="" style="width:100%; height:100%; object-fit:contain;" />
+        <!-- svelte-ignore a11y-click-events-have-key-events -->
+        <!-- svelte-ignore a11y-no-static-element-interactions -->
+        <img
+          src={mediaSrc}
+          alt=""
+          class:clickable={true}
+          on:click|stopPropagation={handleMediaClick}
+        />
       {/if}
     {:else if hasStorageAttachment}
       <div style="flex-grow:1; display:flex; align-items:center; justify-content:center; color:#777; text-align:center; padding: 8px;">

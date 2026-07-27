@@ -314,10 +314,17 @@
     flex: 1 1 auto;
   }
 
-  .task-item input[type='checkbox'] {
-    width: 16px;
-    height: 16px;
-    accent-color: var(--block-accent-color, #8bd3ff);
+  .circle-check {
+    flex-shrink: 0;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
   .task-item button {
@@ -381,11 +388,23 @@
               {#each todoTasks as task}
                 <li class="task-item">
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={task.done}
-                      on:change={() => toggleTask(task.id)}
-                    />
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="circle-check"
+                      on:click={() => toggleTask(task.id)}
+                      aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+                    >
+                      {#if task.done}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="9" fill="var(--block-header-text, #f5f5f5)" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1"/>
+                          <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--canvas-inner-bg, #000)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      {:else}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1.5" stroke-opacity="0.5"/>
+                        </svg>
+                      {/if}
+                    </button>
                     <span>{task.text}</span>
                   </label>
                   <button
@@ -408,11 +427,23 @@
               {#each doneTasks as task}
                 <li class="task-item">
                   <label>
-                    <input
-                      type="checkbox"
-                      checked={task.done}
-                      on:change={() => toggleTask(task.id)}
-                    />
+                    <!-- svelte-ignore a11y-click-events-have-key-events -->
+                    <button
+                      class="circle-check"
+                      on:click={() => toggleTask(task.id)}
+                      aria-label={task.done ? 'Mark incomplete' : 'Mark complete'}
+                    >
+                      {#if task.done}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="9" fill="var(--block-header-text, #f5f5f5)" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1"/>
+                          <path d="M5.5 10.5 L8.5 13.5 L14.5 7" stroke="var(--canvas-inner-bg, #000)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                        </svg>
+                      {:else}
+                        <svg viewBox="0 0 20 20" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                          <circle cx="10" cy="10" r="8.5" fill="transparent" stroke="var(--block-header-text, #f5f5f5)" stroke-width="1.5" stroke-opacity="0.5"/>
+                        </svg>
+                      {/if}
+                    </button>
                     <span>{task.text}</span>
                   </label>
                   <button

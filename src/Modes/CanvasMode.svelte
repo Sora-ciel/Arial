@@ -6,6 +6,8 @@
   import Music from '../components/MusicBlock.svelte';
   import Embed from '../components/EmbedBlock.svelte';
   import TaskBlock from '../components/TaskBlock.svelte';
+  import Lightbox from '../components/Lightbox.svelte';
+  import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
 
   export let mode;
@@ -24,11 +26,8 @@
   const MOBILE_BREAKPOINT = 1024;
   const BLOCK_MARGIN_BOTTOM = 20;
   const MIN_ZOOM = 0.2;
-  const MAX_ZOOM = 4;
+  const MAX_ZOOM = 16;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
-  const EDGE_PAN_ZONE_HORIZONTAL = 550;
-  const EDGE_PAN_ZONE_VERTICAL = 350;
-  const EDGE_PAN_MAX_SPEED = 50;
 
   let scale = 1;
   let lastDistance = null;
@@ -36,9 +35,35 @@
   let canvasWidth = MIN_CANVAS_WIDTH;
   let canvasHeight = MIN_CANVAS_HEIGHT;
   let contentOffsetX = 0;
-  let edgePanRaf = null;
-  let edgePanVelocityX = 0;
-  let edgePanVelocityY = 0;
+
+  // ── Lightbox ─────────────────────────────────────────────────────
+  let lbOpen = false;
+  let lbImages = [];
+  let lbStart = 0;
+
+  function openCanvasLightbox(event) {
+    const clickedSrc = event.detail.src;
+    // Build gallery from all image blocks in their visual order
+    const allSrcs = blocks
+      .filter(b => b.type === 'image')
+      .map(b => {
+        if (typeof b.src === 'string') return b.src;
+        if (b.resolvedSrc) return b.resolvedSrc;
+        return null;
+      })
+      .filter(Boolean);
+    lbImages = allSrcs.length ? allSrcs : [clickedSrc];
+    lbStart = lbImages.indexOf(clickedSrc);
+    if (lbStart < 0) lbStart = 0;
+    lbOpen = true;
+  }
+
+  // Right-click grab pan
+  let isPanning = false;
+  let panStartX = 0;
+  let panStartY = 0;
+  let panScrollLeft = 0;
+  let panScrollTop = 0;
 
   const dispatch = createEventDispatcher();
 
@@ -241,91 +266,160 @@
   }
 
 
-  function getEdgePanStrength(distanceToEdge, zoneSize) {
-    const normalized = Math.max(0, Math.min(1, (zoneSize - distanceToEdge) / zoneSize));
-    return normalized * normalized;
-  }
-
-  function stopEdgePan() {
-    edgePanVelocityX = 0;
-    edgePanVelocityY = 0;
-
-    if (edgePanRaf !== null) {
-      cancelAnimationFrame(edgePanRaf);
-      edgePanRaf = null;
-    }
-  }
-
-  function stepEdgePan() {
-    if (!canvasRef || !edgePanVelocityX && !edgePanVelocityY) {
-      edgePanRaf = null;
-      return;
-    }
-
-    canvasRef.scrollLeft += edgePanVelocityX;
-    canvasRef.scrollTop += edgePanVelocityY;
-    edgePanRaf = requestAnimationFrame(stepEdgePan);
-  }
 
 
-  function canCtrlEdgePan() {
-    if (!canvasRef) return false;
-
-    const canScrollHorizontally = canvasRef.scrollWidth > canvasRef.clientWidth;
-    const canScrollVertically = canvasRef.scrollHeight > canvasRef.clientHeight;
-
-    return scale > getViewportScaleFloor() || canScrollHorizontally || canScrollVertically;
-  }
-
-  function updateEdgePanFromPointer(event) {
+  function startRightClickPan(event) {
     if (!canvasRef) return;
-    if (!event.ctrlKey || !canCtrlEdgePan()) {
-      stopEdgePan();
+    isPanning = true;
+    panStartX = event.clientX;
+    panStartY = event.clientY;
+    panScrollLeft = canvasRef.scrollLeft;
+    panScrollTop = canvasRef.scrollTop;
+    document.addEventListener('mousemove', onPanMove);
+    document.addEventListener('mouseup', stopRightClickPan);
+  }
+
+  function onPanMove(event) {
+    if (!isPanning || !canvasRef) return;
+    canvasRef.scrollLeft = panScrollLeft - (event.clientX - panStartX);
+    canvasRef.scrollTop  = panScrollTop  - (event.clientY - panStartY);
+  }
+
+  function stopRightClickPan() {
+    if (!isPanning) return;
+    isPanning = false;
+    document.removeEventListener('mousemove', onPanMove);
+    document.removeEventListener('mouseup', stopRightClickPan);
+  }
+
+  function onMouseDown(event) {
+    if (event.ctrlKey && event.button === 1) {
+      if (event.cancelable) event.preventDefault();
+      // Restore the exact state from first mount — not a recomputed fit
+      if (canvasRef) {
+        scale = _mountScale;
+        canvasRef.scrollLeft = 0;
+        canvasRef.scrollTop = 0;
+      }
       return;
     }
-
-    const rect = canvasRef.getBoundingClientRect();
-    const localX = event.clientX - rect.left;
-    const localY = event.clientY - rect.top;
-
-    if (localX < 0 || localY < 0 || localX > rect.width || localY > rect.height) {
-      stopEdgePan();
-      return;
-    }
-
-    const leftStrength = getEdgePanStrength(localX, EDGE_PAN_ZONE_HORIZONTAL);
-    const rightStrength = getEdgePanStrength(rect.width - localX, EDGE_PAN_ZONE_HORIZONTAL);
-    const topStrength = getEdgePanStrength(localY, EDGE_PAN_ZONE_VERTICAL);
-    const bottomStrength = getEdgePanStrength(rect.height - localY, EDGE_PAN_ZONE_VERTICAL);
-
-    edgePanVelocityX = (rightStrength - leftStrength) * EDGE_PAN_MAX_SPEED;
-    edgePanVelocityY = (bottomStrength - topStrength) * EDGE_PAN_MAX_SPEED;
-
-    if (!edgePanVelocityX && !edgePanVelocityY) {
-      stopEdgePan();
-      return;
-    }
-
-    if (edgePanRaf === null) {
-      edgePanRaf = requestAnimationFrame(stepEdgePan);
+    if (event.button === 2) {
+      event.preventDefault();
+      startRightClickPan(event);
     }
   }
 
+  // Canvas block context menu
+  let canvasCtxMenu = { open: false, x: 0, y: 0 };
+  let canvasCtxBlock = null;
+  let canvasLongPressTimer;
+  let canvasLongPressBlockId = null;
 
-  function onCtrlMiddleClick(event) {
-    if (!event.ctrlKey || event.button !== 1) return;
-
-    if (event.cancelable) event.preventDefault();
-    stopEdgePan();
-    fitToViewport();
+  function closeCanvasCtxMenu() {
+    canvasCtxMenu = { open: false, x: 0, y: 0 };
+    canvasCtxBlock = null;
   }
 
-  function onMouseMove(event) {
-    updateEdgePanFromPointer(event);
+  function openCanvasCtxMenuForBlock(blockId, x, y) {
+    const block = blocks.find(b => b.id === blockId);
+    if (!block) return;
+    canvasCtxBlock = block;
+    canvasCtxMenu = { open: true, x, y };
   }
 
-  function onMouseLeave() {
-    stopEdgePan();
+  function onContextMenu(event) {
+    event.preventDefault();
+    stopRightClickPan();
+    const blockEl = event.target?.closest?.('[data-block-id]');
+    if (!blockEl) return;
+    openCanvasCtxMenuForBlock(blockEl.dataset.blockId, event.clientX, event.clientY);
+  }
+
+  function onCanvasTouchStart(event) {
+    if (event.touches?.length !== 1) return;
+    const blockEl = event.target?.closest?.('[data-block-id]');
+    if (!blockEl) return;
+    const blockId = blockEl.dataset.blockId;
+    const touch = event.touches[0];
+    canvasLongPressBlockId = blockId;
+    clearTimeout(canvasLongPressTimer);
+    canvasLongPressTimer = setTimeout(() => {
+      openCanvasCtxMenuForBlock(canvasLongPressBlockId, touch.clientX, touch.clientY);
+    }, 550);
+  }
+
+  function onCanvasTouchMove() {
+    clearTimeout(canvasLongPressTimer);
+  }
+
+  function onCanvasTouchEnd() {
+    clearTimeout(canvasLongPressTimer);
+  }
+
+  function buildCanvasMenuItems(block) {
+    if (!block) return [];
+    const items = [];
+    if (block.type === 'image') {
+      const src = typeof block.src === 'string' ? block.src : (block.resolvedSrc || '');
+      if (src) {
+        items.push({ id: 'saveMedia', label: 'Save image' });
+        items.push({ id: 'copyMedia', label: 'Copy to clipboard' });
+      }
+    }
+    if (block.type === 'text' || block.type === 'cleantext') {
+      if (block.content) items.push({ id: 'copyText', label: 'Copy text' });
+    }
+    items.push({ id: 'delete', label: 'Delete block', variant: 'danger' });
+    return items;
+  }
+
+  function handleCanvasColorChange(detail) {
+    if (!canvasCtxBlock) return;
+    const changed = {};
+    if (detail.bgColor !== undefined) changed.bgColor = detail.bgColor;
+    if (detail.textColor !== undefined) changed.textColor = detail.textColor;
+    const keys = Object.keys(changed);
+    if (!keys.length) return;
+    // Live drag = no history; release (commit) = snapshot. Bump either way so
+    // the canvas block (which caches its colors) re-renders for live preview.
+    updateBlockHandler({ detail: { id: canvasCtxBlock.id, ...changed, changedKeys: keys, pushToHistory: !!detail.commit, bumpVersion: true } });
+    // keep the open menu's swatches in sync
+    canvasCtxBlock = { ...canvasCtxBlock, ...changed };
+  }
+
+  async function handleCanvasMenuAction(actionId) {
+    const block = canvasCtxBlock;
+    closeCanvasCtxMenu();
+    if (!block) return;
+
+    if (actionId === 'delete') {
+      deleteBlockHandler({ detail: { id: block.id } });
+    } else if (actionId === 'saveMedia') {
+      const src = typeof block.src === 'string' ? block.src : (block.resolvedSrc || '');
+      if (src) {
+        const a = document.createElement('a');
+        a.href = src;
+        a.download = 'image';
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }
+    } else if (actionId === 'copyMedia') {
+      const src = typeof block.src === 'string' ? block.src : (block.resolvedSrc || '');
+      if (src) {
+        try {
+          const res = await fetch(src);
+          const blob = await res.blob();
+          if (blob.type.startsWith('image/')) {
+            await navigator.clipboard.write([new ClipboardItem({ [blob.type]: blob })]);
+            return;
+          }
+        } catch {}
+        try { await navigator.clipboard.writeText(src); } catch {}
+      }
+    } else if (actionId === 'copyText') {
+      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+    }
   }
 
   function onTouchEnd(event) {
@@ -351,11 +445,16 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
+  // Snapshot of the view exactly as it was at first mount — used by Ctrl+Middle reset
+  let _mountScale = 1;
+
   onMount(() => {
     refitCanvas();
+    // Capture after refitCanvas so _mountScale matches what the user first sees
+    _mountScale = scale;
 
     return () => {
-      stopEdgePan();
+      stopRightClickPan();
     };
   });
 </script>
@@ -371,6 +470,14 @@
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
   touch-action: pan-x pan-y;
+}
+
+.canvas.panning {
+  cursor: grabbing;
+}
+.canvas.panning * {
+  pointer-events: none;
+  user-select: none;
 }
 
 
@@ -418,17 +525,17 @@
 <div
   class="canvas"
   class:simple-note={mode === 'simple'}
+  class:panning={isPanning}
   role="region"
   aria-label="Canvas viewport"
   bind:this={canvasRef}
   style={canvasCssVars}
-  on:touchstart={onTouchStart}
-  on:touchmove={onTouchMove}
-  on:touchend={onTouchEnd}
+  on:touchstart={(e) => { onTouchStart(e); onCanvasTouchStart(e); }}
+  on:touchmove={(e) => { onTouchMove(e); onCanvasTouchMove(); }}
+  on:touchend={(e) => { onTouchEnd(e); onCanvasTouchEnd(); }}
   on:wheel|nonpassive={onWheel}
-  on:mousemove={onMouseMove}
-  on:mouseleave={onMouseLeave}
-  on:mousedown={onCtrlMiddleClick}
+  on:mousedown={onMouseDown}
+  on:contextmenu={onContextMenu}
 >
     <div
       class="canvas-zoom-shell"
@@ -475,6 +582,7 @@
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
+            on:lightbox={openCanvasLightbox}
           />
         {:else if block.type === 'cleantext'}
           <Texteclean
@@ -541,3 +649,21 @@
       </div>
     </div>
 </div>
+
+{#if lbOpen}
+  <Lightbox images={lbImages} startIndex={lbStart} on:close={() => lbOpen = false} />
+{/if}
+
+{#if canvasCtxMenu.open}
+  <BlockContextMenu
+    x={canvasCtxMenu.x}
+    y={canvasCtxMenu.y}
+    items={buildCanvasMenuItems(canvasCtxBlock)}
+    colorEdit={true}
+    bgColor={canvasCtxBlock?.bgColor || '#000000'}
+    textColor={canvasCtxBlock?.textColor || '#ffffff'}
+    on:action={(e) => handleCanvasMenuAction(e.detail)}
+    on:colorChange={(e) => handleCanvasColorChange(e.detail)}
+    on:close={closeCanvasCtxMenu}
+  />
+{/if}
