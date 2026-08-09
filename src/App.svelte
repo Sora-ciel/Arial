@@ -970,8 +970,10 @@
   let autoSyncUploadIntervalId = null;
   let stopRemoteIndexWatch = () => {};
   let autoSyncDirty = false;
-  let lastAutoSyncFingerprint = '';
-  let lastAutoSyncAttachmentFingerprint = '';
+  // Per file, not a single joined string - lets the upload tick re-sync only
+  // the file(s) that actually changed instead of every saved file.
+  let lastAutoSyncFingerprintByFile = {};
+  let lastAutoSyncAttachmentFingerprintByFile = {};
   let lastRemoteSyncFingerprint = '';
   $: birthdayModeUnlocked = birthdayUnlockExpiry > Date.now();
 
@@ -1711,6 +1713,27 @@
     }
   }
 
+  // Shared per-file upload loop, guarded by uploadInProgress so the manual
+  // "upload all" action and the auto-sync tick never race each other.
+  async function uploadFilesToCloud(names, options = {}) {
+    if (uploadInProgress) return 0;
+    uploadInProgress = true;
+    try {
+      let uploadedCount = 0;
+      for (const fileName of names) {
+        const localPayload = await loadBlocks(fileName);
+        const uploadAttachments = options.shouldUploadAttachments
+          ? options.shouldUploadAttachments(fileName)
+          : true;
+        await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments });
+        uploadedCount += 1;
+      }
+      return uploadedCount;
+    } finally {
+      uploadInProgress = false;
+    }
+  }
+
   async function uploadAllLocalToCloud(showInfo = true, options = {}) {
     if (!firebaseReady) {
       await appAlert('Firebase is not configured yet.');
@@ -1724,20 +1747,12 @@
 
     if (uploadInProgress) return;
 
-    uploadInProgress = true;
     try {
       const names = await listSavedBlocks();
-      let uploadedCount = 0;
-
       const uploadAttachments = options.uploadAttachments !== false;
-
-      for (const fileName of names) {
-        const localPayload = await loadBlocks(fileName);
-        await saveRemoteFileWithMemory(fileName, localPayload, {
-          uploadAttachments
-        });
-        uploadedCount += 1;
-      }
+      const uploadedCount = await uploadFilesToCloud(names, {
+        shouldUploadAttachments: () => uploadAttachments
+      });
 
       if (showInfo) {
         await appAlert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
@@ -1748,14 +1763,16 @@
       if (showInfo) {
         await appAlert(`Upload failed: ${error?.message || error}`);
       }
-    } finally {
-      uploadInProgress = false;
     }
   }
 
+  // Returns { [fileName]: { fingerprint, attachmentFingerprint } } - per file,
+  // so the caller can tell exactly which files changed instead of just
+  // "something in the account changed."
   async function buildLocalSyncFingerprint() {
     const names = await listSavedBlocks();
-    const entries = await Promise.all(
+    const perFile = {};
+    await Promise.all(
       names.map(async fileName => {
         const payload = await loadBlocks(fileName);
         const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
@@ -1767,19 +1784,13 @@
           .filter(Boolean)
           .join('|');
 
-        return {
-          fingerprint: `${fileName}:${Number(payload?.updatedAt || 0)}`,
-          attachmentFingerprint: `${fileName}:${attachmentSignature}`
+        perFile[fileName] = {
+          fingerprint: Number(payload?.updatedAt || 0),
+          attachmentFingerprint: attachmentSignature
         };
       })
     );
-    const fingerprint = entries.map(entry => entry.fingerprint).sort().join('|');
-    const attachmentFingerprint = entries
-      .map(entry => entry.attachmentFingerprint)
-      .sort()
-      .join('|');
-
-    return { fingerprint, attachmentFingerprint };
+    return perFile;
   }
 
 
@@ -1847,17 +1858,38 @@
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
     const force = options.force === true;
     if (!autoSyncDirty && !force) return;
-    const { fingerprint, attachmentFingerprint } = await buildLocalSyncFingerprint();
-    if (!fingerprint) return;
-    if (!force && fingerprint === lastAutoSyncFingerprint) return;
 
-    const attachmentsChanged = force || attachmentFingerprint !== lastAutoSyncAttachmentFingerprint;
-    await uploadAllLocalToCloud(false, {
-      uploadAttachments: attachmentsChanged
+    const perFile = await buildLocalSyncFingerprint();
+    const fileNames = Object.keys(perFile);
+    if (!fileNames.length) {
+      autoSyncDirty = false;
+      return;
+    }
+
+    // Only re-upload files whose own fingerprint moved since the last tick -
+    // editing one note used to re-save every saved file in the account.
+    const changedNames = force
+      ? fileNames
+      : fileNames.filter(fileName => {
+          const current = perFile[fileName];
+          return current.fingerprint !== lastAutoSyncFingerprintByFile[fileName]
+            || current.attachmentFingerprint !== lastAutoSyncAttachmentFingerprintByFile[fileName];
+        });
+
+    if (!changedNames.length) {
+      autoSyncDirty = false;
+      return;
+    }
+
+    await uploadFilesToCloud(changedNames, {
+      shouldUploadAttachments: fileName =>
+        force || perFile[fileName].attachmentFingerprint !== lastAutoSyncAttachmentFingerprintByFile[fileName]
     });
 
-    lastAutoSyncFingerprint = fingerprint;
-    lastAutoSyncAttachmentFingerprint = attachmentFingerprint;
+    for (const fileName of changedNames) {
+      lastAutoSyncFingerprintByFile[fileName] = perFile[fileName].fingerprint;
+      lastAutoSyncAttachmentFingerprintByFile[fileName] = perFile[fileName].attachmentFingerprint;
+    }
     autoSyncDirty = false;
   }
 

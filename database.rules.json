@@ -1,0 +1,20 @@
+{
+  "rules": {
+    "sync": {
+      "$ns": {
+        "meta": {
+          ".read": true
+        },
+        "users": {
+          "$uid": {
+            ".read": "auth !== null && auth.uid === $uid",
+            ".write": "auth !== null && auth.uid === $uid && root.child('sync/' + $ns + '/users/' + $uid + '/blocked').val() !== true",
+            "blocked": {
+              ".validate": false
+            }
+          }
+        }
+      }
+    }
+  }
+}
