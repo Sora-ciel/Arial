@@ -1,5 +1,8 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
+  import { setCanvasScale, setCanvasRef } from '../canvasState.js';
+  import { MIN_CANVAS_WIDTH, MIN_ZOOM, MAX_ZOOM, getInitialCanvasScale } from '../utils/canvasFit.js';
+  import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import TexteBlock from '../components/TexteBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
   import Texteclean from '../components/TexteClean.svelte';
@@ -17,16 +20,15 @@
   export let focusedBlockId;
   export let canvasColors = {};
 
-  
+  // Keep shared state module in sync so App can read viewport without bind:this
+  $: setCanvasScale(scale);
+  $: setCanvasRef(canvasRef);
 
-  const MIN_CANVAS_WIDTH = 1080;
   const MIN_CANVAS_HEIGHT = 320;
   const BLOCK_MARGIN_LEFT = 5;
   const BLOCK_MARGIN_RIGHT = 5;
   const MOBILE_BREAKPOINT = 1024;
   const BLOCK_MARGIN_BOTTOM = 20;
-  const MIN_ZOOM = 0.2;
-  const MAX_ZOOM = 16;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
 
   let scale = 1;
@@ -60,10 +62,12 @@
 
   // Right-click grab pan
   let isPanning = false;
+  let hasPanned = false;
   let panStartX = 0;
   let panStartY = 0;
   let panScrollLeft = 0;
   let panScrollTop = 0;
+  const PAN_MOVE_THRESHOLD = 4;
 
   const dispatch = createEventDispatcher();
 
@@ -156,13 +160,21 @@
     return Math.min(1, fittedScale);
   }
 
+  // Deterministic "home" zoom based purely on screen size (not content),
+  // so first mount and the Ctrl+middle-click reset always land on the same
+  // zoom. Shared with App.svelte's media-fit/placement math (canvasFit.js)
+  // so both pieces always agree on what "the screen at opening zoom" means.
+  function getInitialScale() {
+    return getInitialCanvasScale();
+  }
+
   function getMinAllowedScale() {
     return Math.min(MIN_ZOOM, getViewportScaleFloor());
   }
 
   function fitToViewport() {
     if (!canvasRef) return;
-    scale = getViewportScaleFloor();
+    scale = getInitialScale();
     canvasRef.scrollLeft = 0;
     canvasRef.scrollTop = 0;
   }
@@ -271,6 +283,7 @@
   function startRightClickPan(event) {
     if (!canvasRef) return;
     isPanning = true;
+    hasPanned = false;
     panStartX = event.clientX;
     panStartY = event.clientY;
     panScrollLeft = canvasRef.scrollLeft;
@@ -281,8 +294,13 @@
 
   function onPanMove(event) {
     if (!isPanning || !canvasRef) return;
-    canvasRef.scrollLeft = panScrollLeft - (event.clientX - panStartX);
-    canvasRef.scrollTop  = panScrollTop  - (event.clientY - panStartY);
+    const dx = event.clientX - panStartX;
+    const dy = event.clientY - panStartY;
+    if (!hasPanned && (Math.abs(dx) > PAN_MOVE_THRESHOLD || Math.abs(dy) > PAN_MOVE_THRESHOLD)) {
+      hasPanned = true;
+    }
+    canvasRef.scrollLeft = panScrollLeft - dx;
+    canvasRef.scrollTop  = panScrollTop  - dy;
   }
 
   function stopRightClickPan() {
@@ -295,9 +313,9 @@
   function onMouseDown(event) {
     if (event.ctrlKey && event.button === 1) {
       if (event.cancelable) event.preventDefault();
-      // Restore the exact state from first mount — not a recomputed fit
+      // Reset to the deterministic screen-based home zoom (same as first mount)
       if (canvasRef) {
-        scale = _mountScale;
+        scale = getInitialScale();
         canvasRef.scrollLeft = 0;
         canvasRef.scrollTop = 0;
       }
@@ -329,7 +347,11 @@
 
   function onContextMenu(event) {
     event.preventDefault();
+    const wasPanning = hasPanned;
     stopRightClickPan();
+    hasPanned = false;
+    // A right-click-drag pan just ended — don't also pop the block menu.
+    if (wasPanning) return;
     const blockEl = event.target?.closest?.('[data-block-id]');
     if (!blockEl) return;
     openCanvasCtxMenuForBlock(blockEl.dataset.blockId, event.clientX, event.clientY);
@@ -418,7 +440,8 @@
         try { await navigator.clipboard.writeText(src); } catch {}
       }
     } else if (actionId === 'copyText') {
-      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+      const text = htmlToPlainText(block.content);
+      if (text) await navigator.clipboard.writeText(text).catch(() => {});
     }
   }
 
@@ -445,13 +468,8 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
-  // Snapshot of the view exactly as it was at first mount — used by Ctrl+Middle reset
-  let _mountScale = 1;
-
   onMount(() => {
     refitCanvas();
-    // Capture after refitCanvas so _mountScale matches what the user first sees
-    _mountScale = scale;
 
     return () => {
       stopRightClickPan();

@@ -1,5 +1,7 @@
 <script>
-  import { afterUpdate, createEventDispatcher, onMount, tick } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
+  import TipTapEditor from '../components/TipTapEditor.svelte';
+  import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import Lightbox from '../components/Lightbox.svelte';
   import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
@@ -87,6 +89,7 @@
     blockMenu = { blockId: null, x: 0, y: 0 };
     blockMenuMode = 'menu';
     blockMenuUrlDraft = '';
+    blockMenuUrlField = 'src';
   }
 
   function handleContextMenu(event, blockId) {
@@ -150,9 +153,13 @@
       items.push({ id: 'edit', label: 'Edit image URL' });
       const src = getImageSource(block);
       if (src) {
+        items.push({ id: 'changeImage', label: 'Change image' });
         items.push({ id: 'saveMedia', label: 'Save image' });
         items.push({ id: 'copyMedia', label: 'Copy to clipboard' });
       }
+    }
+    if (block.type === 'embed') {
+      items.push({ id: 'editEmbed', label: 'Edit embed URL' });
     }
     if (block.type === 'text' || block.type === 'cleantext') {
       if (block.content) items.push({ id: 'copyText', label: 'Copy text' });
@@ -161,12 +168,22 @@
     return items;
   }
 
+  let blockMenuUrlField = 'src';
+
   async function handleMenuAction(actionId, block) {
     if (!block) { closeBlockMenu(); return; }
     if (actionId === 'edit') {
+      blockMenuUrlField = 'src';
       blockMenuUrlDraft = getImageSource(block);
       blockMenuMode = 'editUrl';
       return;
+    } else if (actionId === 'editEmbed') {
+      blockMenuUrlField = 'content';
+      blockMenuUrlDraft = block.content || '';
+      blockMenuMode = 'editUrl';
+      return;
+    } else if (actionId === 'changeImage') {
+      openImagePicker(block.id);
     } else if (actionId === 'saveMedia') {
       const src = getImageSource(block);
       if (src) downloadSrc(src, 'image');
@@ -174,7 +191,8 @@
       const src = getImageSource(block);
       if (src) await copyImageSrc(src);
     } else if (actionId === 'copyText') {
-      if (block.content) await navigator.clipboard.writeText(block.content).catch(() => {});
+      const text = htmlToPlainText(block.content);
+      if (text) await navigator.clipboard.writeText(text).catch(() => {});
     } else if (actionId === 'delete') {
       deleteFromMenu(block.id);
       return;
@@ -199,7 +217,7 @@
   function confirmUrlEdit() {
     const menuBlock = blocks.find(b => b.id === blockMenu.blockId);
     if (menuBlock) {
-      updateBlock(menuBlock.id, { src: blockMenuUrlDraft });
+      updateBlock(menuBlock.id, { [blockMenuUrlField]: blockMenuUrlDraft });
     }
     closeBlockMenu();
   }
@@ -247,19 +265,6 @@
     event.preventDefault();
     handleBlockClick(event, id);
   }
-
-  function autoResize(textarea) {
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = textarea.scrollHeight + "px";
-  }
-
-  function resizeAllTextareas() {
-    const textareas = canvasRef?.querySelectorAll?.('textarea') ?? [];
-    textareas.forEach(autoResize);
-  }
-
-
 
 
   function focusScroll(el) {
@@ -358,16 +363,28 @@
   }
 
   function handleImageTouchEnd(event, block) {
+    // Touching the image itself stops propagation before it reaches the
+    // container's own touchend handler, so the long-press timer started by
+    // touchstart never gets cancelled there — cancel it here instead, or a
+    // quick tap ends up popping the context menu 550ms later on its own.
+    const wasHoldTriggered = touchHoldTriggered;
+    cancelTouchHold();
+    if (wasHoldTriggered) {
+      event.preventDefault();
+      return;
+    }
     if (!hasImageSource(block)) return;
+
     const currentTap = Date.now();
     const previousTap = imageTapTracker[block.id] || 0;
     imageTapTracker[block.id] = currentTap;
 
     if (currentTap - previousTap <= 300) {
       event.preventDefault();
-      openImagePicker(block.id);
-    } else {
+      imageTapTracker[block.id] = 0;
       openLightbox(block);
+    } else {
+      ensureFocus(block.id);
     }
   }
 
@@ -407,14 +424,96 @@
     updateBlock(block.id, { tasks: nextTasks }, { pushToHistory: true, changedKeys: ['tasks'] });
   }
 
+  // ── Inline edit (double-click a task to rewrite it) ───────────────────
+  let editingTaskId = null;
+  let editText = '';
+
+  function startEditTask(task) { editingTaskId = task.id; editText = task.text; }
+
+  function commitEditTask(block) {
+    if (!editingTaskId) return;
+    const trimmed = editText.trim();
+    const tasks = Array.isArray(block.tasks) ? block.tasks : [];
+    if (trimmed) {
+      updateBlock(block.id, { tasks: tasks.map(t => t.id === editingTaskId ? { ...t, text: trimmed } : t) }, { pushToHistory: true, changedKeys: ['tasks'] });
+    }
+    editingTaskId = null; editText = '';
+  }
+
+  function cancelEditTask() { editingTaskId = null; editText = ''; }
+
+  function handleEditKeydown(event, block) {
+    if (event.key === 'Enter') { event.preventDefault(); commitEditTask(block); }
+    else if (event.key === 'Escape') { event.preventDefault(); cancelEditTask(); }
+  }
+
+  function autoFocusTaskInput(node) {
+    requestAnimationFrame(() => { node.focus(); node.select(); });
+  }
+
+  // ── Reordering (drag the handle) — scoped per block since several task
+  // lists can be visible at once in this grid. ──────────────────────────
+  let dragBlockId = null;
+  let draggingTaskId = null;
+  let dragOverTaskId = null;
+  let dragOverPos = null;
+
+  function startTaskDrag(e, block, taskId) {
+    e.preventDefault();
+    e.stopPropagation();
+    ensureFocus(block.id);
+    dragBlockId = block.id;
+    draggingTaskId = taskId;
+    window.addEventListener('pointermove', onTaskDragMove);
+    window.addEventListener('pointerup', onTaskDragEnd);
+  }
+
+  function onTaskDragMove(e) {
+    if (!draggingTaskId) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const itemEl = el?.closest('.task-item');
+    if (!itemEl) { dragOverTaskId = null; dragOverPos = null; return; }
+    const overId = itemEl.dataset.taskId;
+    if (!overId || overId === draggingTaskId) return;
+    const rect = itemEl.getBoundingClientRect();
+    dragOverPos = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    dragOverTaskId = overId;
+  }
+
+  function onTaskDragEnd() {
+    window.removeEventListener('pointermove', onTaskDragMove);
+    window.removeEventListener('pointerup', onTaskDragEnd);
+    if (dragBlockId && draggingTaskId && dragOverTaskId && draggingTaskId !== dragOverTaskId) {
+      const block = blocks.find(b => b.id === dragBlockId);
+      if (block) reorderTask(block, draggingTaskId, dragOverTaskId, dragOverPos);
+    }
+    dragBlockId = null;
+    draggingTaskId = null;
+    dragOverTaskId = null;
+    dragOverPos = null;
+  }
+
+  function reorderTask(block, draggedId, targetId, pos) {
+    const list = [...(Array.isArray(block.tasks) ? block.tasks : [])];
+    const fromIdx = list.findIndex(t => t.id === draggedId);
+    if (fromIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    let toIdx = list.findIndex(t => t.id === targetId);
+    if (toIdx === -1) {
+      list.push(moved);
+    } else {
+      if (pos === 'after') toIdx++;
+      list.splice(toIdx, 0, moved);
+    }
+    updateBlock(block.id, { tasks: list }, { pushToHistory: true, changedKeys: ['tasks'] });
+  }
+
   $: normalizedColumnCount = Math.max(1, Number.parseInt(columnCount, 10) || 2);
   $: renderColumns = Array.from({ length: normalizedColumnCount }, (_, columnIndex) =>
     blocks.filter((_, blockIndex) => blockIndex % normalizedColumnCount === columnIndex)
   );
 
-  // Resize all textareas when component mounts
   onMount(() => {
-    let rafId;
     const handleGlobalPointerDown = (event) => {
       if (event.target?.closest?.('.ctx-menu, .url-edit-popup')) return;
       if (blockMenu.blockId) closeBlockMenu();
@@ -425,28 +524,15 @@
         if (blockMenu.blockId) closeBlockMenu();
       }
     };
-    
-    const initializeLayout = async () => {
-      await tick();
-      resizeAllTextareas();
-      rafId = requestAnimationFrame(() => {
-        resizeAllTextareas();
-      });
-    };
-    initializeLayout();
+
     window.addEventListener('pointerdown', handleGlobalPointerDown);
     window.addEventListener('keydown', handleEsc);
 
     return () => {
-      if (rafId) cancelAnimationFrame(rafId);
       cancelTouchHold();
       window.removeEventListener('pointerdown', handleGlobalPointerDown);
       window.removeEventListener('keydown', handleEsc);
     };
-  });
-
-  afterUpdate(() => {
-    resizeAllTextareas();
   });
 </script>
 
@@ -505,7 +591,7 @@
               0 0 6px 2px var(--text-color));
   display: flex;
   flex-direction: column;
-  align-items: center;
+  align-items: stretch;
   outline: 2px solid transparent;
   transition: box-shadow 0.15s ease, outline 0.15s ease;
 }
@@ -515,29 +601,23 @@
 
 }
 
-textarea {
-  width: 100%;
-  min-height: 50px;
-  border: none;
-  border-radius: 14px;
-  resize: none;
-  margin: 0;
-  padding: 10px;
+/* TipTap overrides for grid cards */
+:global(.container .tiptap-wrap) {
   background: transparent;
   color: var(--text-color);
   font-family: Arial, Helvetica, sans-serif;
   font-size: 1em;
   font-weight: bold;
-  box-sizing: border-box;
+  min-height: 50px;
+  /* don't lock height in grid cards — grow with content */
+  flex: unset;
+  overflow-y: visible;
 }
-
-textarea:focus {
-  outline: none;
-}
-
-textarea::selection {
-  background: var(--bg-color);
+:global(.container .tiptap-inner) {
   color: var(--text-color);
+  padding: 10px;
+  min-height: 40px;
+  flex: unset;
 }
 
 .container img {
@@ -556,12 +636,6 @@ input[type="text"] {
   color: var(--text-color);
   font-size: 1rem;
   margin-top: 8px;
-}
-
-li {
-  list-style: none;
-  margin: 0;
-  padding: 0;
 }
 
 .image-empty-state {
@@ -603,39 +677,6 @@ li {
   margin-top: 4px;
   background: color-mix(in srgb, var(--text-color) 10%, transparent);
   font-size: 0.95rem;
-}
-
-.edit-button {
-  background: transparent;
-  color: var(--text-color);
-  border: none;
-  cursor: pointer;
-  font-size: 1.1rem;
-  line-height: 1;
-}
-
-.edit-button {
-  align-self: flex-start;
-}
-
-.block-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 6px;
-  width: 100%;
-  padding: 0 2px 4px;
-  box-sizing: border-box;
-}
-
-.block-delete-btn {
-  background: transparent;
-  border: none;
-  color: var(--text-color);
-  font-size: 1.1rem;
-  line-height: 1;
-  cursor: pointer;
-  padding: 2px 6px;
 }
 
 .task-add-row {
@@ -694,6 +735,37 @@ li {
   align-items: center;
   justify-content: center;
 }
+
+.task-item.dragging { opacity: 0.5; position: relative; z-index: 2; }
+.task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--text-color); }
+.task-item.drag-over-after  { box-shadow: inset 0 -2px 0 0 var(--text-color); }
+
+.task-item button.drag-handle {
+  flex-shrink: 0;
+  width: 20px;
+  min-height: 32px;
+  padding: 0;
+  cursor: grab;
+  touch-action: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-color);
+  opacity: 0.35;
+}
+.task-item button.drag-handle:active { cursor: grabbing; opacity: 0.7; }
+
+.task-text-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--text-color) 40%, transparent);
+  color: var(--text-color);
+  font: inherit;
+  padding: 0;
+}
+.task-text-input:focus { outline: none; }
 
 .music-content, .embed-content {
   width: 100%;
@@ -779,7 +851,7 @@ li {
     border-radius: 14px;
   }
 
-  textarea {
+  :global(.container .tiptap-inner) {
     padding: 8px;
   }
 
@@ -816,35 +888,25 @@ li {
           on:keydown={(event) => handleBlockKeydown(event, block.id)}
         >
           {#if block.type === 'text' || block.type === 'cleantext'}
-            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
-            </div>
-            <textarea
-              bind:value={block.content}
-              spellcheck="false"
-              rows="1"
-              style="overflow:hidden;"
-              on:input={(e) => {
-                updateBlock(block.id, { content: e.target.value }, { pushToHistory: false, changedKeys: ['content'] });
+            <TipTapEditor
+              content={block.content}
+              placeholder="Type your note here..."
+              on:change={(e) => {
+                updateBlock(block.id, { content: e.detail }, { pushToHistory: false, changedKeys: ['content'] });
               }}
               on:focus={(e) => {
-                focusScroll(e.target);
+                focusScroll(e.detail?.target);
                 ensureFocus(block.id);
               }}
-              data-focus-guard
-              placeholder="Type your note here..."
-            ></textarea>
+            />
           {:else if block.type === 'image'}
-            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
-            </div>
             {#if hasImageSource(block)}
               <img
                 src={getImageSource(block)}
                 alt=""
                 data-focus-guard
-                on:click|stopPropagation={() => openLightbox(block)}
-                on:dblclick|stopPropagation={() => openImagePicker(block.id)}
+                on:click|stopPropagation={() => ensureFocus(block.id)}
+                on:dblclick|stopPropagation={() => openLightbox(block)}
                 on:touchend|stopPropagation={(event) => handleImageTouchEnd(event, block)}
                 style="cursor:zoom-in"
               />
@@ -859,40 +921,16 @@ li {
                 </button>
               </div>
             {/if}
-            <li>
-              <input
-                type="file"
-                accept="image/*"
-                style="display:none;"
-                use:imageInputRef={block.id}
-                on:change={(event) => handleImageChange(event, block)}
-                data-focus-guard
-              />
-              <button
-                class="edit-button"
-                data-focus-guard
-                on:click={() =>
-                  updateBlock(block.id, { editing: !block.editing })
-                }
-              >
-                {block.editing ? 'Done' : (hasImageSource(block) ? 'Change (URL)' : 'Set URL')}
-              </button>
-              {#if block.editing}
-                <input
-                  type="text"
-                  placeholder="Image URL"
-                  value={block.src}
-                  on:input={(e) => updateBlock(block.id, { src: e.target.value })}
-                  on:focus={() => ensureFocus(block.id)}
-                  data-focus-guard
-                />
-              {/if}
-            </li>
+            <input
+              type="file"
+              accept="image/*"
+              style="display:none;"
+              use:imageInputRef={block.id}
+              on:change={(event) => handleImageChange(event, block)}
+              data-focus-guard
+            />
 
           {:else if block.type === 'music'}
-            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
-            </div>
             <div class="music-content" data-focus-guard>
               <audio controls src={block.trackUrl} data-focus-guard></audio>
               <input
@@ -919,28 +957,14 @@ li {
               />
             </div>
           {:else if block.type === 'embed'}
-            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
-            </div>
             <div class="embed-content" data-focus-guard>
               {#if block.content}
                 <div>{@html block.content}</div>
               {:else}
                 <p style="opacity:0.6;">No embed URL set</p>
               {/if}
-              <input
-                type="text"
-                placeholder="Embed URL"
-                value={block.content || ''}
-                on:input={(e) => updateBlock(block.id, { content: e.target.value })}
-                on:focus={() => ensureFocus(block.id)}
-                data-focus-guard
-              />
             </div>
           {:else if block.type === 'task'}
-            <div class="block-header" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
-              <button class="block-delete-btn" data-focus-guard on:click|stopPropagation={() => deleteBlock(block.id)}>×</button>
-            </div>
             <div class="task-list-title">{block.title || 'Task List'}</div>
             <div class="task-add-row" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
               <input
@@ -957,7 +981,29 @@ li {
             <div class="task-list">
               {#if Array.isArray(block.tasks) && block.tasks.length}
                 {#each block.tasks as task (task.id)}
-                  <div class="task-item" role="presentation" data-focus-guard on:touchstart|stopPropagation on:contextmenu|stopPropagation>
+                  <div
+                    class="task-item"
+                    class:dragging={draggingTaskId === task.id}
+                    class:drag-over-before={dragOverTaskId === task.id && dragOverPos === 'before'}
+                    class:drag-over-after={dragOverTaskId === task.id && dragOverPos === 'after'}
+                    data-task-id={task.id}
+                    role="presentation"
+                    data-focus-guard
+                    on:touchstart|stopPropagation
+                    on:contextmenu|stopPropagation
+                  >
+                    <button
+                      class="drag-handle"
+                      aria-label="Drag to reorder"
+                      data-focus-guard
+                      on:pointerdown={(e) => startTaskDrag(e, block, task.id)}
+                    >
+                      <svg viewBox="0 0 10 16" width="9" height="14" fill="currentColor">
+                        <circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/>
+                        <circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/>
+                        <circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/>
+                      </svg>
+                    </button>
                     <label>
                       <!-- svelte-ignore a11y-click-events-have-key-events -->
                       <button
@@ -977,7 +1023,24 @@ li {
                           </svg>
                         {/if}
                       </button>
-                      <span>{task.text}</span>
+                      {#if editingTaskId === task.id}
+                        <input
+                          class="task-text-input"
+                          type="text"
+                          bind:value={editText}
+                          data-focus-guard
+                          on:click|stopPropagation
+                          on:keydown|stopPropagation={(e) => handleEditKeydown(e, block)}
+                          on:blur={() => commitEditTask(block)}
+                          use:autoFocusTaskInput
+                        />
+                      {:else}
+                        <span
+                          title="Double-click to edit"
+                          on:dblclick|stopPropagation={() => startEditTask(task)}
+                          on:click|stopPropagation
+                        >{task.text}</span>
+                      {/if}
                     </label>
                     <button
                       aria-label="Delete task"
@@ -1010,7 +1073,7 @@ li {
         class="url-edit-input"
         type="text"
         bind:value={blockMenuUrlDraft}
-        placeholder="Paste image URL…"
+        placeholder={blockMenuUrlField === 'content' ? 'Paste embed URL…' : 'Paste image URL…'}
         on:keydown={(e) => { if (e.key === 'Enter') confirmUrlEdit(); if (e.key === 'Escape') closeBlockMenu(); }}
         use:autoFocusInput
       />

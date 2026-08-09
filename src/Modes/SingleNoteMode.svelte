@@ -1,12 +1,34 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onMount } from 'svelte';
+  import TipTapEditor from '../components/TipTapEditor.svelte';
+  import { htmlToText } from '../utils/htmlToText.js';
+
+  const MOBILE_BREAKPOINT = 1024;
 
   export let blocks = [];
   export let focusedBlockId = null;
   export let canvasColors = {};
   export let canvasRef;
+  export let singleNoteSettings = {};
 
   const dispatch = createEventDispatcher();
+
+  // Per-file background image settings — desktop and phone can each have
+  // their own image, picked by the same breakpoint the toolbar uses.
+  let isMobileViewport = typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT;
+  function updateViewport() {
+    isMobileViewport = window.innerWidth <= MOBILE_BREAKPOINT;
+  }
+  onMount(() => {
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  });
+
+  $: bgImage = (isMobileViewport ? singleNoteSettings?.backgroundImageMobile : singleNoteSettings?.backgroundImage) || '';
+  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 0.35;
+  $: bgBlur = singleNoteSettings?.bgBlur ?? 0;
+  $: bgSize = singleNoteSettings?.bgSize || 'cover';
 
   const defaultCanvasColors = {
     outerBg: '#000000',
@@ -38,8 +60,9 @@
   $: noteBlock =
     noteBlocks.find(block => block.id === selectedNoteId) || null;
   $: noteContent = noteBlock?.content ?? '';
-  $: wordCount = countWords(noteContent);
-  $: characterCount = noteContent.length;
+  $: notePlainText = htmlToText(noteContent);
+  $: wordCount = countWords(notePlainText);
+  $: characterCount = notePlainText.length;
   $: hasHiddenBlocks = blocks.some(
     block => block.type !== 'text' && block.type !== 'cleantext'
   );
@@ -121,7 +144,7 @@
   }
 
   function getNoteLabel(block, index) {
-    const content = (block?.content || '').trim();
+    const content = htmlToText(block?.content || '');
     const firstLine = content.split('\n')[0]?.trim();
     if (firstLine) {
       const trimmed = firstLine.length > 28 ? `${firstLine.slice(0, 28)}…` : firstLine;
@@ -143,9 +166,10 @@
     flex-direction: column;
     width: 100%;
     height: 100%;
-    background: var(--canvas-inner-bg, #000000);
+    background: var(--active-note-bg, var(--canvas-inner-bg, #000000));
     color: var(--mode-text-color, #ffffff);
     box-sizing: border-box;
+    position: relative;
   }
 
   .note-tabs {
@@ -177,6 +201,24 @@
     outline-offset: 2px;
   }
 
+  /* Per-file background image sitting behind the text */
+  .note-bg-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    background-position: center;
+    background-repeat: no-repeat;
+    pointer-events: none;
+  }
+  /* When a bg image is set, let it show through the note surfaces */
+  .single-note.has-bg-image .note-meta,
+  .single-note.has-bg-image .note-footer { background: transparent; }
+  .single-note.has-bg-image :global(.tiptap-wrap) { background: transparent; }
+  .single-note > .note-tabs,
+  .single-note > .note-meta,
+  .single-note > :global(.tiptap-wrap),
+  .single-note > .note-footer { position: relative; z-index: 1; }
+
   .note-meta {
     display: flex;
     flex-wrap: wrap;
@@ -204,24 +246,16 @@
     border-radius: 0;
   }
 
-  textarea {
-    width: 100%;
-    flex: 1 1 auto;
-    border: none;
-    resize: none;
-    padding: 12px;
+  :global(.single-note .tiptap-wrap) {
     background: var(--active-note-bg, var(--canvas-inner-bg, #000000));
     color: var(--active-note-text, var(--mode-text-color, #ffffff));
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;
     line-height: 1.6;
-    box-sizing: border-box;
-    text-align: left;
-    overflow-y: auto;
   }
-
-  textarea:focus {
-    outline: none;
+  :global(.single-note .tiptap-inner) {
+    color: var(--active-note-text, var(--mode-text-color, #ffffff));
+    padding: 12px;
   }
 
   .note-footer {
@@ -258,7 +292,13 @@
   }
 </style>
 
-<div class="single-note" bind:this={canvasRef} style={canvasCssVars}>
+<div class="single-note" class:has-bg-image={bgImage} bind:this={canvasRef} style={canvasCssVars}>
+  {#if bgImage}
+    <div
+      class="note-bg-layer"
+      style="background-image:url('{bgImage}'); opacity:{bgOpacity}; filter:blur({bgBlur}px); background-size:{bgSize};"
+    ></div>
+  {/if}
   {#if noteBlock}
     {#if noteCount > 1}
       <div class="note-tabs" role="tablist" aria-label="Notes">
@@ -283,20 +323,19 @@
         <span>Characters: {characterCount}</span>
       </div>
     </div>
-    <textarea
-      class="note-textarea"
-      spellcheck="false"
-      rows="1"
-      value={noteContent}
-      on:input={(event) => {
-        updateBlock(noteBlock.id, { content: event.target.value }, { pushToHistory: false, changedKeys: ['content'] });
-      }}
-      on:focus={(event) => {
-        focusScroll(event.target);
-        ensureFocus(noteBlock.id);
-      }}
-      placeholder="Write your note here..."
-    ></textarea>
+    {#key noteBlock.id}
+      <TipTapEditor
+        content={noteContent}
+        placeholder="Write your note here..."
+        on:change={(e) => {
+          updateBlock(noteBlock.id, { content: e.detail }, { pushToHistory: false, changedKeys: ['content'] });
+        }}
+        on:focus={(e) => {
+          focusScroll(e.detail?.target);
+          ensureFocus(noteBlock.id);
+        }}
+      />
+    {/key}
 
     <div class="note-footer">
       <button on:click={() => deleteBlock(noteBlock.id)} aria-label="Delete note">

@@ -8,6 +8,7 @@
   export let currentSaveName;
   export let focusedBlockId = null;
   export let simpleNoteColumnCount = 2;
+  export let singleNoteSettings = {};
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
@@ -58,6 +59,7 @@
 
 
   $: isSimpleNoteMode = Boolean(activeModeDefinition?.settings?.simpleColumns);
+  $: isSingleNoteMode = Boolean(activeModeDefinition?.settings?.singleBackground);
   $: availableAddBlockTypes = activeModeDefinition?.addBlockTypes || [];
   $: canAddBlock = (type) => availableAddBlockTypes.includes(type);
   $: addBlockDefinitions = getBlockDefinitions(availableAddBlockTypes);
@@ -120,6 +122,31 @@
   function handleSimpleColumnInput(event) {
     const next = Math.max(1, Number.parseInt(event.currentTarget.value, 10) || 1);
     dispatch("modeSettingChange", { columnCount: next });
+  }
+
+  // Single Note Mode background image — desktop and phone can each have
+  // their own image; which slot is read/written follows the same
+  // <=1024px breakpoint (compactUI) the rest of the toolbar already uses.
+  let bgPanelOpen = false;
+  $: bgImageKey = compactUI ? 'backgroundImageMobile' : 'backgroundImage';
+  $: bgImage = singleNoteSettings?.[bgImageKey] || '';
+  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 0.35;
+  $: bgBlur = singleNoteSettings?.bgBlur ?? 0;
+  $: bgSize = singleNoteSettings?.bgSize || 'cover';
+
+  function setBgSetting(patch) {
+    dispatch('modeSettingChange', { single: patch });
+  }
+  function onBgFileChange(event) {
+    const file = event.target?.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => setBgSetting({ [bgImageKey]: String(reader.result || '') });
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+  function clearBgImage() {
+    setBgSetting({ [bgImageKey]: '' });
   }
 
   function checkWidth() {
@@ -377,6 +404,68 @@ onMount(() => {
     text-align: center;
   }
 
+  /* ── Single Note Mode background image ─────────────────── */
+  .bg-settings-wrap { position: relative; display: inline-flex; align-items: center; }
+  .bg-settings-wrap > button.active { background: var(--left-border-color, #444444); }
+  .bg-panel {
+    position: absolute;
+    left: 0;
+    top: calc(100% + 6px);
+    z-index: 1002;
+    width: 230px;
+    background: var(--left-panel-bg, #111111);
+    border: 1px solid var(--left-border-color, #333333);
+    border-radius: 10px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+    box-shadow: 0 12px 28px rgba(0,0,0,0.55);
+  }
+  .bg-panel-row { display: flex; gap: 6px; }
+  .bg-file-btn {
+    flex: 1;
+    text-align: center;
+    background: var(--left-button-bg, #333333);
+    border: 1px solid var(--left-border-color, #444444);
+    border-radius: 7px;
+    color: var(--left-button-text, #ffffff);
+    padding: 6px 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .bg-clear-btn {
+    background: rgba(255,90,90,0.15);
+    border: 1px solid rgba(255,90,90,0.4);
+    border-radius: 7px;
+    color: #ff9b9b;
+    padding: 6px 8px;
+    font-size: 0.8rem;
+    cursor: pointer;
+  }
+  .bg-slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.78rem;
+    color: var(--left-text-color, #ffffff);
+  }
+  .bg-slider-row > span:first-child { width: 50px; flex-shrink: 0; }
+  .bg-slider-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--left-text-color, #ffffff); }
+  .bg-val { width: 38px; text-align: right; flex-shrink: 0; }
+  .bg-size-toggle { display: flex; gap: 4px; flex: 1; }
+  .bg-size-toggle button {
+    flex: 1;
+    background: var(--left-button-bg, #333333);
+    border: 1px solid var(--left-border-color, #444444);
+    border-radius: 6px;
+    color: var(--left-button-text, #ffffff);
+    padding: 4px;
+    font-size: 0.76rem;
+    cursor: pointer;
+  }
+  .bg-size-toggle button.active { background: rgba(139,183,255,0.25); border-color: rgba(139,183,255,0.5); color: #fff; }
+
   @media (max-width: 1024px) {
     .left-controls {
       display: none;
@@ -397,10 +486,19 @@ onMount(() => {
       box-shadow: 0 6px 14px rgba(0, 0, 0, 0.35);
     }
 
+    /* The bg panel needs real room for its sliders — widen the whole
+       menu column while it's open instead of squeezing the panel into
+       the narrow button-width column (or letting it get clipped by
+       this list's own overflow:auto escaping it). */
+    .left-controls.bg-panel-open {
+      width: min(260px, calc(100vw - 16px));
+    }
+
     .left-controls > button,
     .left-controls > input,
     .left-controls > .mode-switcher,
-    .left-controls > .add-block-menu {
+    .left-controls > .add-block-menu,
+    .left-controls > .bg-settings-wrap {
       width: 100%;
     }
 
@@ -467,6 +565,39 @@ onMount(() => {
       min-width: 120px;
     }
 
+    /* The bg panel expands inline in the mobile menu instead of floating
+       as a detached popover — it's part of the same scrollable list as
+       every other control here, so it should behave like one. */
+    .bg-settings-wrap {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+    }
+
+    .bg-settings-wrap > button {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .bg-settings-wrap > button::after {
+      content: '▾';
+      font-size: 0.7rem;
+      opacity: 0.7;
+      transition: transform 0.15s ease;
+    }
+
+    .bg-settings-wrap > button.active::after {
+      transform: rotate(180deg);
+    }
+
+    .bg-panel {
+      position: static;
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: 6px;
+    }
+
   }
 </style>
 
@@ -527,6 +658,7 @@ onMount(() => {
   <!-- Controls -->
   <div
     class="left-controls {showMobileMenu ? 'show' : ''}"
+    class:bg-panel-open={isSingleNoteMode && bgPanelOpen}
     bind:this={menuRef}
   >
     <div class="mode-switcher mobile-only">
@@ -636,6 +768,51 @@ onMount(() => {
         />
         <span class="simple-columns-value">{simpleNoteColumnCount}</span>
       </label>
+    {/if}
+
+    {#if isSingleNoteMode}
+      <div class="bg-settings-wrap">
+        <button
+          class:active={bgPanelOpen}
+          on:click={() => (bgPanelOpen = !bgPanelOpen)}
+        >
+          Bg
+        </button>
+        {#if bgPanelOpen}
+          <div class="bg-panel">
+            <div class="bg-panel-row">
+              <label class="bg-file-btn">
+                {bgImage ? 'Change image' : 'Choose image'}
+                <input type="file" accept="image/*" on:change={onBgFileChange} hidden />
+              </label>
+              {#if bgImage}
+                <button class="bg-clear-btn" on:click={clearBgImage}>Remove</button>
+              {/if}
+            </div>
+            {#if bgImage}
+              <label class="bg-slider-row">
+                <span>Opacity</span>
+                <input type="range" min="0" max="1" step="0.01" value={bgOpacity}
+                  on:input={(e) => setBgSetting({ bgOpacity: Number(e.target.value) })} />
+                <span class="bg-val">{Math.round(bgOpacity * 100)}%</span>
+              </label>
+              <label class="bg-slider-row">
+                <span>Blur</span>
+                <input type="range" min="0" max="20" step="1" value={bgBlur}
+                  on:input={(e) => setBgSetting({ bgBlur: Number(e.target.value) })} />
+                <span class="bg-val">{bgBlur}px</span>
+              </label>
+              <div class="bg-slider-row">
+                <span>Fit</span>
+                <div class="bg-size-toggle">
+                  <button class:active={bgSize === 'cover'} on:click={() => setBgSetting({ bgSize: 'cover' })}>Cover</button>
+                  <button class:active={bgSize === 'contain'} on:click={() => setBgSetting({ bgSize: 'contain' })}>Contain</button>
+                </div>
+              </div>
+            {/if}
+          </div>
+        {/if}
+      </div>
     {/if}
 
   </div>

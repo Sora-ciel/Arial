@@ -106,8 +106,22 @@
     openCtxMenu(event.clientX, event.clientY);
   }
 
+  // Touch swipe (prev/next) — tracked alongside the long-press-to-menu
+  // timer so a swipe cancels the long-press, and a completed swipe
+  // suppresses the tap-to-close click that follows it.
+  const SWIPE_THRESHOLD = 40;
+  let swipeStartX = 0;
+  let swipeStartY = 0;
+  let isSwipeGesture = false;
+
   function handleLbPointerDown(event) {
-    if (event.button !== 0) return;
+    if (event.pointerType === 'touch') {
+      swipeStartX = event.clientX;
+      swipeStartY = event.clientY;
+      isSwipeGesture = false;
+    } else if (event.button !== 0) {
+      return;
+    }
     clearTimeout(lbLongPressTimer);
     const cx = event.clientX, cy = event.clientY;
     lbLongPressTimer = setTimeout(() => {
@@ -116,12 +130,26 @@
     }, 550);
   }
 
-  function handleLbPointerMove() {
+  function handleLbPointerMove(event) {
     clearTimeout(lbLongPressTimer);
+    if (event.pointerType !== 'touch' || images.length < 2) return;
+    const dx = event.clientX - swipeStartX;
+    const dy = event.clientY - swipeStartY;
+    if (!isSwipeGesture && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+      isSwipeGesture = true;
+    }
   }
 
-  function handleLbPointerUp() {
+  function handleLbPointerUp(event) {
     clearTimeout(lbLongPressTimer);
+    if (event.pointerType === 'touch' && isSwipeGesture) {
+      const dx = event.clientX - swipeStartX;
+      if (Math.abs(dx) >= SWIPE_THRESHOLD) {
+        suppressNextClick = true;
+        if (dx < 0) next(); else prev();
+      }
+    }
+    isSwipeGesture = false;
   }
 
   $: ctxItems = [

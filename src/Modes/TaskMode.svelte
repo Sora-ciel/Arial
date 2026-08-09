@@ -1,5 +1,5 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
+  import { createEventDispatcher, onDestroy } from 'svelte';
   import BlockContextMenu from '../components/BlockContextMenu.svelte';
 
   export let blocks = [];
@@ -138,6 +138,105 @@
       addTask();
     }
   }
+
+  // ── Reordering — move one task at a time via a drag handle ───────────
+  let draggingTaskId = null;
+  let dragOverTaskId = null;
+  let dragOverPos = null;
+
+  // Desktop: drag via the dedicated handle.
+  function startDrag(e, taskId) {
+    e.preventDefault();
+    beginDrag(taskId);
+  }
+
+  // Mobile: press-and-hold a task to pick it up, then slide to reorder (the
+  // handle is small on touch). Moving before the hold completes is treated
+  // as a normal scroll and cancels the pickup.
+  let lpTimer = null;
+  let lpStartX = 0, lpStartY = 0;
+
+  function onItemPointerDown(e, taskId) {
+    if (e.pointerType === 'mouse') return;                 // desktop uses handle
+    if (e.target.closest('button, input, a')) return;      // don't hijack taps
+    lpStartX = e.clientX; lpStartY = e.clientY;
+    clearTimeout(lpTimer);
+    lpTimer = setTimeout(() => beginDrag(taskId), 420);
+    window.addEventListener('pointermove', onLongPressMaybeCancel);
+    window.addEventListener('pointerup', cancelLongPress);
+    window.addEventListener('pointercancel', cancelLongPress);
+  }
+
+  function onLongPressMaybeCancel(e) {
+    if (draggingTaskId) return; // already picked up
+    if (Math.abs(e.clientX - lpStartX) > 8 || Math.abs(e.clientY - lpStartY) > 8)
+      cancelLongPress();
+  }
+
+  function cancelLongPress() {
+    clearTimeout(lpTimer); lpTimer = null;
+    window.removeEventListener('pointermove', onLongPressMaybeCancel);
+    window.removeEventListener('pointerup', cancelLongPress);
+    window.removeEventListener('pointercancel', cancelLongPress);
+  }
+
+  function beginDrag(taskId) {
+    cancelLongPress();
+    draggingTaskId = taskId;
+    if (navigator.vibrate) { try { navigator.vibrate(15); } catch {} }
+    window.addEventListener('pointermove', onDragMove);
+    window.addEventListener('pointerup', endDrag);
+    window.addEventListener('pointercancel', endDrag);
+    // Block list scrolling while a task is held (touch).
+    document.addEventListener('touchmove', preventTouchScroll, { passive: false });
+  }
+
+  function preventTouchScroll(e) { e.preventDefault(); }
+
+  function removeDragListeners() {
+    window.removeEventListener('pointermove', onDragMove);
+    window.removeEventListener('pointerup', endDrag);
+    window.removeEventListener('pointercancel', endDrag);
+    document.removeEventListener('touchmove', preventTouchScroll);
+  }
+
+  function onDragMove(e) {
+    if (!draggingTaskId) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const itemEl = el?.closest('.task-item');
+    if (!itemEl) { dragOverTaskId = null; dragOverPos = null; return; }
+    const overId = itemEl.dataset.taskId;
+    if (!overId || overId === draggingTaskId) return;
+    const dragged = tasks.find(t => t.id === draggingTaskId);
+    const over = tasks.find(t => t.id === overId);
+    if (!dragged || !over || dragged.done !== over.done) { dragOverTaskId = null; dragOverPos = null; return; }
+    const rect = itemEl.getBoundingClientRect();
+    dragOverPos = (e.clientY - rect.top) < rect.height / 2 ? 'before' : 'after';
+    dragOverTaskId = overId;
+  }
+
+  function endDrag() {
+    removeDragListeners();
+    if (draggingTaskId && dragOverTaskId && draggingTaskId !== dragOverTaskId)
+      reorderTask(draggingTaskId, dragOverTaskId, dragOverPos);
+    draggingTaskId = null; dragOverTaskId = null; dragOverPos = null;
+  }
+
+  function reorderTask(draggedId, targetId, pos) {
+    const list = [...tasks];
+    const fromIdx = list.findIndex(t => t.id === draggedId);
+    if (fromIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    let toIdx = list.findIndex(t => t.id === targetId);
+    if (toIdx === -1) { list.push(moved); }
+    else { if (pos === 'after') toIdx++; list.splice(toIdx, 0, moved); }
+    updateTasks(list);
+  }
+
+  onDestroy(() => {
+    cancelLongPress();
+    removeDragListeners();
+  });
 
   function updateTitle(value, { pushToHistory = false } = {}) {
     if (!selectedTaskId) return;
@@ -355,7 +454,33 @@
     border-radius: 10px;
     background: var(--block-surface, rgba(255, 255, 255, 0.06));
     border: var(--block-border-width, 1px) solid var(--block-border-color, transparent);
+    transition: box-shadow 0.1s, opacity 0.1s;
+    touch-action: pan-y;
+    -webkit-touch-callout: none;
   }
+
+  .task-item.dragging {
+    opacity: 0.5;
+    position: relative;
+    z-index: 2;
+  }
+  .task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--block-header-text, #f5f5f5); }
+  .task-item.drag-over-after  { box-shadow: inset 0 -2px 0 0 var(--block-header-text, #f5f5f5); }
+
+  .task-item button.drag-handle {
+    flex-shrink: 0;
+    width: 20px;
+    min-height: 32px;
+    padding: 0;
+    cursor: grab;
+    touch-action: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--block-header-text, inherit);
+    opacity: 0.35;
+  }
+  .task-item button.drag-handle:active { cursor: grabbing; opacity: 0.7; }
 
   .task-item label {
     display: flex;
@@ -436,7 +561,25 @@
           {#if todoTasks.length}
             <ul class="task-list">
               {#each todoTasks as task}
-                <li class="task-item">
+                <li
+                  class="task-item"
+                  class:dragging={draggingTaskId === task.id}
+                  class:drag-over-before={dragOverTaskId === task.id && dragOverPos === 'before'}
+                  class:drag-over-after={dragOverTaskId === task.id && dragOverPos === 'after'}
+                  data-task-id={task.id}
+                  on:pointerdown={(e) => onItemPointerDown(e, task.id)}
+                >
+                  <button
+                    class="drag-handle"
+                    aria-label="Drag to reorder"
+                    on:pointerdown={(e) => startDrag(e, task.id)}
+                  >
+                    <svg viewBox="0 0 10 16" width="9" height="14" fill="currentColor">
+                      <circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/>
+                      <circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/>
+                      <circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/>
+                    </svg>
+                  </button>
                   <label>
                     <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <button
@@ -475,7 +618,25 @@
           {#if doneTasks.length}
             <ul class="task-list">
               {#each doneTasks as task}
-                <li class="task-item">
+                <li
+                  class="task-item"
+                  class:dragging={draggingTaskId === task.id}
+                  class:drag-over-before={dragOverTaskId === task.id && dragOverPos === 'before'}
+                  class:drag-over-after={dragOverTaskId === task.id && dragOverPos === 'after'}
+                  data-task-id={task.id}
+                  on:pointerdown={(e) => onItemPointerDown(e, task.id)}
+                >
+                  <button
+                    class="drag-handle"
+                    aria-label="Drag to reorder"
+                    on:pointerdown={(e) => startDrag(e, task.id)}
+                  >
+                    <svg viewBox="0 0 10 16" width="9" height="14" fill="currentColor">
+                      <circle cx="2" cy="2" r="1.4"/><circle cx="8" cy="2" r="1.4"/>
+                      <circle cx="2" cy="8" r="1.4"/><circle cx="8" cy="8" r="1.4"/>
+                      <circle cx="2" cy="14" r="1.4"/><circle cx="8" cy="14" r="1.4"/>
+                    </svg>
+                  </button>
                   <label>
                     <!-- svelte-ignore a11y-click-events-have-key-events -->
                     <button

@@ -62,6 +62,11 @@ const REQUIRED_FIREBASE_KEYS = [
 const FIREBASE_SDK_VERSION = '11.7.0';
 const ATTACHMENT_FIELDS = ['src', 'content', 'trackUrl'];
 
+// Bump when the shape of a synced file payload changes in a way older
+// instances can't read as-is. The backend migrates old payloads forward on
+// write, so older/newer instances don't need to know about each other.
+export const SYNC_SCHEMA_VERSION = 1;
+
 let firebaseModulesPromise;
 let firebaseContextPromise;
 
@@ -228,6 +233,28 @@ export async function loadRemoteFile(fileId) {
   return snapshot.exists() ? snapshot.val() : null;
 }
 
+// Lets old and new instances share the same sync data without either one
+// needing upgrade-aware code baked in: the backend migrates payloads to
+// `latest` on write, and only refuses to sync if this client is older than
+// `minSupported` (a breaking change the backend can't shim around).
+export async function checkSyncCompatibility() {
+  if (!isFirebaseConfigured()) return { compatible: true };
+  const ctx = await getFirebaseContext();
+  if (!ctx) return { compatible: true };
+
+  const snapshot = await ctx.dbApi.get(
+    ctx.dbApi.ref(ctx.db, `sync/${normalizeNamespace()}/meta/schemaVersion`)
+  );
+  const meta = snapshot.exists() ? snapshot.val() : null;
+  const minSupported = Number(meta?.minSupported || 0);
+
+  return {
+    compatible: SYNC_SCHEMA_VERSION >= minSupported,
+    latest: Number(meta?.latest || SYNC_SCHEMA_VERSION),
+    minSupported
+  };
+}
+
 export async function loadRemoteIndex() {
   if (!isFirebaseConfigured()) return {};
   const ctx = await getFirebaseContext();
@@ -238,6 +265,34 @@ export async function loadRemoteIndex() {
   );
 
   return snapshot.exists() ? snapshot.val() : {};
+}
+
+// Push-based replacement for polling loadRemoteIndex() on a timer: RTDB only
+// sends bytes when the index actually changes, instead of a full get() every tick.
+export function subscribeRemoteIndex(callback) {
+  let detach = () => {};
+  let cancelled = false;
+
+  getFirebaseContext()
+    .then(ctx => {
+      if (cancelled || !ctx) return;
+      const user = ctx.auth.currentUser;
+      if (!user) return;
+
+      const indexRef = ctx.dbApi.ref(ctx.db, getUserPath(user.uid, 'index'));
+      const unsubscribe = ctx.dbApi.onValue(
+        indexRef,
+        snapshot => callback(snapshot.exists() ? snapshot.val() : {}),
+        error => console.error('Remote index subscription failed:', error)
+      );
+      detach = unsubscribe;
+    })
+    .catch(error => console.error('Failed to start remote index subscription:', error));
+
+  return () => {
+    cancelled = true;
+    detach();
+  };
 }
 
 export async function saveRemoteFile(fileId, payload, options = {}) {
@@ -254,7 +309,7 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
 
   await ctx.dbApi.set(
     ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`)),
-    { ...payloadWithRemoteAttachments, updatedAt, modifiedAt, lastSyncedAt }
+    { ...payloadWithRemoteAttachments, updatedAt, modifiedAt, lastSyncedAt, schemaVersion: SYNC_SCHEMA_VERSION }
   );
 
   await ctx.dbApi.set(

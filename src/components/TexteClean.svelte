@@ -1,5 +1,6 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
+  import { createEventDispatcher } from 'svelte';
+  import TipTapEditor from './TipTapEditor.svelte';
   import ColorField from './ColorField.svelte';
 
   export let id;
@@ -19,6 +20,7 @@
   let bgColor = initialBgColor;
   let textColor = initialTextColor;
   let content = initialContent;
+  let scrollTop = initialScrollTop;
 
   let dragging = false, resizing = false;
   let offset = { x: 0, y: 0 }, resizeStart = {};
@@ -36,17 +38,9 @@
   let hasResized = false;
   let showSettings = false;
 
-  let editableDiv;
-
-  onMount(() => {
-    if (editableDiv) editableDiv.innerText = content;
-  });
-
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
-    content = editableDiv?.innerText ?? content;
-
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content, scrollTop: editableDiv?.scrollTop ?? 0 };
+    const detail = { id, position, size, bgColor, textColor, content, scrollTop };
 
     if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
     if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
@@ -192,19 +186,9 @@
     handleWrapperClick(event);
   }
 
-  function applySavedScroll() {
-    if (!editableDiv) return;
-    const nextScrollTop = Number(initialScrollTop ?? 0);
-    editableDiv.scrollTop = Number.isFinite(nextScrollTop) ? Math.max(0, nextScrollTop) : 0;
-  }
-
-  function handleEditableScroll() {
-    if (!editableDiv) return;
+  function handleEditableScroll(e) {
+    scrollTop = e.detail;
     sendUpdate(['scrollTop'], { pushToHistory: false });
-  }
-
-  $: if (editableDiv) {
-    applySavedScroll();
   }
 </script>
 
@@ -245,17 +229,16 @@
     display: flex;
     gap: 4px;
   }
-  .editable {
-    flex: 1;
-    padding: 8px;
-    outline: none;
+  :global(.note .tiptap-wrap) {
     background: transparent;
-    color: inherit;
+    color: var(--text);
     font-size: 1.1rem;
     font-weight: 500;
-    overflow-y: auto;
-    user-select: text;
     font-family: var(--block-body-font, inherit);
+  }
+  :global(.note .tiptap-inner) {
+    color: var(--text);
+    padding: 8px;
   }
   .resize-handle {
     position: absolute;
@@ -352,16 +335,14 @@
     </div>
   </div>
 
-  <div
-    contenteditable="true"
-    bind:this={editableDiv}
-    class="editable"
-    spellcheck="false"
-    on:input={() => sendUpdate(['content'], { pushToHistory: false })}
+  <TipTapEditor
+    {content}
+    {initialScrollTop}
+    placeholder=""
+    on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
     on:scroll={handleEditableScroll}
     on:focus={ensureFocus}
-    data-focus-guard
-  ></div>
+  />
 
   <div
     class="resize-handle"

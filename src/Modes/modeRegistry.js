@@ -16,7 +16,8 @@ export const MODE_DEFINITIONS = {
     id: 'single',
     label: 'Single Note Mode',
     addBlockTypes: ['text', 'cleantext'],
-    showRightControls: true
+    showRightControls: true,
+    settings: { singleBackground: true }
   },
   habit: {
     id: 'habit',

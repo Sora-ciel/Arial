@@ -18,6 +18,7 @@
   export let leftControlColors = {};
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
+  export let singleNoteSettings = {};
 
   let width = 0;
 
@@ -98,11 +99,13 @@
       {focusedBlockId}
       bind:canvasRef
       {canvasColors}
+      {singleNoteSettings}
       on:touchstart={onTouchStart}
       on:touchmove={onTouchMove}
       on:touchend={onTouchEnd}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:modeSettingChange
     />
 {/if}

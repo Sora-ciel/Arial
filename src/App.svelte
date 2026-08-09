@@ -12,7 +12,9 @@
     signOutUser,
     loadRemoteFile,
     loadRemoteIndex,
-    saveRemoteFile
+    saveRemoteFile,
+    subscribeRemoteIndex,
+    checkSyncCompatibility
   } from './firebaseClient.js';
   import {
     CONTROL_COLOR_DEFAULTS,
@@ -24,6 +26,8 @@
   } from './utils/themeDefaults.js';
 
   import { MODE_DEFINITIONS, MODE_ORDER, getModeDefinition } from "./Modes/modeRegistry.js";
+  import { getCanvasViewport } from './canvasState.js';
+  import { getOpeningViewportBox } from './utils/canvasFit.js';
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -32,6 +36,15 @@
   const BIRTHDAY_MODE_PASSWORD = 'Birthday24H';
   const BIRTHDAY_MODE_DURATION_MS = 24 * 60 * 60 * 1000;
   const MOBILE_BREAKPOINT = 1024;
+
+  const MEDIA_HEADER_HEIGHT = 30;
+  const MEDIA_DEFAULT_WIDTH = 300;
+  const MEDIA_DEFAULT_HEIGHT = 200;
+  const MEDIA_FALLBACK_MAX_WIDTH = 400;
+  const MEDIA_FALLBACK_MAX_HEIGHT = 300;
+  // Margin below 1.0 so a newly placed media block reads as "fit to view"
+  // without touching the edges of the screen.
+  const MEDIA_FIT_MARGIN = 0.94;
 
   function getDefaultModeForViewport() {
     if (typeof window === 'undefined') return 'default';
@@ -156,17 +169,38 @@
   const DEFAULT_MODE_SETTINGS = {
     simple: {
       columnCount: 2
+    },
+    single: {
+      backgroundImage: '',
+      backgroundImageMobile: '',
+      bgOpacity: 0.35,
+      bgBlur: 0,
+      bgSize: 'cover'
     }
   };
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
+    const incomingSingle = settings?.single || {};
+    const clamp01 = (n, fallback) => {
+      const v = Number(n);
+      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
+    };
     return {
       ...DEFAULT_MODE_SETTINGS,
       simple: {
         ...DEFAULT_MODE_SETTINGS.simple,
         ...incomingSimple,
         columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount)
+      },
+      single: {
+        ...DEFAULT_MODE_SETTINGS.single,
+        ...incomingSingle,
+        backgroundImage: typeof incomingSingle.backgroundImage === 'string' ? incomingSingle.backgroundImage : '',
+        backgroundImageMobile: typeof incomingSingle.backgroundImageMobile === 'string' ? incomingSingle.backgroundImageMobile : '',
+        bgOpacity: clamp01(incomingSingle.bgOpacity, DEFAULT_MODE_SETTINGS.single.bgOpacity),
+        bgBlur: Math.max(0, Number(incomingSingle.bgBlur) || 0),
+        bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover'
       }
     };
   }
@@ -825,6 +859,7 @@
   let mode = getDefaultModeForViewport();
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
+  $: singleNoteSettings = modeSettings.single;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
   let blocks = [];
@@ -932,8 +967,8 @@
   let cloudSyncGateInProgress = false;
   let cloudSyncMemoryByFile = loadCloudSyncMemory();
   let autoSyncEnabled = loadAutoSyncEnabled();
-  let autoSyncDownloadIntervalId = null;
   let autoSyncUploadIntervalId = null;
+  let stopRemoteIndexWatch = () => {};
   let autoSyncDirty = false;
   let lastAutoSyncFingerprint = '';
   let lastAutoSyncAttachmentFingerprint = '';
@@ -1166,6 +1201,104 @@
     }
   }
 
+  // Places a new block without overlapping existing ones. Anchored to the
+  // viewport the user is actually looking at (when on the canvas), with a
+  // fine-grained sweep that finds real gaps instead of jumping to wherever
+  // some unrelated existing block happens to sit.
+  function findFreePosition(existingBlocks, width, height) {
+    const PADDING = 4;
+    const SWEEP_STEP = 28;
+    const vp = mode === 'default' ? getCanvasViewport() : null;
+
+    function overlaps(x, y) {
+      return existingBlocks.some(b => {
+        const bx = b.position?.x ?? 0;
+        const by = b.position?.y ?? 0;
+        const bw = b.size?.width ?? 420;
+        const bh = b.size?.height ?? 280;
+        return !(x + width + PADDING <= bx || bx + bw + PADDING <= x ||
+                 y + height + PADDING <= by || by + bh + PADDING <= y);
+      });
+    }
+
+    if (!vp) {
+      // No live canvas viewport (different mode, or canvas not mounted yet):
+      // stack below the lowest existing block instead of guessing blindly.
+      const maxY = Math.max(0, ...existingBlocks.map(b => (b.position?.y ?? 0) + (b.size?.height ?? 280)));
+      return { x: 100, y: maxY + PADDING };
+    }
+
+    const originX = Math.max(0, vp.canvasX + PADDING);
+    const originY = Math.max(0, vp.canvasY + PADDING);
+    const sweepMaxX = vp.canvasX + vp.canvasVisibleW - width;
+    // Search a few screens below the fold too, not just the exact visible
+    // area — so a burst of additions (several pastes/drops in a row) tiles
+    // into a grid near the viewport instead of falling straight to the
+    // single-column "stack below" fallback the moment the visible area fills.
+    const sweepMaxY = vp.canvasY + vp.canvasVisibleH * 3 - height;
+
+    if (sweepMaxX >= originX) {
+      for (let y = originY; y <= Math.max(originY, sweepMaxY); y += SWEEP_STEP) {
+        for (let x = originX; x <= sweepMaxX; x += SWEEP_STEP) {
+          if (!overlaps(x, y)) return { x, y };
+        }
+      }
+    }
+
+    // Nothing free inside the current view — extend just past the bottom of
+    // what's visible (only counting blocks that actually overlap the
+    // viewport horizontally) so the new block needs at most a small scroll
+    // to reach, instead of landing next to some block far away on the canvas.
+    const visibleBottom = Math.max(
+      vp.canvasY + vp.canvasVisibleH,
+      ...existingBlocks
+        .filter(b => {
+          const bx = b.position?.x ?? 0;
+          const bw = b.size?.width ?? 420;
+          return bx < vp.canvasX + vp.canvasVisibleW && bx + bw > vp.canvasX;
+        })
+        .map(b => (b.position?.y ?? 0) + (b.size?.height ?? 280))
+    );
+    return { x: originX, y: visibleBottom + PADDING };
+  }
+
+  function getFittedMediaBlockSize(naturalWidth, naturalHeight) {
+    if (!naturalWidth || !naturalHeight) {
+      return { width: MEDIA_DEFAULT_WIDTH, height: MEDIA_DEFAULT_HEIGHT };
+    }
+
+    const box = getOpeningViewportBox();
+    const maxW = Math.max(80, (box.width || MEDIA_FALLBACK_MAX_WIDTH) * MEDIA_FIT_MARGIN);
+    const maxH = Math.max(80, (box.height || MEDIA_FALLBACK_MAX_HEIGHT) * MEDIA_FIT_MARGIN) - MEDIA_HEADER_HEIGHT;
+
+    const ratio = naturalWidth / naturalHeight;
+    let targetHeight = maxH;
+    let targetWidth = targetHeight * ratio;
+    if (targetWidth > maxW) {
+      targetWidth = maxW;
+      targetHeight = targetWidth / ratio;
+    }
+
+    return { width: targetWidth, height: targetHeight + MEDIA_HEADER_HEIGHT };
+  }
+
+  function loadMediaNaturalSize(src, isVideo) {
+    return new Promise((resolve) => {
+      if (isVideo) {
+        const v = document.createElement('video');
+        v.preload = 'metadata';
+        v.onloadedmetadata = () => resolve({ width: v.videoWidth, height: v.videoHeight });
+        v.onerror = () => resolve({ width: 0, height: 0 });
+        v.src = src;
+      } else {
+        const img = new Image();
+        img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        img.onerror = () => resolve({ width: 0, height: 0 });
+        img.src = src;
+      }
+    });
+  }
+
   // --- Block operations ---
   function addBlock(type = "text") {
     if (mode === "single") {
@@ -1174,14 +1307,16 @@
       }
       type = "cleantext";
     }
+    const blockW = 300, blockH = 200;
+    const position = mode === 'default' ? findFreePosition(blocks, blockW, blockH) : { x: 100, y: 100 };
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
       content: "",
       src: "",
       ...(type === "task" ? { tasks: [], title: "Task List" } : {}),
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 200 },
+      position,
+      size: { width: blockW, height: blockH },
       bgColor: "#000000",
       textColor: "#ffffff",
       _version: 0
@@ -1322,13 +1457,16 @@
     const src = await readFileAsDataUrl(file);
     if (typeof src !== 'string') return;
 
+    const isVideo = file.type.startsWith('video/');
+    const natural = await loadMediaNaturalSize(src, isVideo);
+    const { width: imgW, height: imgH } = getFittedMediaBlockSize(natural.width, natural.height);
     const mediaBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type: 'image',
       content: '',
       src,
-      position: { x: 100, y: 100 },
-      size: { width: 300, height: 200 },
+      position: mode === 'default' ? findFreePosition(blocks, imgW, imgH) : { x: 100, y: 100 },
+      size: { width: imgW, height: imgH },
       bgColor: '#000000',
       textColor: '#ffffff',
       _version: 0
@@ -1343,18 +1481,77 @@
   async function handleModeDrop(event) {
     event.preventDefault();
     const files = Array.from(event.dataTransfer?.files || []);
-    const mediaFile = files.find(file => file.type?.startsWith('image/') || file.type?.startsWith('video/'));
-    if (!mediaFile) return;
-
-    try {
-      await addImageBlockFromFile(mediaFile);
-    } catch (error) {
-      console.error('Failed to import dropped media:', error);
+    const mediaFiles = files.filter(file => file.type?.startsWith('image/') || file.type?.startsWith('video/'));
+    for (const file of mediaFiles) {
+      try {
+        await addImageBlockFromFile(file);
+      } catch (error) {
+        console.error('Failed to import dropped media:', error);
+      }
     }
   }
 
   function handleModeDragOver(event) {
     event.preventDefault();
+  }
+
+  async function handlePaste(event) {
+    // Don't intercept paste inside text fields
+    const t = event.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+
+    const items = Array.from(event.clipboardData?.items || []);
+    const imageItems = items.filter(i => i.kind === 'file' && i.type.startsWith('image/'));
+    const textItem   = items.find(i  => i.kind === 'string' && i.type === 'text/plain');
+
+    let handled = false;
+    if (imageItems.length) {
+      event.preventDefault();
+      handled = true;
+      for (const item of imageItems) {
+        const file = item.getAsFile();
+        if (file) {
+          try { await addImageBlockFromFile(file); }
+          catch (e) { console.error('Paste image failed:', e); }
+        }
+      }
+    }
+    if (textItem && !handled) {
+      textItem.getAsString(async (text) => {
+        const trimmed = text?.trim();
+        if (!trimmed) return;
+        event.preventDefault();
+        // Split on blank lines to create one block per distinct chunk
+        const chunks = trimmed.split(/\n\s*\n/).map(c => c.trim()).filter(Boolean);
+        try {
+          if (chunks.length <= 1) {
+            await addTextBlockFromContent(trimmed);
+          } else {
+            for (const chunk of chunks) {
+              await addTextBlockFromContent(chunk);
+            }
+          }
+        } catch (e) { console.error('Paste text failed:', e); }
+      });
+    }
+  }
+
+  async function addTextBlockFromContent(content) {
+    const txtW = 300, txtH = 200;
+    const newBlock = applyHistoryTriggers({
+      id: crypto.randomUUID(),
+      type: 'cleantext',
+      content,
+      src: '',
+      position: mode === 'default' ? findFreePosition(blocks, txtW, txtH) : { x: 100, y: 100 },
+      size: { width: txtW, height: txtH },
+      bgColor: '#000000',
+      textColor: '#ffffff',
+      _version: 0
+    });
+    blocks = [...blocks, newBlock];
+    modeOrders = ensureModeOrders(blocks, modeOrders);
+    await pushHistory(blocks, modeOrders);
   }
 
   async function createNewFile() {
@@ -1380,7 +1577,8 @@
     persistLastSaveName(trimmedName);
     blocks = [];
     focusedBlockId = null;
-    modeOrders = ensureModeOrders(blocks, modeOrders);
+    modeOrders = ensureModeOrders(blocks, {});
+    modeSettings = normalizeModeSettings();
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
@@ -1593,7 +1791,7 @@
   async function pullRemoteUpdatesIfNeeded(options = {}) {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return false;
 
-    const remoteIndex = await loadRemoteIndex();
+    const remoteIndex = options.remoteIndex || await loadRemoteIndex();
     const remoteEntries = Object.entries(remoteIndex || {});
     const remoteFingerprint = remoteEntries
       .map(([fileName, meta]) => `${fileName}:${Number(meta?.modifiedAt || meta?.updatedAt || 0)}`)
@@ -1630,10 +1828,20 @@
     return downloadedAny;
   }
 
-  async function autoSyncDownloadTick() {
-    if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
-    await pullRemoteUpdatesIfNeeded();
+  function refreshRemoteIndexWatch() {
+    stopRemoteIndexWatch();
+    stopRemoteIndexWatch = () => {};
+
+    if (!autoSyncEnabled || !firebaseReady || !authUser) return;
+
+    stopRemoteIndexWatch = subscribeRemoteIndex(remoteIndex => {
+      pullRemoteUpdatesIfNeeded({ remoteIndex }).catch(error => {
+        console.error('Auto sync download failed:', error);
+      });
+    });
   }
+
+  $: autoSyncEnabled, firebaseReady, authUser, refreshRemoteIndexWatch();
 
   async function autoSyncUploadTick(options = {}) {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
@@ -1828,17 +2036,19 @@
   }
 
   async function handleModeSettingChange(event) {
-    const nextColumnCount = Math.max(
-      1,
-      Number.parseInt(event.detail?.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount
-    );
-    const nextModeSettings = normalizeModeSettings({
-      ...modeSettings,
-      simple: {
-        ...modeSettings.simple,
-        columnCount: nextColumnCount
-      }
-    });
+    const detail = event.detail || {};
+    let patch = { ...modeSettings };
+
+    if (detail.columnCount !== undefined) {
+      const nextColumnCount = Math.max(1, Number.parseInt(detail.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount);
+      patch = { ...patch, simple: { ...patch.simple, columnCount: nextColumnCount } };
+    }
+
+    if (detail.single && typeof detail.single === 'object') {
+      patch = { ...patch, single: { ...patch.single, ...detail.single } };
+    }
+
+    const nextModeSettings = normalizeModeSettings(patch);
     modeSettings = nextModeSettings;
     await persistAutosave(blocks, modeOrders, nextModeSettings, { immediate: true });
   }
@@ -1945,12 +2155,20 @@
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
+    window.addEventListener("paste", handlePaste);
     adjustCanvasPadding();
 
     if (firebaseReady) {
       stopAuthListener = onAuthStateChange(user => {
         authUser = user;
       });
+      checkSyncCompatibility()
+        .then(result => {
+          if (!result.compatible) {
+            appAlert('This version of the app is too old to sync with your account. Please update to continue syncing.');
+          }
+        })
+        .catch(() => {});
     }
 
     savedList = await listSavedBlocks();
@@ -1998,12 +2216,16 @@
           const initialOrders = !Array.isArray(initialData)
             ? initialData?.modeOrders
             : {};
+          const initialModeSettings = !Array.isArray(initialData)
+            ? initialData?.modeSettings
+            : null;
           currentSaveName = guardedSave;
           blocks = initialBlocks.map(b => ({
             ...applyHistoryTriggers(b),
             _version: 0
           }));
           modeOrders = ensureModeOrders(blocks, initialOrders);
+          modeSettings = normalizeModeSettings(initialModeSettings);
           clearBootLoadGuard();
         } catch (error) {
           console.error('Failed to load last opened save:', error);
@@ -2029,21 +2251,11 @@
       persistLastSaveName(currentSaveName);
     }
 
-    autoSyncDownloadIntervalId = window.setInterval(() => {
-      autoSyncDownloadTick().catch(error => {
-        console.error('Auto sync download tick failed:', error);
-      });
-    }, 1_000);
-
     autoSyncUploadIntervalId = window.setInterval(() => {
       autoSyncUploadTick().catch(error => {
         console.error('Auto sync upload tick failed:', error);
       });
     }, 10_000);
-
-    autoSyncDownloadTick().catch(error => {
-      console.error('Initial auto sync download tick failed:', error);
-    });
 
     autoSyncUploadTick().catch(error => {
       console.error('Initial auto sync upload tick failed:', error);
@@ -2053,13 +2265,11 @@
   onDestroy(() => {
     window.removeEventListener("resize", handleWindowResize);
     window.removeEventListener("keydown", handleUndoRedoShortcut);
+    window.removeEventListener("paste", handlePaste);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
-    if (autoSyncDownloadIntervalId !== null) {
-      window.clearInterval(autoSyncDownloadIntervalId);
-      autoSyncDownloadIntervalId = null;
-    }
+    stopRemoteIndexWatch();
     if (autoSyncUploadIntervalId !== null) {
       window.clearInterval(autoSyncUploadIntervalId);
       autoSyncUploadIntervalId = null;
@@ -2315,6 +2525,7 @@
       bind:currentSaveName
       {mode}
       {simpleNoteColumnCount}
+      {singleNoteSettings}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
@@ -2387,6 +2598,7 @@
       {mode}
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
+      {singleNoteSettings}
       {groupedBlocks}
       {focusedBlockId}
       modeLabels={MODE_LABELS}
