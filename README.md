@@ -4,11 +4,11 @@ A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebas
 
 ## Download
 
-- 📱 APK: [Download APK](https://github.com/Sora-ciel/Arial/releases/download/v0.8.32/Arial_0.8.32.apk)
-- 💻 Windows: [Download exe](https://github.com/Sora-ciel/Arial/releases/download/v0.8.32/Arial_0.8.32_x64-setup.exe) or [Download msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.32/Arial_0.8.32_x64_en-US.msi)
+- 📱 APK: [Download APK](https://github.com/Sora-ciel/Arial/releases/download/v0.8.33/Arial_0.8.33.apk)
+- 💻 Windows: [Download exe](https://github.com/Sora-ciel/Arial/releases/download/v0.8.33/Arial_0.8.33_x64-setup.exe) or [Download msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.33/Arial_0.8.33_x64_en-US.msi)
 
   
-[![ALL Latest releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest/tag/v0.8.32/)
+[![ALL Latest releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest/tag/v0.8.33/)
 
 ## Local development
 
