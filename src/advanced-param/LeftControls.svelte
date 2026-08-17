@@ -130,8 +130,9 @@
   let bgPanelOpen = false;
   $: bgImageKey = compactUI ? 'backgroundImageMobile' : 'backgroundImage';
   $: bgImage = singleNoteSettings?.[bgImageKey] || '';
-  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 0.35;
+  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 100;
   $: bgBlur = singleNoteSettings?.bgBlur ?? 0;
+  $: bgLuminosity = singleNoteSettings?.bgLuminosity ?? 100;
   $: bgSize = singleNoteSettings?.bgSize || 'cover';
 
   function setBgSetting(patch) {
@@ -409,10 +410,12 @@ onMount(() => {
   .bg-settings-wrap > button.active { background: var(--left-border-color, #444444); }
   .bg-panel {
     position: absolute;
-    left: 0;
+    /* The Bg button sits at the end of the toolbar, so open leftwards —
+       anchoring left ran the panel off the right edge of the window. */
+    right: 0;
     top: calc(100% + 6px);
     z-index: 1002;
-    width: 230px;
+    width: 260px;
     background: var(--left-panel-bg, #111111);
     border: 1px solid var(--left-border-color, #333333);
     border-radius: 10px;
@@ -450,9 +453,88 @@ onMount(() => {
     font-size: 0.78rem;
     color: var(--left-text-color, #ffffff);
   }
-  .bg-slider-row > span:first-child { width: 50px; flex-shrink: 0; }
-  .bg-slider-row input[type="range"] { flex: 1; min-width: 0; accent-color: var(--left-text-color, #ffffff); }
-  .bg-val { width: 38px; text-align: right; flex-shrink: 0; }
+  .bg-slider-row > span:first-child { width: 62px; flex-shrink: 0; }
+
+  /* The native thumb can only travel between half-a-thumb from each end, so a
+     full-width track always leaves a gap the handle can never reach. Draw the
+     track ourselves inset by that same half-thumb (--r) and the handle lines
+     up with both ends exactly. */
+  .bg-slider {
+    /* --r is half the thumb; the thumb is exactly as tall as the input and its
+       track, so it centres on the drawn bar without any nudging. */
+    --r: 8px;
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    height: calc(var(--r) * 2);
+    display: block;
+  }
+  .bg-slider::before,
+  .bg-slider::after {
+    content: '';
+    position: absolute;
+    left: var(--r);
+    right: var(--r);
+    top: 50%;
+    height: 4px;
+    margin-top: -2px;
+    border-radius: 999px;
+    pointer-events: none;
+  }
+  .bg-slider::before { background: color-mix(in srgb, var(--left-text-color, #ffffff) 22%, transparent); }
+  .bg-slider::after {
+    right: auto;
+    width: calc((100% - var(--r) * 2) * var(--fill, 0%) / 100%);
+    background: var(--left-text-color, #ffffff);
+  }
+
+  .bg-slider input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    display: block;
+    position: relative;
+    z-index: 1;
+    width: 100%;
+    height: calc(var(--r) * 2);
+    margin: 0;
+    padding: 0;
+    /* the UA border would add 1px a side and shove the thumb off the bar */
+    border: none;
+    box-sizing: border-box;
+    background: transparent;
+    cursor: pointer;
+  }
+  .bg-slider input[type="range"]::-webkit-slider-runnable-track {
+    height: calc(var(--r) * 2);
+    background: transparent;
+    border: none;
+  }
+  .bg-slider input[type="range"]::-moz-range-track {
+    height: calc(var(--r) * 2);
+    background: transparent;
+    border: none;
+  }
+  .bg-slider input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: calc(var(--r) * 2);
+    height: calc(var(--r) * 2);
+    margin-top: 0; /* thumb == track height, so no offset is needed */
+    border-radius: 50%;
+    background: var(--left-text-color, #ffffff);
+    border: none;
+    cursor: pointer;
+  }
+  .bg-slider input[type="range"]::-moz-range-thumb {
+    width: calc(var(--r) * 2);
+    height: calc(var(--r) * 2);
+    border-radius: 50%;
+    background: var(--left-text-color, #ffffff);
+    border: none;
+    cursor: pointer;
+  }
+
+  .bg-val { width: 42px; text-align: right; flex-shrink: 0; font-variant-numeric: tabular-nums; opacity: 0.85; }
   .bg-size-toggle { display: flex; gap: 4px; flex: 1; }
   .bg-size-toggle button {
     flex: 1;
@@ -467,6 +549,14 @@ onMount(() => {
   .bg-size-toggle button.active { background: rgba(139,183,255,0.25); border-color: rgba(139,183,255,0.5); color: #fff; }
 
   @media (max-width: 1024px) {
+    /* Phone controls don't need desktop's 42px hit targets — trimming them is
+       what lets the header bar itself get short. */
+    .left-controls-wrapper button {
+      min-height: 30px;
+      padding: 4px 9px;
+      font-size: 0.82rem;
+    }
+
     .left-controls {
       display: none;
       flex-direction: column;
@@ -792,15 +882,27 @@ onMount(() => {
             {#if bgImage}
               <label class="bg-slider-row">
                 <span>Opacity</span>
-                <input type="range" min="0" max="1" step="0.01" value={bgOpacity}
-                  on:input={(e) => setBgSetting({ bgOpacity: Number(e.target.value) })} />
-                <span class="bg-val">{Math.round(bgOpacity * 100)}%</span>
+                <span class="bg-slider" style="--fill: {bgOpacity}%">
+                  <input type="range" min="0" max="100" step="1" value={bgOpacity}
+                    on:input={(e) => setBgSetting({ bgOpacity: Number(e.target.value) })} />
+                </span>
+                <span class="bg-val">{Math.round(bgOpacity)}%</span>
               </label>
               <label class="bg-slider-row">
                 <span>Blur</span>
-                <input type="range" min="0" max="20" step="1" value={bgBlur}
-                  on:input={(e) => setBgSetting({ bgBlur: Number(e.target.value) })} />
+                <span class="bg-slider" style="--fill: {(bgBlur / 20) * 100}%">
+                  <input type="range" min="0" max="20" step="1" value={bgBlur}
+                    on:input={(e) => setBgSetting({ bgBlur: Number(e.target.value) })} />
+                </span>
                 <span class="bg-val">{bgBlur}px</span>
+              </label>
+              <label class="bg-slider-row">
+                <span>Luminosity</span>
+                <span class="bg-slider" style="--fill: {(bgLuminosity / 200) * 100}%">
+                  <input type="range" min="0" max="200" step="1" value={bgLuminosity}
+                    on:input={(e) => setBgSetting({ bgLuminosity: Number(e.target.value) })} />
+                </span>
+                <span class="bg-val">{Math.round(bgLuminosity)}%</span>
               </label>
               <div class="bg-slider-row">
                 <span>Fit</span>

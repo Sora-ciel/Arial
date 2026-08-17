@@ -1,5 +1,6 @@
 <script>
   import { createEventDispatcher } from 'svelte';
+  import { isPrimaryPointer } from '../utils/pointer.js';
   import ColorField from './ColorField.svelte';
 
   export let id;
@@ -58,6 +59,8 @@
 
   // Dragging
   function onDragStart(e) {
+    // Right-click is canvas pan, not block drag.
+    if (!isPrimaryPointer(e)) return;
     if (dragging) return;
     ensureFocus();
     dragging = true;

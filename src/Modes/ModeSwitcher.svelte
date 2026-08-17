@@ -19,6 +19,7 @@
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
   export let singleNoteSettings = {};
+  export let taskAddDirection = 'above';
 
   let width = 0;
 
@@ -34,6 +35,10 @@
 
   function focusToggleHandler(event) {
     dispatch('focusToggle', event.detail);
+  }
+
+  function swapBlocksHandler(event) {
+    dispatch('swapBlocks', event.detail);
   }
 
   function updateWidth() {
@@ -77,6 +82,7 @@
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:swapBlocks={swapBlocksHandler}
     />
 
   {:else if mode === 'habit'}
@@ -87,9 +93,11 @@
       {focusedBlockId}
       bind:canvasRef
       {canvasColors}
+      addDirection={taskAddDirection}
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
+      on:modeSettingChange
     />
   {:else if mode === 'birthday'}
     <BirthdayMode />

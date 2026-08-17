@@ -4,6 +4,7 @@
   import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import Lightbox from '../components/Lightbox.svelte';
   import BlockContextMenu from '../components/BlockContextMenu.svelte';
+  import { isPrimaryPointer } from '../utils/pointer.js';
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -116,8 +117,107 @@
 
   function handleTouchEndForMenu(event) {
     cancelTouchHold();
+    if (dragCardId) {
+      endDrag(true);
+      touchHoldTriggered = false;
+      event.preventDefault();
+      return;
+    }
     if (!touchHoldTriggered) return;
     event.preventDefault();
+  }
+
+  // ── Block rearranging: grab a card and drop it onto another to trade
+  // places. This swaps the two rather than splicing one out and shifting
+  // everything between them, so every block you didn't touch stays exactly
+  // where it was. Desktop grabs with the left button; phones long-press
+  // first (the same hold that opens the context menu) and then slide. ──
+  const DRAG_THRESHOLD = 6;
+  let pendingDragId = null;
+  let dragCardId = null;
+  let dragOverCardId = null;
+  let dragStartX = 0;
+  let dragStartY = 0;
+  let suppressNextClick = false;
+
+  // Regions that own the pointer themselves: text editing, media controls and
+  // form fields have to keep behaving normally instead of picking the card up.
+  function isDragExcluded(target) {
+    return !!target?.closest?.('.tiptap-wrap, button, input, textarea, select, audio, video, a');
+  }
+
+  function updateDragTarget(clientX, clientY) {
+    const card = document.elementFromPoint(clientX, clientY)?.closest?.('[data-simple-block]');
+    const id = card?.dataset?.simpleBlock || null;
+    dragOverCardId = id && id !== dragCardId ? id : null;
+  }
+
+  function endDrag(commit) {
+    if (commit && dragCardId && dragOverCardId) {
+      dispatch('swapBlocks', { aId: dragCardId, bId: dragOverCardId });
+    }
+    // A finished drag would otherwise land as a click and toggle focus.
+    if (dragCardId) suppressNextClick = true;
+    pendingDragId = null;
+    dragCardId = null;
+    dragOverCardId = null;
+  }
+
+  function onBlockPointerDown(event, blockId) {
+    if (event.pointerType === 'touch') return; // phones use the long-press path
+    if (!isPrimaryPointer(event)) return;
+    if (isDragExcluded(event.target)) return;
+    pendingDragId = blockId;
+    dragStartX = event.clientX;
+    dragStartY = event.clientY;
+    window.addEventListener('pointermove', onDragPointerMove);
+    window.addEventListener('pointerup', onDragPointerUp);
+  }
+
+  function onDragPointerMove(event) {
+    if (!pendingDragId) return;
+    if (!dragCardId) {
+      // Stay a plain click until the pointer actually travels, so tapping a
+      // card to focus it (or double-clicking an image) still works.
+      if (
+        Math.abs(event.clientX - dragStartX) < DRAG_THRESHOLD &&
+        Math.abs(event.clientY - dragStartY) < DRAG_THRESHOLD
+      ) return;
+      dragCardId = pendingDragId;
+    }
+    updateDragTarget(event.clientX, event.clientY);
+  }
+
+  function onDragPointerUp() {
+    stopPointerDragListeners();
+    endDrag(true);
+  }
+
+  function stopPointerDragListeners() {
+    window.removeEventListener('pointermove', onDragPointerMove);
+    window.removeEventListener('pointerup', onDragPointerUp);
+  }
+
+  function handleBlockTouchMove(event, blockId) {
+    // Before the hold fires, a moving finger is just a scroll — let the page
+    // scroll and drop the context menu that was about to open.
+    if (!touchHoldTriggered) {
+      cancelTouchHold();
+      return;
+    }
+    const touch = event.touches?.[0];
+    if (!touch) return;
+    if (!dragCardId) {
+      dragCardId = blockId;
+      closeBlockMenu(); // the hold opened it; sliding means "move", not "menu"
+    }
+    event.preventDefault(); // don't scroll the grid while carrying a card
+    updateDragTarget(touch.clientX, touch.clientY);
+  }
+
+  function handleBlockTouchCancel() {
+    cancelTouchHold();
+    endDrag(false);
   }
 
   function deleteFromMenu(blockId) {
@@ -245,6 +345,10 @@
   }
 
   function handleBlockClick(event, id) {
+    if (suppressNextClick) {
+      suppressNextClick = false;
+      return;
+    }
     if (event.defaultPrevented) return;
     if (event.target.closest('[data-focus-guard]')) {
       ensureFocus(id);
@@ -530,6 +634,7 @@
 
     return () => {
       cancelTouchHold();
+      stopPointerDragListeners();
       window.removeEventListener('pointerdown', handleGlobalPointerDown);
       window.removeEventListener('keydown', handleEsc);
     };
@@ -562,6 +667,17 @@
 .simple-column {
   flex: 1 1 0;
   min-width: 0;
+}
+
+/* Card being carried, and the card it would trade places with. */
+.canvas.drag-source {
+  opacity: 0.45;
+  cursor: grabbing;
+}
+.canvas.drag-target {
+  outline: 2px dashed var(--mode-text-color, #f5f5f5);
+  outline-offset: -2px;
+  border-radius: 8px;
 }
 
 .canvas {
@@ -871,7 +987,13 @@ input[type="text"] {
   {#each renderColumns as column}
     <div class="simple-column">
       {#each column as block (blockKey(block))}
-      <div class="canvas">
+      <div
+        class="canvas"
+        class:drag-source={block.id === dragCardId}
+        class:drag-target={block.id === dragOverCardId}
+        data-simple-block={block.id}
+        on:pointerdown={(event) => onBlockPointerDown(event, block.id)}
+      >
         <div
           class="container"
           class:focused={block.id === focusedBlockId}
@@ -880,8 +1002,8 @@ input[type="text"] {
           on:contextmenu={(event) => handleContextMenu(event, block.id)}
           on:touchstart={(event) => startTouchHold(event, block.id)}
           on:touchend={(event) => handleTouchEndForMenu(event)}
-          on:touchmove={() => cancelTouchHold()}
-          on:touchcancel={() => cancelTouchHold()}
+          on:touchmove|nonpassive={(event) => handleBlockTouchMove(event, block.id)}
+          on:touchcancel={handleBlockTouchCancel}
           role="button"
           tabindex="0"
           aria-pressed={block.id === focusedBlockId}

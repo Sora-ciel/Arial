@@ -26,9 +26,21 @@
   });
 
   $: bgImage = (isMobileViewport ? singleNoteSettings?.backgroundImageMobile : singleNoteSettings?.backgroundImage) || '';
-  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 0.35;
+  // 0–100: 100 shows the image fully opaque, 0 hides it entirely.
+  $: bgOpacity = Math.min(100, Math.max(0, Number(singleNoteSettings?.bgOpacity ?? 100))) / 100;
   $: bgBlur = singleNoteSettings?.bgBlur ?? 0;
+  // 0–200 luminosity of the image itself: 100 leaves it as-is, 0 is black,
+  // 200 is double brightness. Opacity stays a separate control.
+  $: bgLuminosity = singleNoteSettings?.bgLuminosity ?? 100;
   $: bgSize = singleNoteSettings?.bgSize || 'cover';
+  $: bgBrightness = Math.min(200, Math.max(0, Number(bgLuminosity) || 0)) / 100;
+  // blur() and brightness() must share one filter chain — a second `filter`
+  // declaration replaces the first rather than adding to it.
+  $: bgFilter = `blur(${bgBlur}px) brightness(${bgBrightness})`;
+  // blur() samples transparency from beyond the element's edges, which is what
+  // washes the borders out. Oversize the layer by a few blur radii and clip it
+  // back, so only fully-sampled pixels are ever visible.
+  $: bgBleed = Math.ceil(Number(bgBlur) || 0) * 3;
 
   const defaultCanvasColors = {
     outerBg: '#000000',
@@ -202,10 +214,17 @@
   }
 
   /* Per-file background image sitting behind the text */
-  .note-bg-layer {
+  /* Crops the oversized blurred layer back to the note's bounds. */
+  .note-bg-clip {
     position: absolute;
     inset: 0;
     z-index: 0;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .note-bg-layer {
+    position: absolute;
+    inset: 0;
     background-position: center;
     background-repeat: no-repeat;
     pointer-events: none;
@@ -294,10 +313,12 @@
 
 <div class="single-note" class:has-bg-image={bgImage} bind:this={canvasRef} style={canvasCssVars}>
   {#if bgImage}
-    <div
-      class="note-bg-layer"
-      style="background-image:url('{bgImage}'); opacity:{bgOpacity}; filter:blur({bgBlur}px); background-size:{bgSize};"
-    ></div>
+    <div class="note-bg-clip">
+      <div
+        class="note-bg-layer"
+        style="background-image:url('{bgImage}'); opacity:{bgOpacity}; filter:{bgFilter}; background-size:{bgSize}; inset:-{bgBleed}px;"
+      ></div>
+    </div>
   {/if}
   {#if noteBlock}
     {#if noteCount > 1}

@@ -170,21 +170,26 @@
     simple: {
       columnCount: 2
     },
+    task: {
+      addDirection: 'above'
+    },
     single: {
       backgroundImage: '',
       backgroundImageMobile: '',
-      bgOpacity: 0.35,
+      bgOpacity: 100,
       bgBlur: 0,
+      bgLuminosity: 100,
       bgSize: 'cover'
     }
   };
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
+    const incomingTask = settings?.task || {};
     const incomingSingle = settings?.single || {};
-    const clamp01 = (n, fallback) => {
+    const clampRange = (n, min, max, fallback) => {
       const v = Number(n);
-      return Number.isFinite(v) ? Math.min(1, Math.max(0, v)) : fallback;
+      return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
     };
     return {
       ...DEFAULT_MODE_SETTINGS,
@@ -193,13 +198,26 @@
         ...incomingSimple,
         columnCount: Math.max(1, Number.parseInt(incomingSimple.columnCount, 10) || DEFAULT_MODE_SETTINGS.simple.columnCount)
       },
+      task: {
+        ...DEFAULT_MODE_SETTINGS.task,
+        ...incomingTask,
+        addDirection: incomingTask.addDirection === 'below' ? 'below' : 'above'
+      },
       single: {
         ...DEFAULT_MODE_SETTINGS.single,
         ...incomingSingle,
         backgroundImage: typeof incomingSingle.backgroundImage === 'string' ? incomingSingle.backgroundImage : '',
         backgroundImageMobile: typeof incomingSingle.backgroundImageMobile === 'string' ? incomingSingle.backgroundImageMobile : '',
-        bgOpacity: clamp01(incomingSingle.bgOpacity, DEFAULT_MODE_SETTINGS.single.bgOpacity),
+        // 0-100: 100 shows the image fully opaque, 0 hides it. Values of 1 or
+        // less come from the older 0-1 fraction and are scaled up in place.
+        bgOpacity: (() => {
+          const raw = Number(incomingSingle.bgOpacity);
+          if (!Number.isFinite(raw)) return DEFAULT_MODE_SETTINGS.single.bgOpacity;
+          return clampRange(raw <= 1 ? raw * 100 : raw, 0, 100, DEFAULT_MODE_SETTINGS.single.bgOpacity);
+        })(),
         bgBlur: Math.max(0, Number(incomingSingle.bgBlur) || 0),
+        // Luminosity 0-200: 100 = untouched, below blends black in, above white.
+        bgLuminosity: clampRange(incomingSingle.bgLuminosity, 0, 200, DEFAULT_MODE_SETTINGS.single.bgLuminosity),
         bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover'
       }
     };
@@ -860,6 +878,7 @@
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
   $: singleNoteSettings = modeSettings.single;
+  $: taskAddDirection = modeSettings.task.addDirection;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;
   let blocks = [];
@@ -1980,6 +1999,10 @@
       }
 
       savedList = await listSavedBlocks();
+      // The loop above refreshed IndexedDB, but the open folder is still the
+      // copy read at boot — remount it so cloud edits made elsewhere show up
+      // immediately instead of only after reopening the folder by hand.
+      await remountCurrentSaveIfLoaded();
       cloudBootstrapComplete = true;
       autoSyncDirty = false;
     } catch (error) {
@@ -2076,6 +2099,10 @@
       patch = { ...patch, simple: { ...patch.simple, columnCount: nextColumnCount } };
     }
 
+    if (detail.taskAddDirection !== undefined) {
+      patch = { ...patch, task: { ...patch.task, addDirection: detail.taskAddDirection } };
+    }
+
     if (detail.single && typeof detail.single === 'object') {
       patch = { ...patch, single: { ...patch.single, ...detail.single } };
     }
@@ -2143,6 +2170,28 @@
 
   const moveFocusedBlockUp = () => moveFocusedBlock(-1);
   const moveFocusedBlockDown = () => moveFocusedBlock(1);
+
+  // Drag-and-drop rearranging trades two blocks' slots instead of splicing one
+  // out and shifting the rest, so untouched blocks keep their exact positions.
+  async function swapBlocksInMode(detail) {
+    const { aId, bId } = detail || {};
+    if (!aId || !bId || aId === bId) return;
+
+    const ordersForMode = normalizedModeOrders[mode] || [];
+    const aIndex = ordersForMode.indexOf(aId);
+    const bIndex = ordersForMode.indexOf(bId);
+    if (aIndex === -1 || bIndex === -1) return;
+
+    const updatedOrder = [...ordersForMode];
+    updatedOrder[aIndex] = bId;
+    updatedOrder[bIndex] = aId;
+
+    modeOrders = {
+      ...modeOrders,
+      [mode]: updatedOrder
+    };
+    await pushHistory(blocks, modeOrders);
+  }
 
 
   function unlockBirthdayMode(passwordAttempt) {
@@ -2465,13 +2514,15 @@
 /* Mobile adjustments */
 @media (max-width: 1024px) {
   .controls {
-    min-height: 55px;
+    /* Hug the buttons below, but keep the original clearance above so the
+       phone's status-bar icons never sit on top of them. */
+    min-height: 0;
     flex-wrap: nowrap;
-    padding: 8px 10px;
+    padding: 2px 8px;
     padding-top: max(8px, env(safe-area-inset-top));
     justify-content: space-between;
     align-items: center;
-    gap: 8px;
+    gap: 6px;
     overflow-x: auto;
   }
 
@@ -2631,6 +2682,7 @@
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
       {singleNoteSettings}
+      {taskAddDirection}
       {groupedBlocks}
       {focusedBlockId}
       modeLabels={MODE_LABELS}
@@ -2640,6 +2692,7 @@
       on:update={updateBlockHandler}
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
+      on:swapBlocks={(e) => swapBlocksInMode(e.detail)}
       on:modeSettingChange={handleModeSettingChange}
     />
   </div>

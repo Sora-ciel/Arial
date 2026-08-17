@@ -227,13 +227,22 @@
     z-index: 1003;
   }
 
+    /* Match the trimmed-down phone header height. */
+    .right-controls summary {
+      min-height: 30px;
+      padding: 4px 9px;
+      font-size: 0.82rem;
+      display: flex;
+      align-items: center;
+    }
+
     .dropdown-content {
     display: none;
     position: fixed;
     top: calc(var(--controls-height, 56px) + 8px);
     right: 8px;
     bottom: auto;
-    width: min(92vw, 360px);
+    width: min(56vw, 240px);
     max-width: 92vw;
     max-height: calc(100dvh - var(--controls-height, 56px) - 16px);
     background: var(--right-panel-bg, #222222);
@@ -246,9 +255,19 @@
   }
 
     .controls-scroll {
-      padding: 12px;
+      padding: 10px;
+      gap: 10px;
     }
 
+    .tab-section { gap: 7px; }
+
+    /* The narrow drawer would otherwise wrap these headings onto two lines. */
+    .tab-section h4 {
+      font-size: 0.72rem;
+      letter-spacing: 0.04em;
+    }
+
+    .collapsible-section > .section-summary { padding: 2px 0; }
 }
 
   .controls-scroll ul {
@@ -312,6 +331,25 @@
     text-transform: uppercase;
     opacity: 0.85;
   }
+
+  /* Folded-away section: the summary row is the only thing showing when shut. */
+  .collapsible-section > .section-summary {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    list-style: none;
+    padding: 4px 0;
+  }
+  .collapsible-section > .section-summary::-webkit-details-marker { display: none; }
+  .collapsible-section > .section-summary::after {
+    content: '▾';
+    margin-left: auto;
+    font-size: 0.7rem;
+    opacity: 0.7;
+    transition: transform 0.15s ease;
+  }
+  .collapsible-section[open] > .section-summary::after { transform: rotate(180deg); }
 
   .empty-state {
     font-size: 0.8rem;
@@ -379,10 +417,12 @@
           />
         </div>
 
-        <div class="tab-section">
-          <h4>🎨 Fine-tune colors</h4>
+        <!-- Much the longest section in the drawer, and rarely the reason it
+             was opened — keep it folded away until it's actually wanted. -->
+        <details class="tab-section collapsible-section">
+          <summary class="section-summary"><h4>🎨 Fine-tune colors</h4></summary>
           <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
-        </div>
+        </details>
       </div>
     </div>
   </details>

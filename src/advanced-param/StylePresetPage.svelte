@@ -126,6 +126,16 @@
     align-items: center;
   }
 
+  /* Desktop keeps the old stacked look: sample line, then swatches beneath. */
+  .preview-body-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 0 10px 12px;
+  }
+  .card-preview .preview-body { padding: 12px 0 0; }
+  .preview-theme-name { display: none; }
+
   .swatch {
     width: 26px;
     height: 18px;
@@ -145,6 +155,70 @@
     font-size: 0.75rem;
     opacity: 0.7;
     text-align: center;
+  }
+
+  /* On phones the card *is* the sample block: its header carries the theme
+     name instead of dummy text, and the swatches ride on the sample line.
+     Everything else (outer name row, prose description) is dropped — the
+     block's own styling is what identifies the theme. */
+  @media (max-width: 1024px) {
+    .preset-grid { gap: 7px; }
+
+    .preset-card {
+      gap: 0;
+      padding: 0;
+      border: none;
+      background: none;
+      border-radius: 0;
+    }
+
+    .card-header,
+    .card-description,
+    .preview-sample-label { display: none; }
+
+    .preview-theme-name {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-preview .preview-header {
+      font-size: 0.7rem;
+      padding: 5px 9px;
+    }
+
+    /* sample text on the left, the three colours on the right */
+    .preview-body-row {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 9px;
+      min-height: 30px;
+    }
+    .card-preview .preview-body {
+      padding: 0;
+      font-size: 0.72rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .card-swatches { flex: 0 0 auto; gap: 3px; }
+    .swatch { width: 13px; height: 15px; border-radius: 3px; }
+
+    /* Active/Custom markers move onto the card itself */
+    .preset-card.active .card-preview {
+      outline: 2px solid var(--right-accent, #8bb7ff);
+      outline-offset: 1px;
+    }
+
+    .custom-note {
+      margin-top: 6px;
+      font-size: 0.68rem;
+      line-height: 1.3;
+    }
   }
 </style>
 
@@ -170,26 +244,30 @@
       </div>
 
       <div class="card-preview">
-        <div class="preview-header">Sample Header</div>
-        <div class="preview-body">Aa · 123 · Lorem</div>
-      </div>
-
-      <div class="card-swatches">
-        <div
-          class="swatch"
-          title="Left controls"
-          style={`background:${theme?.controlColors?.left?.panelBg ?? '#222222'};`}
-        ></div>
-        <div
-          class="swatch"
-          title="Right controls"
-          style={`background:${theme?.controlColors?.right?.panelBg ?? '#222222'};`}
-        ></div>
-        <div
-          class="swatch"
-          title="Canvas"
-          style={`background:${theme?.controlColors?.canvas?.innerBg ?? '#000000'};`}
-        ></div>
+        <div class="preview-header">
+          <span class="preview-sample-label">Sample Header</span>
+          <span class="preview-theme-name">{theme.name}</span>
+        </div>
+        <div class="preview-body-row">
+          <div class="preview-body">Aa · 123 · Lorem</div>
+          <div class="card-swatches">
+            <div
+              class="swatch"
+              title="Left controls"
+              style={`background:${theme?.controlColors?.left?.panelBg ?? '#222222'};`}
+            ></div>
+            <div
+              class="swatch"
+              title="Right controls"
+              style={`background:${theme?.controlColors?.right?.panelBg ?? '#222222'};`}
+            ></div>
+            <div
+              class="swatch"
+              title="Canvas"
+              style={`background:${theme?.controlColors?.canvas?.innerBg ?? '#000000'};`}
+            ></div>
+          </div>
+        </div>
       </div>
 
       <p class="card-description">{theme.description}</p>
