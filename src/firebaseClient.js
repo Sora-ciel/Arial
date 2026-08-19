@@ -35,6 +35,10 @@ async function signInWithGoogleNative(ctx) {
   }
 
   await ensureNativeGoogleAuthInitialized();
+  // Drop any cached Google session first, otherwise the plugin signs straight
+  // back into the last account and the picker never appears — leaving people
+  // stuck on whichever account they first used.
+  await socialLoginPlugin.logout({ provider: 'google' }).catch(() => {});
   // The plugin already requests email/profile/openid scopes by default.
   // Passing custom `scopes` here triggers a native check that requires
   // modifying MainActivity to implement ModifiedMainActivityForSocialLoginPlugin,
@@ -205,6 +209,10 @@ export async function signInWithGoogle() {
   }
 
   const provider = new ctx.authApi.GoogleAuthProvider();
+  // Without this Google silently reuses whichever account is already signed in
+  // to the browser, so anyone with a single session could never reach a second
+  // one. Always offer the picker instead.
+  provider.setCustomParameters({ prompt: 'select_account' });
   const result = await ctx.authApi.signInWithPopup(ctx.auth, provider);
   return result.user;
 }

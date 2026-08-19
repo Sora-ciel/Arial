@@ -114,7 +114,16 @@
   let swipeStartY = 0;
   let isSwipeGesture = false;
 
+  // The media swallows clicks on desktop so panning never closes the viewer.
+  // On touch there is no pan, and with the sides given over to navigation the
+  // centre has to stay an easy way out — so let the tap through there.
+  let lastPointerWasTouch = false;
+  function onMediaClick(event) {
+    if (!lastPointerWasTouch) event.stopPropagation();
+  }
+
   function handleLbPointerDown(event) {
+    lastPointerWasTouch = event.pointerType === 'touch';
     if (event.pointerType === 'touch') {
       swipeStartX = event.clientX;
       swipeStartY = event.clientY;
@@ -149,6 +158,11 @@
         if (dx < 0) next(); else prev();
       }
     }
+    isSwipeGesture = false;
+  }
+
+  function handleLbPointerCancel() {
+    clearTimeout(lbLongPressTimer);
     isSwipeGesture = false;
   }
 
@@ -200,6 +214,7 @@
   on:pointerdown={handleLbPointerDown}
   on:pointermove={handleLbPointerMove}
   on:pointerup={handleLbPointerUp}
+  on:pointercancel={handleLbPointerCancel}
 >
   {#if isVideo}
     <!-- svelte-ignore a11y-media-has-caption -->
@@ -208,7 +223,7 @@
       src={src}
       controls
       style="transform: translate({panX}px, {panY}px) scale({scale})"
-      on:click|stopPropagation
+      on:click={onMediaClick}
     ></video>
   {:else}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -217,7 +232,7 @@
       src={src}
       alt=""
       style="transform: translate({panX}px, {panY}px) scale({scale})"
-      on:click|stopPropagation
+      on:click={onMediaClick}
     />
   {/if}
 
@@ -250,6 +265,9 @@
     align-items: center;
     justify-content: center;
     cursor: zoom-out;
+    /* Without this the browser claims the touch gesture as a scroll/zoom and
+       answers with pointercancel, so the swipe never reaches pointerup. */
+    touch-action: none;
   }
   .lb-overlay.lb-panning { cursor: grabbing; }
 
@@ -308,6 +326,35 @@
   }
   .lb-arrow.lb-left  { left: 12px; }
   .lb-arrow.lb-right { right: 12px; }
+
+  /* On touch there is no hover, so the arrows above could never be tapped.
+     Replace them with two invisible columns running the full height of the
+     screen and reaching its very edges — wide enough to hit without aiming,
+     while the ~30% left in the middle still closes the lightbox on tap. */
+  @media (max-width: 1024px) {
+    .lb-arrow {
+      top: 0;
+      bottom: 0;
+      height: auto;
+      width: 35%;
+      transform: none;
+      border-radius: 0;
+      background: transparent;
+      /* stays invisible in every state — the view has to remain clean */
+      opacity: 0;
+      color: transparent;
+      font-size: 0;
+      pointer-events: auto;
+      z-index: 1;
+    }
+    .lb-arrow.lb-arrow-visible,
+    .lb-arrow:hover { opacity: 0; }
+    .lb-arrow.lb-left  { left: 0; }
+    .lb-arrow.lb-right { right: 0; }
+
+    /* keep the close button reachable above the right-hand column */
+    .lb-close { z-index: 2; }
+  }
   .lb-arrow.lb-arrow-visible { opacity: 0.8; pointer-events: auto; }
   .lb-arrow:hover { opacity: 1 !important; }
 

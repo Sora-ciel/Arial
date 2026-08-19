@@ -552,9 +552,9 @@ onMount(() => {
     /* Phone controls don't need desktop's 42px hit targets — trimming them is
        what lets the header bar itself get short. */
     .left-controls-wrapper button {
-      min-height: 30px;
-      padding: 4px 9px;
-      font-size: 0.82rem;
+      min-height: 36px;
+      padding: 5px 11px;
+      font-size: 0.98rem;
     }
 
     .left-controls {

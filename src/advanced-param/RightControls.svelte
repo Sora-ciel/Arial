@@ -227,11 +227,11 @@
     z-index: 1003;
   }
 
-    /* Match the trimmed-down phone header height. */
+    /* Header button only — the controls inside the drawer keep their own size. */
     .right-controls summary {
-      min-height: 30px;
-      padding: 4px 9px;
-      font-size: 0.82rem;
+      min-height: 36px;
+      padding: 5px 11px;
+      font-size: 0.98rem;
       display: flex;
       align-items: center;
     }

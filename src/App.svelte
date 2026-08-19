@@ -165,6 +165,10 @@
   const BOOT_LOAD_GUARD_STORAGE_KEY = 'bootLoadGuard';
   const CLOUD_SYNC_MEMORY_STORAGE_KEY = 'cloudSyncMemoryByFile';
   const AUTO_SYNC_ENABLED_STORAGE_KEY = 'autoSyncEnabled';
+  // Which account the files currently in local storage belong to. Without it,
+  // signing into a second account would push the first account's files up to
+  // it, because bootstrap treats whatever is on this device as "mine".
+  const SYNCED_UID_STORAGE_KEY = 'syncedUid';
   const FALLBACK_SAVE_NAME = 'Fallback';
   const DEFAULT_MODE_SETTINGS = {
     simple: {
@@ -341,6 +345,25 @@
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
       return {};
+    }
+  }
+
+  function loadSyncedUid() {
+    if (typeof localStorage === 'undefined') return '';
+    try {
+      return localStorage.getItem(SYNCED_UID_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function persistSyncedUid(uid) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      if (uid) localStorage.setItem(SYNCED_UID_STORAGE_KEY, uid);
+      else localStorage.removeItem(SYNCED_UID_STORAGE_KEY);
+    } catch {
+      /* ignore local persistence failure */
     }
   }
 
@@ -925,10 +948,15 @@
     node.select?.();
   }
 
-  function showDialog(type, message, defaultValue = '') {
+  function showDialog(type, message, defaultValue = '', options = null) {
     return new Promise((resolve) => {
-      dialogState = { type, message, defaultValue, resolve };
+      dialogState = { type, message, defaultValue, options, resolve };
     });
+  }
+
+  // Multi-way question: resolves to the chosen option's id, or null if dismissed.
+  function appChoice(message, options) {
+    return showDialog('choice', message, '', options);
   }
 
   function appAlert(message) {
@@ -972,6 +1000,13 @@
 
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
   $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
+  // Dialogs and the sync banner render outside .app, so they can't inherit its
+  // theme vars — hand them the right-panel palette directly.
+  $: rightTheme = controlColors.right || CONTROL_COLOR_DEFAULTS.right;
+  $: overlayThemeStyle =
+    `--dlg-bg: ${rightTheme.panelBg}; --dlg-text: ${rightTheme.textColor};` +
+    ` --dlg-border: ${rightTheme.borderColor}; --dlg-btn-bg: ${rightTheme.buttonBg};` +
+    ` --dlg-btn-text: ${rightTheme.buttonText};`;
   $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
   let Pc = window.innerWidth > MOBILE_BREAKPOINT;
   let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
@@ -1047,7 +1082,10 @@
   let _debounceTimer = null;     // for non-critical (typing) saves
 
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings, { immediate = false } = {}) {
-    if (!currentSaveName) return;
+    // No folder open — a fresh install, or the last one was just deleted.
+    // Adopt the default name so the first edit creates a folder instead of
+    // being silently dropped.
+    if (!currentSaveName) currentSaveName = 'default';
     persistLastSaveName(currentSaveName);
 
     const payload = {
@@ -1078,6 +1116,34 @@
     await _runSave(payload);
   }
 
+  // Key order isn't stable between an in-memory block and the same block read
+  // back from storage, so compare with sorted keys rather than raw JSON.
+  function stableStringify(value) {
+    if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+    if (value && typeof value === 'object') {
+      return `{${Object.keys(value).sort()
+        .map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
+        .join(',')}}`;
+    }
+    return JSON.stringify(value);
+  }
+
+  // Fields that change as the UI renders but say nothing about saved content.
+  const VOLATILE_BLOCK_KEYS = ['_version', 'editing'];
+
+  function saveContentFingerprint(blocksValue, ordersValue, settingsValue) {
+    const cleanedBlocks = (blocksValue || []).map(block => {
+      const copy = { ...block };
+      for (const key of VOLATILE_BLOCK_KEYS) delete copy[key];
+      return copy;
+    });
+    return stableStringify({
+      blocks: cleanedBlocks,
+      modeOrders: ordersValue || {},
+      modeSettings: settingsValue || {}
+    });
+  }
+
   async function _runSave(payload) {
     if (_saveInFlight) {
       _pendingSave = payload; // queue behind in-flight save
@@ -1086,10 +1152,26 @@
     _saveInFlight = true;
     try {
       const normalizedOrders = ensureModeOrders(payload.blocks, payload.orders);
+      const normalizedSettings = normalizeModeSettings(payload.modeSettings);
+
+      // Merely opening a folder used to rewrite it, restamping modifiedAt and
+      // making an untouched folder look newer than the cloud copy (and worth
+      // re-uploading). Skip the write when nothing actually changed.
+      const existing = await loadBlocks(currentSaveName);
+      if (existing) {
+        const before = saveContentFingerprint(
+          existing.blocks,
+          ensureModeOrders(existing.blocks || [], existing.modeOrders),
+          normalizeModeSettings(existing.modeSettings)
+        );
+        const after = saveContentFingerprint(payload.blocks, normalizedOrders, normalizedSettings);
+        if (before === after) return;
+      }
+
       await saveBlocks(currentSaveName, {
         blocks: payload.blocks,
         modeOrders: normalizedOrders,
-        modeSettings: normalizeModeSettings(payload.modeSettings)
+        modeSettings: normalizedSettings
       });
       savedList = await listSavedBlocks();
       autoSyncDirty = true;
@@ -1723,9 +1805,118 @@
     }
   }
 
+  // Files on this device that the cloud doesn't have, or has an older copy of.
+  // These are the only ones that could actually be lost by clearing local data.
+  async function findUnsyncedSaves() {
+    const names = await listSavedBlocks();
+    if (!names.length) return [];
+    let remoteIndex = {};
+    try {
+      remoteIndex = (await loadRemoteIndex()) || {};
+    } catch {
+      // Can't reach the cloud, so treat everything as potentially unsynced
+      // rather than risk quietly deleting something that never got uploaded.
+      return names;
+    }
+    const unsynced = [];
+    for (const name of names) {
+      const remoteMeta = remoteIndex[name];
+      if (!remoteMeta) { unsynced.push(name); continue; }
+      const local = await loadBlocks(name);
+      const localAt = Number(local?.modifiedAt || local?.updatedAt || 0);
+      const remoteAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
+      if (localAt > remoteAt) unsynced.push(name);
+    }
+    return unsynced;
+  }
+
+  // Clears every locally stored file and the state built from it, so the next
+  // account starts from a clean device instead of inheriting the last one's.
+  async function wipeLocalSaves() {
+    const names = await listSavedBlocks();
+    for (const name of names) {
+      try { await deleteBlocks(name); } catch (error) { console.error('Failed to clear local save:', error); }
+    }
+    blocks = [];
+    focusedBlockId = null;
+    modeOrders = ensureModeOrders(blocks, {});
+    modeSettings = normalizeModeSettings();
+    cloudSyncMemoryByFile = {};
+    persistCloudSyncMemory(cloudSyncMemoryByFile);
+    lastRemoteSyncFingerprint = '';
+    lastAutoSyncFingerprintByFile = {};
+    lastAutoSyncAttachmentFingerprintByFile = {};
+    history = [];
+    historyIndex = -1;
+
+    // Land exactly where a brand-new install does: the name "default" pencilled
+    // in with nothing written to storage yet, so the folder is created on the
+    // first edit instead of leaving an empty one lying around.
+    currentSaveName = 'default';
+    persistLastSaveName('');
+    savedList = await listSavedBlocks();
+  }
+
   async function signOutGoogle() {
     try {
+      // Local files belong to the account that's signing out — leaving them
+      // behind is what made the next account adopt (and re-upload) them. What
+      // happens to them is always the user's call, never a silent delete.
+      const localNames = await listSavedBlocks();
+
+      if (localNames.length) {
+        const unsynced = authUser ? await findUnsyncedSaves() : localNames;
+        const count = localNames.length;
+        const folderWord = count === 1 ? 'folder' : 'folders';
+
+        // With nothing left to upload, removing is already the safe choice, so
+        // there's no risky option to offer — and green stays "you lose nothing".
+        const message = unsynced.length
+          ? `${unsynced.length} of your ${count} ${folderWord} ` +
+            `${unsynced.length === 1 ? 'has' : 'have'} changes that aren't in the cloud yet ` +
+            `(${unsynced.slice(0, 3).join(', ')}${unsynced.length > 3 ? ', …' : ''}).\n\n` +
+            `• Upload and remove — sends those changes to your cloud, then clears this device.\n` +
+            `• Leave here — keeps every folder on this device, linked to no account.\n` +
+            `• Remove anyway — clears this device and those unsaved changes are gone for good.`
+          : `All ${count} ${folderWord} on this device ${count === 1 ? 'is' : 'are'} already saved to your cloud.\n\n` +
+            `• Remove from device — clears them here; they stay safe in your cloud.\n` +
+            `• Leave here — keeps them on this device, linked to no account.`;
+
+        const options = unsynced.length
+          ? [
+              { id: 'upload', label: 'Upload and remove', variant: 'safe' },
+              { id: 'keep', label: 'Leave here', variant: 'warn' },
+              { id: 'delete', label: 'Remove anyway', variant: 'danger' }
+            ]
+          : [
+              { id: 'delete', label: 'Remove from device', variant: 'safe' },
+              { id: 'keep', label: 'Leave here', variant: 'warn' }
+            ];
+
+        const choice = await appChoice(message, options);
+        if (!choice) return; // dismissed — stay signed in
+
+        if (choice === 'upload' && unsynced.length) {
+          try {
+            await uploadFilesToCloud(unsynced, { shouldUploadAttachments: () => true });
+          } catch (error) {
+            console.error(error);
+            await appAlert(`Couldn't sync those folders: ${error?.message || error}. Still signed in.`);
+            return;
+          }
+        }
+
+        await signOutUser();
+        persistSyncedUid('');
+        // "Keep" leaves them as ownerless local files, so the next account you
+        // sign into is asked whether to adopt them.
+        if (choice !== 'keep') await wipeLocalSaves();
+        return;
+      }
+
       await signOutUser();
+      persistSyncedUid('');
+      await wipeLocalSaves();
     } catch (error) {
       console.error(error);
       await appAlert(`Sign out failed: ${error?.message || error}`);
@@ -1816,6 +2007,21 @@
   async function remountCurrentSaveIfLoaded() {
     if (!currentSaveName || !savedList.includes(currentSaveName)) return;
     await load(currentSaveName, { skipCloudUpload: true });
+  }
+
+  // After a cloud pull the folder that was open may not exist on this device
+  // any more — signing in on a clean device leaves the name "default" pencilled
+  // in while the downloaded folders are named something else. Fall back to the
+  // first one that does exist, so signing in actually shows a folder instead of
+  // an empty workspace waiting for a click.
+  async function openCurrentOrFirstSave() {
+    if (currentSaveName && savedList.includes(currentSaveName)) {
+      await load(currentSaveName, { skipCloudUpload: true });
+      return;
+    }
+    if (savedList.length) {
+      await load(savedList[0], { skipCloudUpload: true });
+    }
   }
 
   async function pullRemoteUpdatesIfNeeded(options = {}) {
@@ -1960,12 +2166,86 @@
     }
   }
 
+  // Push ownerless local folders into the signed-in account. A folder whose
+  // name already exists in the cloud is renamed first — uploading over it would
+  // replace that account's copy with this device's, losing one of the two.
+  async function adoptLocalFoldersIntoAccount(names) {
+    if (!names.length) return;
+    let remoteNames;
+    try {
+      remoteNames = new Set(Object.keys((await loadRemoteIndex()) || {}));
+    } catch (error) {
+      console.error('Could not read the cloud file list before adopting folders:', error);
+      return; // leave them local; the regular sync will retry later
+    }
+
+    const toUpload = [];
+    for (const name of names) {
+      let target = name;
+      if (remoteNames.has(target)) {
+        let suffix = 2;
+        target = `${name} (this device)`;
+        while (remoteNames.has(target)) target = `${name} (this device ${suffix++})`;
+        const payload = await loadBlocks(name);
+        await saveBlocks(target, payload);
+        await deleteBlocks(name);
+        if (currentSaveName === name) {
+          currentSaveName = target;
+          persistLastSaveName(target);
+        }
+      }
+      remoteNames.add(target);
+      toUpload.push(target);
+    }
+
+    savedList = await listSavedBlocks();
+    try {
+      await uploadFilesToCloud(toUpload, { shouldUploadAttachments: () => true });
+    } catch (error) {
+      console.error('Failed to add local folders to this account:', error);
+    }
+  }
+
   async function bootstrapCloudSync() {
     if (!firebaseReady || !authUser) return;
     if (cloudBootstrapInProgress) return;
 
     cloudBootstrapInProgress = true;
     try {
+      const previousUid = loadSyncedUid();
+      const localBeforeSync = await listSavedBlocks();
+
+      if (previousUid && previousUid !== authUser.uid) {
+        // Signed into a different account than this device's files came from
+        // (a switch that skipped sign-out). They aren't this account's to
+        // upload, and they're already backed up under the other one.
+        await wipeLocalSaves();
+      } else if (!previousUid && localBeforeSync.length) {
+        // Folders that belong to no account yet — made while signed out, or
+        // kept behind at the last sign-out. Adding them to this account is a
+        // real decision, so ask instead of silently adopting them.
+        const count = localBeforeSync.length;
+        const folderWord = count === 1 ? 'folder' : 'folders';
+        const choice = await appChoice(
+          `This device has ${count} ${folderWord} that ${count === 1 ? "isn't" : "aren't"} ` +
+          `linked to any account yet ` +
+          `(${localBeforeSync.slice(0, 3).join(', ')}${count > 3 ? ', …' : ''}).\n\n` +
+          `• Add to this account — uploads them to your cloud and keeps them here.\n` +
+          `• Delete them — removes them from this device; your cloud folders are untouched.`,
+          [
+            { id: 'adopt', label: 'Add to this account', variant: 'safe' },
+            { id: 'delete', label: 'Delete them', variant: 'danger' }
+          ]
+        );
+        // Dismissing keeps them — never lose folders to a stray tap.
+        if (choice === 'delete') {
+          await wipeLocalSaves();
+        } else {
+          await adoptLocalFoldersIntoAccount(localBeforeSync);
+        }
+      }
+      persistSyncedUid(authUser.uid);
+
       const [localNames, remoteIndex] = await Promise.all([
         listSavedBlocks(),
         loadRemoteIndex()
@@ -2000,9 +2280,9 @@
 
       savedList = await listSavedBlocks();
       // The loop above refreshed IndexedDB, but the open folder is still the
-      // copy read at boot — remount it so cloud edits made elsewhere show up
+      // copy read at boot — reopen it so cloud edits made elsewhere show up
       // immediately instead of only after reopening the folder by hand.
-      await remountCurrentSaveIfLoaded();
+      await openCurrentOrFirstSave();
       cloudBootstrapComplete = true;
       autoSyncDirty = false;
     } catch (error) {
@@ -2495,9 +2775,10 @@
   z-index: 1300;
   padding: 8px 12px;
   border-radius: 10px;
-  background: rgba(255, 201, 40, 0.16);
-  border: 1px solid rgba(255, 201, 40, 0.5);
-  color: #ffd86c;
+  background: var(--dlg-bg, #17171a);
+  border: 1px solid var(--dlg-border, #444);
+  color: var(--dlg-text, #f0f0f0);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.45);
   font-size: 0.9rem;
 }
 
@@ -2544,19 +2825,20 @@
 }
 
 .app-dialog {
-  background: #17171a;
-  border: 1px solid #333;
+  background: var(--dlg-bg, #17171a);
+  border: 1px solid var(--dlg-border, #333);
+  color: var(--dlg-text, #f0f0f0);
   border-radius: 12px;
   padding: 18px;
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   box-sizing: border-box;
 }
 
 .app-dialog-message {
   margin: 0 0 12px;
-  color: #f0f0f0;
+  color: var(--dlg-text, #f0f0f0);
   font-size: 0.95rem;
   white-space: pre-wrap;
 }
@@ -2577,6 +2859,13 @@
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.app-dialog-danger {
+  background: rgba(255, 90, 90, 0.18);
+  border: 1px solid rgba(255, 90, 90, 0.45);
+  color: #ff9b9b;
 }
 
 .app-dialog-btn {
@@ -2588,8 +2877,21 @@
 }
 
 .app-dialog-cancel {
-  background: #2a2a2a;
-  color: #f0f0f0;
+  background: var(--dlg-btn-bg, #2a2a2a);
+  color: var(--dlg-btn-text, #f0f0f0);
+  border: 1px solid var(--dlg-border, #444);
+}
+
+/* Traffic-light weighting on the sign-out choices: safe, cautionary, destructive. */
+.app-dialog-safe {
+  background: rgba(64, 190, 110, 0.18);
+  border: 1px solid rgba(64, 190, 110, 0.55);
+  color: #7ce6a4;
+}
+.app-dialog-warn {
+  background: rgba(255, 201, 40, 0.16);
+  border: 1px solid rgba(255, 201, 40, 0.5);
+  color: #ffd86c;
 }
 
 .app-dialog-ok {
@@ -2675,7 +2977,7 @@
 
   <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
     {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
-      <div class="sync-lock-banner">Sync check in progress… editing is temporarily paused.</div>
+      <div class="sync-lock-banner" style={overlayThemeStyle}>Syncing with the cloud… editing resumes in a moment.</div>
     {/if}
     <ModeArea
       {mode}
@@ -2699,7 +3001,7 @@
 </div>
 
 {#if dialogState}
-  <div class="app-dialog-overlay" role="presentation" on:click={handleDialogCancel}>
+  <div class="app-dialog-overlay" role="presentation" style={overlayThemeStyle} on:click={handleDialogCancel}>
     <div class="app-dialog" role="dialog" aria-modal="true" on:click|stopPropagation>
       <p class="app-dialog-message">{dialogState.message}</p>
       {#if dialogState.type === 'prompt'}
@@ -2715,10 +3017,25 @@
         />
       {/if}
       <div class="app-dialog-actions">
-        {#if dialogState.type !== 'alert'}
+        {#if dialogState.type === 'choice'}
           <button type="button" class="app-dialog-btn app-dialog-cancel" on:click={handleDialogCancel}>Cancel</button>
+          {#each dialogState.options || [] as option}
+            <button
+              type="button"
+              class="app-dialog-btn"
+              class:app-dialog-safe={option.variant === 'safe'}
+              class:app-dialog-warn={option.variant === 'warn'}
+              class:app-dialog-danger={option.variant === 'danger'}
+              class:app-dialog-ok={!option.variant}
+              on:click={() => resolveDialog(option.id)}
+            >{option.label}</button>
+          {/each}
+        {:else}
+          {#if dialogState.type !== 'alert'}
+            <button type="button" class="app-dialog-btn app-dialog-cancel" on:click={handleDialogCancel}>Cancel</button>
+          {/if}
+          <button type="button" class="app-dialog-btn app-dialog-ok" on:click={() => handleDialogConfirm(dialogInputValue)}>OK</button>
         {/if}
-        <button type="button" class="app-dialog-btn app-dialog-ok" on:click={() => handleDialogConfirm(dialogInputValue)}>OK</button>
       </div>
     </div>
   </div>

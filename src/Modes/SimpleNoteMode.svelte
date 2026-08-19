@@ -140,15 +140,27 @@
   let dragStartY = 0;
   let suppressNextClick = false;
 
-  // Regions that own the pointer themselves: text editing, media controls and
-  // form fields have to keep behaving normally instead of picking the card up.
-  function isDragExcluded(target) {
-    return !!target?.closest?.('.tiptap-wrap, button, input, textarea, select, audio, video, a');
+  // Regions that own the pointer themselves: media controls and form fields
+  // have to keep behaving normally instead of picking the card up.
+  function isDragExcluded(target, blockId) {
+    if (target?.closest?.('button, input, textarea, select, audio, video, a')) return true;
+    // The editor only claims the pointer once you're actually editing this
+    // block. Until then, dragging across its text rearranges the card — which
+    // is the only way to grab a text card without aiming at its thin border.
+    if (target?.closest?.('.tiptap-wrap')) return blockId === focusedBlockId;
+    return false;
   }
 
   function updateDragTarget(clientX, clientY) {
-    const card = document.elementFromPoint(clientX, clientY)?.closest?.('[data-simple-block]');
-    const id = card?.dataset?.simpleBlock || null;
+    // elementsFromPoint (plural) walks the whole stack, so an overlay that is
+    // still on screen — the context menu the long-press just opened, which
+    // Svelte only removes a tick later — can't mask the card beneath it and
+    // leave the drop with no target.
+    let id = null;
+    for (const el of document.elementsFromPoint(clientX, clientY)) {
+      const card = el.closest?.('[data-simple-block]');
+      if (card) { id = card.dataset.simpleBlock; break; }
+    }
     dragOverCardId = id && id !== dragCardId ? id : null;
   }
 
@@ -166,7 +178,7 @@
   function onBlockPointerDown(event, blockId) {
     if (event.pointerType === 'touch') return; // phones use the long-press path
     if (!isPrimaryPointer(event)) return;
-    if (isDragExcluded(event.target)) return;
+    if (isDragExcluded(event.target, blockId)) return;
     pendingDragId = blockId;
     dragStartX = event.clientX;
     dragStartY = event.clientY;
