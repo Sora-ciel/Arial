@@ -11,6 +11,15 @@ initializeApp();
 const SYNC_NAMESPACE = 'default';
 const DAILY_BYTE_LIMIT = 250 * 1024 * 1024; // tune after watching real usage for a bit
 
+// Ceiling on concurrent instances. Without one, a burst of saves — whether a
+// genuine crowd or someone hammering the endpoint — scales this function out
+// without limit, and the bill with it. The quota guard fires on every index
+// write, so it is the one most exposed to that; 10 is comfortably above normal
+// load while keeping a runaway bounded. Raise it once real usage justifies it.
+const MAX_INSTANCES = 10;
+// The scheduled jobs run once a day and never need more than one.
+const SCHEDULED_MAX_INSTANCES = 1;
+
 function todayKey() {
   return new Date().toISOString().slice(0, 10); // YYYY-MM-DD, UTC
 }
@@ -32,7 +41,11 @@ function byteSizeOf(value) {
 // byte count still comes from files/{fileId}, just via a plain Admin SDK read
 // inside the handler, which isn't subject to that same trigger-delivery limit.
 exports.enforceSyncQuota = onValueWritten(
-  { ref: 'sync/{ns}/users/{uid}/index/{fileId}', region: 'us-central1' },
+  {
+    ref: 'sync/{ns}/users/{uid}/index/{fileId}',
+    region: 'us-central1',
+    maxInstances: MAX_INSTANCES
+  },
   async event => {
     const { ns, uid, fileId } = event.params;
     logger.info('enforceSyncQuota-start', { ns, uid, fileId, afterExists: event.data.after.exists() });
@@ -70,7 +83,11 @@ exports.enforceSyncQuota = onValueWritten(
 // quota function only ever sets `blocked`, never clears it, so this sweeps
 // stale blocks once a day.
 exports.resetDailyBlocks = onSchedule(
-  { schedule: 'every day 00:05', region: 'us-central1' },
+  {
+    schedule: 'every day 00:05',
+    region: 'us-central1',
+    maxInstances: SCHEDULED_MAX_INSTANCES
+  },
   async () => {
     const db = getDatabase();
     const usersSnap = await db.ref(`sync/${SYNC_NAMESPACE}/users`).get();
@@ -113,7 +130,11 @@ exports.resetDailyBlocks = onSchedule(
 // clients (checkSyncCompatibility in firebaseClient.js) always read a
 // current value, even if that node is ever manually cleared.
 exports.publishSchemaVersionMeta = onSchedule(
-  { schedule: 'every day 00:00', region: 'us-central1' },
+  {
+    schedule: 'every day 00:00',
+    region: 'us-central1',
+    maxInstances: SCHEDULED_MAX_INSTANCES
+  },
   async () => {
     const db = getDatabase();
     await db.ref(`sync/${SYNC_NAMESPACE}/meta/schemaVersion`).set({
