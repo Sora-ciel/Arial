@@ -1,0 +1,43 @@
+rules_version = '2';
+
+// Attachments — images, video and any block field too large to sit in the
+// database — are written to users/{uid}/attachments/... and nowhere else.
+//
+// These rules had no file in the repo, which meant whatever was configured in
+// the console was the only thing standing between one account's attachments
+// and another's. Everything is denied by default here, and each account is
+// confined to its own prefix.
+//
+// Note that files already handed out as download URLs stay reachable through
+// those URLs: a Firebase download token grants access on its own and is not
+// subject to these rules. Restricting reads here stops one account browsing
+// another's storage; it does not revoke a link that has already been shared.
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function isOwner(uid) {
+      return request.auth != null && request.auth.uid == uid;
+    }
+
+    // A ceiling so a compromised or scripted client can't park unbounded data
+    // in the bucket. Comfortably above the 100MB limit the app itself enforces
+    // on video.
+    function withinSizeLimit() {
+      return request.resource.size < 120 * 1024 * 1024;
+    }
+
+    match /users/{uid}/{allPaths=**} {
+      allow read: if isOwner(uid);
+      // `create, update` rather than `write`, because `write` also covers
+      // delete — where request.resource is null and the size check would throw.
+      allow create, update: if isOwner(uid) && withinSizeLimit();
+      allow delete: if isOwner(uid);
+    }
+
+    // Anything outside a user's own prefix is denied, including paths this
+    // app doesn't use today.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
