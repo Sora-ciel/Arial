@@ -400,6 +400,18 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
   return { fileId, updatedAt };
 }
 
+// Storage has no notion of deleting a folder, so a prefix has to be walked and
+// each object removed. Attachments nest as
+// attachments/{fileId}/{blockId}/{field}/{object}, hence the recursion.
+async function deleteStorageFolder(ctx, path) {
+  const folderRef = ctx.storageApi.ref(ctx.storage, path);
+  const listing = await ctx.storageApi.listAll(folderRef);
+  await Promise.all([
+    ...listing.items.map(item => ctx.storageApi.deleteObject(item)),
+    ...listing.prefixes.map(prefix => deleteStorageFolder(ctx, prefix.fullPath))
+  ]);
+}
+
 export async function deleteRemoteFile(fileId) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
@@ -409,6 +421,17 @@ export async function deleteRemoteFile(fileId) {
     ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `files/${fileId}`))),
     ctx.dbApi.remove(ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `index/${fileId}`)))
   ]);
+
+  // The note's images and other attachments used to be left behind here,
+  // costing storage forever and keeping content that the user believes they
+  // deleted. Done after the database records are gone, and never allowed to
+  // fail the delete: a leftover object is a smaller problem than a folder that
+  // won't go away.
+  try {
+    await deleteStorageFolder(ctx, getStorageUserPath(user.uid, `attachments/${fileId}`));
+  } catch (error) {
+    console.warn('Could not remove attachments for the deleted file:', error);
+  }
 
   return { fileId };
 }
