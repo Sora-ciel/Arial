@@ -18,6 +18,106 @@
   user-select: none;
 }
 
+/* ── Scrollbars follow block/mode colors ──────────────────────────
+   Containers set --sb-track (their background) and --sb-thumb (their text
+   color); everything inherits those, so a scrollbar inside a block matches
+   the block while one on a mode surface matches the theme. Falls back to a
+   subtle neutral wherever nothing has been declared. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--sb-thumb, rgba(255, 255, 255, 0.4)) var(--sb-track, transparent);
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: var(--sb-track, transparent);
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--sb-thumb, rgba(255, 255, 255, 0.4));
+  border-radius: 8px;
+  border: 2px solid var(--sb-track, transparent);
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-corner {
+  background: var(--sb-track, transparent);
+}
+
+
+/* ── Sliders follow the same colors as the scrollbars ──────────────
+   Same contract as above: the container sets --sb-track and --sb-thumb, and
+   the slider picks them up. Add `class="themed-range"` to any new range input
+   so it matches the scrollbars instead of falling back to the browser's own
+   blue. */
+input[type="range"].themed-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 14px;
+  /* the UA border adds a pixel a side and shoves the thumb off the bar */
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  accent-color: var(--sb-thumb, rgba(255, 255, 255, 0.4));
+}
+input[type="range"].themed-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent));
+}
+input[type="range"].themed-range::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent));
+}
+input[type="range"].themed-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  /* centres the thumb on the 6px track */
+  margin-top: -4px;
+  border-radius: 50%;
+  border: none;
+  background: var(--sb-thumb, rgba(255, 255, 255, 0.4));
+}
+input[type="range"].themed-range::-moz-range-thumb {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: none;
+  background: var(--sb-thumb, rgba(255, 255, 255, 0.4));
+}
+
+/* Upright variant. writing-mode is the modern way to turn a range; the
+   slider-vertical appearance is kept for WebKit, which doesn't honour it yet.
+   The thumb offset flips axis with it. */
+input[type="range"].themed-range.vertical {
+  writing-mode: vertical-lr;
+  direction: rtl;
+  /* Deliberately NOT `appearance: slider-vertical`: that hands the control
+     back to the browser's native widget, which ignores the track and thumb
+     styling below — so an upright slider stopped matching the horizontal one.
+     writing-mode alone turns it while keeping our own look. */
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 84px;
+}
+input[type="range"].themed-range.vertical::-webkit-slider-runnable-track {
+  width: 6px;
+  height: 100%;
+}
+input[type="range"].themed-range.vertical::-moz-range-track {
+  width: 6px;
+  height: 100%;
+}
+input[type="range"].themed-range.vertical::-webkit-slider-thumb {
+  margin-top: 0;
+  margin-left: -4px;
+}
+
 
 /* Re-enable for form elements */
 textarea,
@@ -91,9 +191,13 @@ button {
 button:hover {
   border-color: #646cff;
 }
+/* No focus ring on controls — the toolbars are dense enough that the default
+   4px halo reads as a rendering glitch, on desktop and touch alike. */
 button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+button:focus-visible,
+summary:focus,
+summary:focus-visible {
+  outline: none;
 }
 
 @media (prefers-color-scheme: light) {

@@ -11,6 +11,8 @@
   export let uploadInProgress = false;
   export let downloadInProgress = false;
   export let autoSyncEnabled = false;
+  export let blocksFollowTheme = false;
+  export let blocksFollowThemeAll = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
@@ -313,6 +315,31 @@
     margin-bottom: 10px;
   }
 
+  .toggle-label {
+    margin: 0 0 6px;
+    font-size: 0.78rem;
+    opacity: 0.8;
+  }
+
+  .toggle-row {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+
+  .toggle-half {
+    flex: 1;
+    justify-content: center;
+    margin-bottom: 0;
+    font-size: 0.76rem;
+    padding: 7px 8px;
+  }
+
+  .create-theme-btn.active-toggle {
+    background: color-mix(in srgb, var(--right-button-text, #ffffff) 22%, transparent);
+    border-color: var(--right-button-text, #ffffff);
+  }
+
   .create-theme-btn:hover {
     background: var(--right-button-text, #ffffff);
     color: var(--right-panel-bg, #222222);
@@ -410,6 +437,27 @@
           <button class="create-theme-btn" type="button" on:click={openAdvancedCssPage}>
             ✨ Create custom theme
           </button>
+          <p class="toggle-label">🎨 Blocks match theme</p>
+          <div class="toggle-row">
+            <button
+              class="create-theme-btn toggle-half"
+              class:active-toggle={blocksFollowTheme}
+              type="button"
+              title="Recolor this folder's blocks to match the theme. Syncs with the folder."
+              on:click={() => dispatch('toggleBlocksFollowTheme')}
+            >
+              This folder{blocksFollowTheme ? ' ✓' : ''}
+            </button>
+            <button
+              class="create-theme-btn toggle-half"
+              class:active-toggle={blocksFollowThemeAll}
+              type="button"
+              title="Apply to every folder on this device. Overrides the per-folder switch."
+              on:click={() => dispatch('toggleBlocksFollowThemeAll')}
+            >
+              All folders{blocksFollowThemeAll ? ' ✓' : ''}
+            </button>
+          </div>
           <StylePresetPage
             {themes}
             {selectedThemeId}

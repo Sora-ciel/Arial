@@ -31,6 +31,12 @@ export const MODE_DEFINITIONS = {
     addBlockTypes: ['text', 'cleantext', 'image', 'music', 'embed', 'task'],
     showRightControls: true
   },
+  playlist: {
+    id: 'playlist',
+    label: 'Playlist Mode',
+    addBlockTypes: [],
+    showRightControls: true
+  },
   birthday: {
     id: 'birthday',
     label: 'Birthday Mode',
@@ -40,7 +46,7 @@ export const MODE_DEFINITIONS = {
   }
 };
 
-export const MODE_ORDER = ['default', 'simple', 'single', 'habit', 'task', 'birthday'];
+export const MODE_ORDER = ['default', 'simple', 'single', 'habit', 'task', 'playlist', 'birthday'];
 
 export function getModeDefinition(mode) {
   return MODE_DEFINITIONS[mode] || MODE_DEFINITIONS.single;

@@ -19,10 +19,36 @@
   function updateViewport() {
     isMobileViewport = window.innerWidth <= MOBILE_BREAKPOINT;
   }
+  // ── Idle-hiding scrollbar ────────────────────────────────────────
+  // Fades the thumb out after a few seconds of not scrolling so it stops
+  // cluttering the page, and brings it back on scroll or when the pointer
+  // comes near the right edge. Only the colour changes — the gutter stays
+  // reserved, so nothing reflows as it appears and disappears.
+  const SCROLLBAR_IDLE_MS = 5000;
+  const SCROLLBAR_EDGE_PX = 60;
+  let scrollbarIdle = true;
+  let scrollbarIdleTimer;
+
+  function wakeScrollbar() {
+    scrollbarIdle = false;
+    clearTimeout(scrollbarIdleTimer);
+    scrollbarIdleTimer = setTimeout(() => { scrollbarIdle = true; }, SCROLLBAR_IDLE_MS);
+  }
+
+  function handleNotePointerMove(event) {
+    if (!canvasRef) return;
+    const nearRightEdge =
+      event.clientX >= canvasRef.getBoundingClientRect().right - SCROLLBAR_EDGE_PX;
+    if (nearRightEdge) wakeScrollbar();
+  }
+
   onMount(() => {
     updateViewport();
     window.addEventListener('resize', updateViewport);
-    return () => window.removeEventListener('resize', updateViewport);
+    return () => {
+      window.removeEventListener('resize', updateViewport);
+      clearTimeout(scrollbarIdleTimer);
+    };
   });
 
   $: bgImage = (isMobileViewport ? singleNoteSettings?.backgroundImageMobile : singleNoteSettings?.backgroundImage) || '';
@@ -48,10 +74,17 @@
   };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: modeTextColor = canvasTheme.textColor || getReadableTextColor(canvasTheme.innerBg);
   $: activeNoteBg = noteBlock?.bgColor || canvasTheme.innerBg;
   $: activeNoteText = noteBlock?.textColor || getReadableTextColor(activeNoteBg);
-  $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor}; --active-note-bg: ${activeNoteBg}; --active-note-text: ${activeNoteText};`;
+  // The scrollbar sits over the background image, so it tracks that image's
+  // opacity — but never drops below 20%, or it would vanish entirely on a
+  // faint background and leave nothing to grab.
+  $: scrollbarAlpha = Math.max(0.2, bgImage ? bgOpacity : 1);
+  $: canvasCssVars =
+    `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};` +
+    ` --mode-text-color: ${modeTextColor}; --active-note-bg: ${activeNoteBg};` +
+    ` --active-note-text: ${activeNoteText}; --sb-alpha: ${scrollbarAlpha};`;
 
   $: noteBlocks = blocks.filter(
     block => block.type === 'text' || block.type === 'cleantext'
@@ -182,6 +215,23 @@
     color: var(--mode-text-color, #ffffff);
     box-sizing: border-box;
     position: relative;
+    /* Scrollbars here match the note surface they sit on, at the background's
+       own opacity (floored at 20% by --sb-alpha so they never fully vanish). */
+    --sb-track: transparent;
+    --sb-thumb: color-mix(
+      in srgb,
+      var(--active-note-text, var(--mode-text-color, #ffffff)) calc(var(--sb-alpha, 1) * 100%),
+      transparent
+    );
+  }
+
+  /* Untouched for a few seconds: fade the thumb away but keep the gutter, so
+     the page never reflows when it comes back. */
+  .single-note.sb-idle {
+    --sb-thumb: transparent;
+  }
+  .single-note :global(*) {
+    transition: scrollbar-color 0.35s ease;
   }
 
   .note-tabs {
@@ -189,9 +239,18 @@
     gap: 8px;
     padding: 4px 6px 4px;
     overflow-x: auto;
+    /* A scrollbar in this strip would add to its height and make the row
+       jump the moment the tabs overflow. Swipe/drag it instead. */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
+  .note-tabs::-webkit-scrollbar { display: none; }
 
   .note-tab {
+    /* Flex items shrink by default, so with several tabs the box narrowed
+       while nowrap kept the label full width — the text spilled out past the
+       tab's own background. Never shrink below the label. */
+    flex: 0 0 auto;
     border: 1px solid color-mix(in srgb, var(--tab-text, #ffffff) 50%, transparent);
     background: color-mix(in srgb, var(--tab-bg, #000000) 88%, #000000 12%);
     color: var(--tab-text, inherit);
@@ -237,6 +296,13 @@
   .single-note > .note-meta,
   .single-note > :global(.tiptap-wrap),
   .single-note > .note-footer { position: relative; z-index: 1; }
+
+  /* Only the editor flexes. Without this the tabs, the word count and the
+     footer all default to flex-shrink: 1, so a growing note squeezed them a
+     little further with every line instead of scrolling inside the editor. */
+  .single-note > .note-tabs,
+  .single-note > .note-meta,
+  .single-note > .note-footer { flex: 0 0 auto; }
 
   .note-meta {
     display: flex;
@@ -311,7 +377,16 @@
   }
 </style>
 
-<div class="single-note" class:has-bg-image={bgImage} bind:this={canvasRef} style={canvasCssVars}>
+<div
+  class="single-note"
+  class:has-bg-image={bgImage}
+  class:sb-idle={scrollbarIdle}
+  bind:this={canvasRef}
+  style={canvasCssVars}
+  on:scroll|capture={wakeScrollbar}
+  on:pointermove={handleNotePointerMove}
+  on:wheel|passive={wakeScrollbar}
+>
   {#if bgImage}
     <div class="note-bg-clip">
       <div

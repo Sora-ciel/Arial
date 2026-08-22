@@ -1,4 +1,20 @@
 <script>
+  import MarkdownIt from 'markdown-it';
+  import { sanitizeRichText, looksLikeHtml } from '../utils/sanitizeRichText.js';
+  import TipTapEditor from './TipTapEditor.svelte';
+
+  // html:false because task text arrives through sync — it isn't trusted
+  // markup. breaks:true keeps a multi-line task looking multi-line.
+  const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+  // Tasks are saved as editor HTML so an image can keep the width it was
+  // dragged to — markdown has no way to express that. Text written before this
+  // is still markdown, so it keeps going through the markdown renderer.
+  // Either way the result is sanitised: it arrives through sync.
+  function renderTaskText(text) {
+    const value = String(text ?? '');
+    return sanitizeRichText(looksLikeHtml(value) ? value : md.render(value));
+  }
+
   import { createEventDispatcher } from 'svelte';
   import { isPrimaryPointer } from '../utils/pointer.js';
   import ColorField from './ColorField.svelte';
@@ -299,11 +315,11 @@
   function cancelEditTask() { editingTaskId = null; editText = ''; }
 
   function handleEditKeydown(e) {
-    if (e.key === 'Enter') { e.preventDefault(); commitEditTask(); }
+    // Enter belongs to the editor now that a task can run to several lines.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitEditTask(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancelEditTask(); }
   }
 
-  function autoFocusInput(node) { node.focus(); node.select(); }
 
   $: title = initialTitle || 'Task List';
 
@@ -311,6 +327,9 @@
 
 <style>
   .wrapper {
+    /* scrollbars inside the block follow the block's own colors */
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     position: absolute;
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     border-radius: var(--block-border-radius, 12px);
@@ -457,6 +476,27 @@
     font-size: 0.85rem;
   }
 
+  .task-editor {
+    flex: 1;
+    min-width: 0;
+    border: 1px solid color-mix(in srgb, var(--text, #fff) 30%, transparent);
+    background: color-mix(in srgb, var(--text, #fff) 8%, var(--bg, #000));
+    color: var(--text, inherit);
+    border-radius: 6px;
+    padding: 5px 7px;
+  }
+  .task-editor :global(img),
+  .task-text :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    vertical-align: middle;
+  }
+  .task-editor :global(p),
+  .task-text :global(p) { margin: 0 0 0.35em; }
+  .task-editor :global(p:last-child),
+  .task-text :global(p:last-child) { margin-bottom: 0; }
+
   .task-text {
     flex: 1 1 auto;
     min-width: 0;
@@ -466,17 +506,6 @@
     cursor: text;
   }
 
-  .task-text-input {
-    flex: 1 1 auto;
-    min-width: 0;
-    background: var(--bg);
-    border: 1px solid var(--text);
-    border-radius: 6px;
-    color: var(--text);
-    font: inherit;
-    padding: 2px 6px;
-    box-sizing: border-box;
-  }
 
   .circle-check {
     flex-shrink: 0;
@@ -602,16 +631,21 @@
             </button>
             {#if editingTaskId === task.id}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
-              <input
-                class="task-text-input"
-                type="text"
-                bind:value={editText}
+              <div
+                class="task-editor"
                 data-focus-guard
                 on:click|stopPropagation
                 on:keydown|stopPropagation={handleEditKeydown}
-                on:blur={commitEditTask}
-                use:autoFocusInput
-              />
+              >
+                <TipTapEditor
+                  content={editText}
+                  emit="html"
+                  variant="inline"
+                  placeholder="Write the task…"
+                  on:change={(e) => (editText = e.detail)}
+                  on:blur={commitEditTask}
+                />
+              </div>
             {:else}
               <!-- svelte-ignore a11y-click-events-have-key-events -->
               <span
@@ -620,7 +654,7 @@
                 title="Double-click to edit"
                 on:dblclick|stopPropagation={() => startEditTask(task)}
                 on:click|stopPropagation
-              >{task.text}</span>
+              >{@html renderTaskText(task.text)}</span>
             {/if}
           </label>
           <button

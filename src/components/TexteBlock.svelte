@@ -202,6 +202,9 @@
 
 <style>
   .wrapper {
+    /* scrollbars inside the block follow the block's own colors */
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     position: absolute;
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     border-radius: var(--block-border-radius, 12px);

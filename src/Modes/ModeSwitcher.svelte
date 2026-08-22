@@ -5,6 +5,7 @@
   import SingleNoteMode from './SingleNoteMode.svelte';
   import HabitTrackerMode from './HabitTrackerMode.svelte';
   import TaskMode from './TaskMode.svelte';
+  import PlaylistMode from './PlaylistMode.svelte';
   import BirthdayMode from './BirthdayMode.svelte';
 
   export let mode; // 'default' or 'simple'
@@ -20,6 +21,10 @@
   export let simpleNoteColumnCount = 2;
   export let singleNoteSettings = {};
   export let taskAddDirection = 'above';
+  export let musicLibrary = { tracks: [], playlists: [] };
+  export let nowPlayingId = null;
+  export let isPlaying = false;
+  export let shuffle = false;
 
   let width = 0;
 
@@ -98,6 +103,21 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={focusToggleHandler}
       on:modeSettingChange
+    />
+  {:else if mode === 'playlist'}
+    <PlaylistMode
+      bind:canvasRef
+      {canvasColors}
+      library={musicLibrary}
+      {nowPlayingId}
+      {isPlaying}
+      {shuffle}
+      on:libraryChange
+      on:play
+      on:toggle
+      on:stop
+      on:toggleShuffle
+      on:notify
     />
   {:else if mode === 'birthday'}
     <BirthdayMode />

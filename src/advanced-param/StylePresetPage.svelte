@@ -120,13 +120,7 @@
     opacity: 0.9;
   }
 
-  .card-swatches {
-    display: flex;
-    gap: 6px;
-    align-items: center;
-  }
 
-  /* Desktop keeps the old stacked look: sample line, then swatches beneath. */
   .preview-body-row {
     display: flex;
     flex-direction: column;
@@ -136,12 +130,6 @@
   .card-preview .preview-body { padding: 12px 0 0; }
   .preview-theme-name { display: none; }
 
-  .swatch {
-    width: 26px;
-    height: 18px;
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-  }
 
   .card-description {
     margin: 0;
@@ -158,7 +146,7 @@
   }
 
   /* On phones the card *is* the sample block: its header carries the theme
-     name instead of dummy text, and the swatches ride on the sample line.
+     name instead of dummy text.
      Everything else (outer name row, prose description) is dropped — the
      block's own styling is what identifies the theme. */
   @media (max-width: 1024px) {
@@ -205,8 +193,6 @@
       white-space: nowrap;
     }
 
-    .card-swatches { flex: 0 0 auto; gap: 3px; }
-    .swatch { width: 13px; height: 15px; border-radius: 3px; }
 
     /* Active/Custom markers move onto the card itself */
     .preset-card.active .card-preview {
@@ -250,23 +236,6 @@
         </div>
         <div class="preview-body-row">
           <div class="preview-body">Aa · 123 · Lorem</div>
-          <div class="card-swatches">
-            <div
-              class="swatch"
-              title="Left controls"
-              style={`background:${theme?.controlColors?.left?.panelBg ?? '#222222'};`}
-            ></div>
-            <div
-              class="swatch"
-              title="Right controls"
-              style={`background:${theme?.controlColors?.right?.panelBg ?? '#222222'};`}
-            ></div>
-            <div
-              class="swatch"
-              title="Canvas"
-              style={`background:${theme?.controlColors?.canvas?.innerBg ?? '#000000'};`}
-            ></div>
-          </div>
         </div>
       </div>
 

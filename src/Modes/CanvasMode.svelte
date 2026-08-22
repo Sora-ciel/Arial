@@ -488,6 +488,8 @@
   background: var(--canvas-outer-bg, rgb(0, 0, 0));
   overflow: auto;
   touch-action: pan-x pan-y;
+  --sb-track: var(--canvas-outer-bg, #000000);
+  --sb-thumb: var(--canvas-inner-bg, #1a1a1a);
 }
 
 .canvas.panning {

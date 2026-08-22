@@ -1,4 +1,16 @@
 <script>
+  import MarkdownIt from 'markdown-it';
+  import { sanitizeRichText, looksLikeHtml } from '../utils/sanitizeRichText.js';
+
+  // Tasks are saved as editor HTML so an image keeps the width it was dragged
+  // to; anything written before that is still markdown. Either way the result
+  // is sanitised — task text arrives through sync.
+  const taskMd = new MarkdownIt({ html: false, linkify: true, breaks: true });
+  function renderTaskText(text) {
+    const value = String(text ?? '');
+    return sanitizeRichText(looksLikeHtml(value) ? value : taskMd.render(value));
+  }
+
   import { createEventDispatcher, onMount } from 'svelte';
   import TipTapEditor from '../components/TipTapEditor.svelte';
   import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
@@ -25,7 +37,7 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: leftTheme = { ...defaultLeftControlColors, ...(leftControlColors || {}) };
-  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: modeTextColor = canvasTheme.textColor || getReadableTextColor(canvasTheme.innerBg);
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor}; --left-text-color: ${leftTheme.textColor}; --left-button-bg: ${leftTheme.buttonBg};`;
 
   function getReadableTextColor(color) {
@@ -559,13 +571,14 @@
   function cancelEditTask() { editingTaskId = null; editText = ''; }
 
   function handleEditKeydown(event, block) {
-    if (event.key === 'Enter') { event.preventDefault(); commitEditTask(block); }
+    // Enter belongs to the editor now that a task can run to several lines.
+    if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+      event.preventDefault();
+      commitEditTask(block);
+    }
     else if (event.key === 'Escape') { event.preventDefault(); cancelEditTask(); }
   }
 
-  function autoFocusTaskInput(node) {
-    requestAnimationFrame(() => { node.focus(); node.select(); });
-  }
 
   // ── Reordering (drag the handle) — scoped per block since several task
   // lists can be visible at once in this grid. ──────────────────────────
@@ -674,6 +687,8 @@
   margin: 0;
   min-width: 0;
   box-sizing: border-box;
+  --sb-track: var(--canvas-inner-bg);
+  --sb-thumb: var(--mode-text-color);
 }
 
 .simple-column {
@@ -883,17 +898,37 @@ input[type="text"] {
 }
 .task-item button.drag-handle:active { cursor: grabbing; opacity: 0.7; }
 
-.task-text-input {
+.task-editor {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--text-color, #fff) 30%, transparent);
+  background: color-mix(in srgb, var(--text-color, #fff) 8%, transparent);
+  color: var(--text-color, inherit);
+  border-radius: 6px;
+  padding: 5px 7px;
+}
+.task-editor :global(img),
+.task-text :global(img) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 6px;
+  vertical-align: middle;
+}
+.task-editor :global(p),
+.task-text :global(p) { margin: 0 0 0.35em; }
+.task-editor :global(p:last-child),
+.task-text :global(p:last-child) { margin-bottom: 0; }
+
+/* The row has to grow with a multi-line task instead of pinning it to one
+   line's height. */
+.task-text {
   flex: 1 1 auto;
   min-width: 0;
-  background: transparent;
-  border: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--text-color) 40%, transparent);
-  color: var(--text-color);
-  font: inherit;
-  padding: 0;
+  white-space: normal;
+  word-break: break-word;
+  cursor: text;
 }
-.task-text-input:focus { outline: none; }
+
 
 .music-content, .embed-content {
   width: 100%;
@@ -1158,22 +1193,28 @@ input[type="text"] {
                         {/if}
                       </button>
                       {#if editingTaskId === task.id}
-                        <input
-                          class="task-text-input"
-                          type="text"
-                          bind:value={editText}
+                        <div
+                          class="task-editor"
                           data-focus-guard
                           on:click|stopPropagation
                           on:keydown|stopPropagation={(e) => handleEditKeydown(e, block)}
-                          on:blur={() => commitEditTask(block)}
-                          use:autoFocusTaskInput
-                        />
+                        >
+                          <TipTapEditor
+                            content={editText}
+                            emit="html"
+                            variant="inline"
+                            placeholder="Write the task…"
+                            on:change={(e) => (editText = e.detail)}
+                            on:blur={() => commitEditTask(block)}
+                          />
+                        </div>
                       {:else}
                         <span
+                          class="task-text"
                           title="Double-click to edit"
                           on:dblclick|stopPropagation={() => startEditTask(task)}
                           on:click|stopPropagation
-                        >{task.text}</span>
+                        >{@html renderTaskText(task.text)}</span>
                       {/if}
                     </label>
                     <button

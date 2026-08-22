@@ -122,6 +122,30 @@ async function uploadBlockAttachments(fileId, payload, ctx, uid) {
 
   const blocks = await Promise.all(payload.blocks.map(async (block, index) => {
     const next = { ...block };
+    const blockId = block?.id || `block-${index + 1}`;
+
+    // Task text can carry pasted images as ![](data:…) markdown. Left inline
+    // they'd be written to the database as base64; push them to Storage and
+    // keep just the link, like every other attachment.
+    if (Array.isArray(next.tasks)) {
+      next.tasks = await Promise.all(next.tasks.map(async task => {
+        const text = task?.text;
+        if (typeof text !== 'string' || !text.includes('](data:')) return task;
+
+        let replaced = text;
+        for (const match of text.match(/data:[^)\s]+/g) || []) {
+          const uploadedUrl = await uploadAttachmentFromDataUrl(match, {
+            fileId,
+            blockId,
+            field: `task-${task?.id || 'item'}`,
+            uid,
+            ctx
+          });
+          if (uploadedUrl) replaced = replaced.split(match).join(uploadedUrl);
+        }
+        return replaced === text ? task : { ...task, text: replaced };
+      }));
+    }
 
     for (const field of ATTACHMENT_FIELDS) {
       const value = next[field];
@@ -129,7 +153,7 @@ async function uploadBlockAttachments(fileId, payload, ctx, uid) {
 
       const uploadedUrl = await uploadAttachmentFromDataUrl(value, {
         fileId,
-        blockId: block?.id || `block-${index + 1}`,
+        blockId,
         field,
         uid,
         ctx
@@ -146,6 +170,44 @@ async function uploadBlockAttachments(fileId, payload, ctx, uid) {
   return {
     ...payload,
     blocks
+  };
+}
+
+// Single Note's background images live in modeSettings, not on a block, so the
+// loop above never saw them — they'd have gone into the database inline as
+// base64, which is far too large to sync. Push them to Storage like any other
+// attachment. Desktop and phone keep their own slot, so each device still gets
+// the image picked for it.
+const SINGLE_NOTE_IMAGE_FIELDS = ['backgroundImage', 'backgroundImageMobile'];
+
+async function uploadModeSettingAttachments(fileId, payload, ctx, uid) {
+  const single = payload?.modeSettings?.single;
+  if (!single) return payload;
+
+  let changed = false;
+  const nextSingle = { ...single };
+
+  for (const field of SINGLE_NOTE_IMAGE_FIELDS) {
+    const value = nextSingle[field];
+    if (typeof value !== 'string' || !value.startsWith('data:')) continue;
+
+    const uploadedUrl = await uploadAttachmentFromDataUrl(value, {
+      fileId,
+      blockId: 'mode-settings',
+      field,
+      uid,
+      ctx
+    });
+    if (uploadedUrl) {
+      nextSingle[field] = uploadedUrl;
+      changed = true;
+    }
+  }
+
+  if (!changed) return payload;
+  return {
+    ...payload,
+    modeSettings: { ...payload.modeSettings, single: nextSingle }
   };
 }
 
@@ -308,9 +370,13 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
   const shouldUploadAttachments = options.uploadAttachments !== false;
-  const payloadWithRemoteAttachments = shouldUploadAttachments
-    ? await uploadBlockAttachments(fileId, payload, ctx, user.uid)
-    : payload;
+  let payloadWithRemoteAttachments = payload;
+  if (shouldUploadAttachments) {
+    payloadWithRemoteAttachments = await uploadBlockAttachments(fileId, payload, ctx, user.uid);
+    payloadWithRemoteAttachments = await uploadModeSettingAttachments(
+      fileId, payloadWithRemoteAttachments, ctx, user.uid
+    );
+  }
   const updatedAt = payload?.updatedAt || Date.now();
   const modifiedAt = payload?.modifiedAt || payload?.updatedAt || Date.now();
   const lastSyncedAt = Date.now();

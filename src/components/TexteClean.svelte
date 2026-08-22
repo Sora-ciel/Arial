@@ -197,6 +197,9 @@
 
 <style>
   .note {
+    /* scrollbars inside the block follow the block's own colors */
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     position: absolute;
     border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
     border-radius: var(--block-border-radius, 12px);

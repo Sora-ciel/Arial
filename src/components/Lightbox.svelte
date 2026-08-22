@@ -19,7 +19,26 @@
   let mouseRatio = 0.5; // 0–1 across viewport width
 
   $: src = images[index] ?? '';
-  $: isVideo = src.startsWith('data:video') || src.endsWith('.mp4') || src.endsWith('.webm');
+
+  // Remote URLs carry a query string (`?alt=media&token=…` on synced files),
+  // so testing the raw string with endsWith missed every video that had been
+  // through the cloud and rendered it as an <img>.
+  const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'm4v', 'ogv', 'ogg', 'mkv', 'avi', '3gp'];
+  function looksLikeVideo(url) {
+    if (typeof url !== 'string' || !url) return false;
+    if (url.startsWith('data:video')) return true;
+    const path = url.split(/[?#]/)[0];
+    const extension = (path.split('.').pop() || '').toLowerCase();
+    return VIDEO_EXTENSIONS.includes(extension);
+  }
+  $: isVideo = looksLikeVideo(src);
+
+  let videoEl;
+  function toggleVideo() {
+    if (!videoEl) return;
+    if (videoEl.paused) videoEl.play().catch(() => {});
+    else videoEl.pause();
+  }
   $: showLeft  = images.length > 1 && mouseRatio < 0.22;
   $: showRight = images.length > 1 && mouseRatio > 0.78;
 
@@ -85,6 +104,13 @@
       // Stop other handlers (e.g. parent's block-menu handler) from also firing
       event.stopImmediatePropagation();
       close();
+      return;
+    }
+    if (isVideo && (event.key === ' ' || event.key === 'Spacebar')) {
+      // Otherwise space scrolls the page behind the overlay.
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      toggleVideo();
       return;
     }
     if (event.key === 'ArrowLeft')  prev();
@@ -219,11 +245,19 @@
   {#if isVideo}
     <!-- svelte-ignore a11y-media-has-caption -->
     <video
-      class="lb-media"
+      bind:this={videoEl}
+      class="lb-media lb-video"
       src={src}
       controls
+      playsinline
+      preload="metadata"
       style="transform: translate({panX}px, {panY}px) scale({scale})"
-      on:click={onMediaClick}
+      on:click|stopPropagation
+      on:pointerdown|stopPropagation
+      on:mousedown|stopPropagation
+      on:contextmenu|stopPropagation
+      on:wheel|stopPropagation
+      on:dblclick|stopPropagation={toggleVideo}
     ></video>
   {:else}
     <!-- svelte-ignore a11y-no-noninteractive-element-interactions -->
@@ -280,7 +314,13 @@
     transition: transform 0.1s ease;
     cursor: default;
     user-select: none;
+    /* Images stay inert so a drag pans and a click closes; a video has to take
+       its own clicks or its controls can never be used. */
     pointer-events: none;
+  }
+  .lb-video {
+    pointer-events: auto;
+    cursor: default;
   }
   .lb-panning .lb-media { transition: none; }
 

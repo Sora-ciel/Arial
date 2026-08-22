@@ -3,6 +3,59 @@
   import { getReadableTextColor } from '../utils/readableColor.js';
   import ColorField from '../components/ColorField.svelte';
   import BlockContextMenu from '../components/BlockContextMenu.svelte';
+  import MarkdownIt from 'markdown-it';
+  import { sanitizeRichText, looksLikeHtml } from '../utils/sanitizeRichText.js';
+  import TipTapEditor from '../components/TipTapEditor.svelte';
+
+  // Same renderer tiptap-markdown uses, so a task reads the way the same
+  // markdown would anywhere else in the app. html:false leaves raw tags
+  // escaped — task text arrives from sync, so it isn't trusted markup.
+  // breaks:true so a task written across several lines still reads as several
+  // lines once it's no longer being edited, rather than collapsing into one.
+  const md = new MarkdownIt({ html: false, linkify: true, breaks: true });
+
+  // Tasks are saved as editor HTML so an image can keep the width it was
+  // dragged to — markdown has no way to express that. Text written before this
+  // is still markdown, so it keeps going through the markdown renderer.
+  // Either way the result is sanitised: it arrives through sync.
+  function renderTaskText(text) {
+    const value = String(text ?? '');
+    return sanitizeRichText(looksLikeHtml(value) ? value : md.render(value));
+  }
+
+  // A task is a plain text field, so a pasted image was dropped on the floor.
+  // Turn it into the markdown the renderer above already understands. The
+  // data: URL is swapped for a Storage link on the next sync, same as any
+  // other attachment, so it doesn't sit in the database as base64.
+  function fileToDataUrl(file) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(file);
+    });
+  }
+
+  async function imageMarkdownFromPaste(event) {
+    const items = [...(event.clipboardData?.files || [])];
+    const image = items.find(file => file.type.startsWith('image/'));
+    if (!image) return null;
+    return `![](${await fileToDataUrl(image)})`;
+  }
+
+  function insertAtCaret(input, current, snippet) {
+    const start = input?.selectionStart ?? current.length;
+    const end = input?.selectionEnd ?? current.length;
+    return `${current.slice(0, start)}${snippet}${current.slice(end)}`;
+  }
+
+  async function handleNewTaskPaste(event) {
+    const snippet = await imageMarkdownFromPaste(event);
+    if (!snippet) return;
+    event.preventDefault();
+    newTaskText = insertAtCaret(event.target, newTaskText, snippet);
+  }
+
 
   export let blocks = [];
   export let focusedBlockId = null;
@@ -44,7 +97,7 @@
 
   const defaultCanvasColors = { outerBg: '#000000', innerBg: '#000000' };
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  $: modeTextColor = canvasTheme.textColor || getReadableTextColor(canvasTheme.innerBg);
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
 
   $: taskBlocks = blocks.filter(b => b.type === 'task');
@@ -63,9 +116,14 @@
   // block type carries) — layered in as --bg/--text so the section/item
   // backgrounds and text pick them up wherever the CSS below opts in,
   // falling back to the mode's usual theme when nothing's been set.
-  $: taskColorVars = taskBlock
-    ? `--bg: ${taskBlock.bgColor || '#000000'}; --text: ${taskBlock.textColor || '#ffffff'};`
-    : '';
+  // Only declare the variables the list actually sets. Emitting a black/white
+  // fallback here would win over the theme, which is why an untouched list used
+  // to ignore it entirely; leaving the variable undefined lets the CSS fall
+  // through to --canvas-inner-bg / --mode-text-color instead.
+  $: taskColorVars = [
+    taskBlock?.bgColor ? `--bg: ${taskBlock.bgColor};` : '',
+    taskBlock?.textColor ? `--text: ${taskBlock.textColor};` : ''
+  ].join(' ');
 
   function setTaskColor(field, value) {
     if (!selectedTaskId) return;
@@ -252,11 +310,12 @@
   function cancelEditTask() { editingTaskId = null; editText = ''; }
 
   function handleEditKeydown(e) {
-    if (e.key === 'Enter') { e.preventDefault(); commitEditTask(); }
+    // Enter belongs to the editor now that a task can be several lines.
+    // Ctrl/Cmd+Enter commits, Escape cancels, and clicking away commits.
+    if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); commitEditTask(); }
     else if (e.key === 'Escape') { e.preventDefault(); cancelEditTask(); }
   }
 
-  function autoFocusInput(node) { node.focus(); node.select(); }
 
   // ── Right-click context menu (color edit + copy as markdown) ──────────
   let ctxMenu = { open: false, x: 0, y: 0 };
@@ -331,9 +390,9 @@
 
   .task-tab {
     flex-shrink: 0;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--tab-text, #fff) 30%, transparent);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--tab-text, var(--mode-text-color, #fff)) 30%, transparent);
     background: var(--tab-bg, transparent);
-    color: var(--tab-text, inherit);
+    color: var(--tab-text, var(--mode-text-color, inherit));
     padding: 7px 14px;
     border-radius: 999px;
     font-size: 0.82rem;
@@ -348,15 +407,15 @@
   .task-tab:hover { opacity: 0.8; }
   .task-tab[aria-selected='true'] {
     opacity: 1;
-    border-color: color-mix(in srgb, var(--tab-text, #fff) 80%, transparent);
-    box-shadow: 0 0 0 2px color-mix(in srgb, var(--tab-text, #fff) 35%, transparent);
+    border-color: color-mix(in srgb, var(--tab-text, var(--mode-text-color, #fff)) 80%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--tab-text, var(--mode-text-color, #fff)) 35%, transparent);
   }
 
   .new-list-btn {
     flex-shrink: 0;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 25%, transparent);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 25%, transparent);
     background: transparent;
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     padding: 7px 12px;
     border-radius: 999px;
     font-size: 0.82rem;
@@ -377,9 +436,9 @@
     min-width: 0;
     padding: 7px 11px;
     border-radius: 10px;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 30%, transparent);
-    background: color-mix(in srgb, var(--text, #fff) 8%, var(--bg, #000));
-    color: var(--text, inherit);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 30%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 8%, var(--bg, var(--canvas-inner-bg, #000)));
+    color: var(--text, var(--mode-text-color, inherit));
     font-size: 0.95rem;
     font-family: var(--block-body-font, inherit);
     box-sizing: border-box;
@@ -404,9 +463,9 @@
     flex: 1 1 auto;
     overflow-y: auto;
     padding: 10px 12px 4px;
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     --sb-track: transparent;
-    --sb-thumb: var(--text, rgba(255,255,255,.18));
+    --sb-thumb: var(--text, var(--mode-text-color, rgba(255,255,255,.18)));
     scrollbar-width: thin;
     scrollbar-color: var(--sb-thumb, rgba(255,255,255,.18)) transparent;
   }
@@ -424,8 +483,8 @@
 
   .task-section {
     border-radius: 14px;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 13%, transparent);
-    background: var(--bg, rgba(255,255,255,.04));
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 13%, transparent);
+    background: var(--bg, var(--canvas-inner-bg, rgba(255,255,255,.04)));
     padding: 12px 12px 8px;
     display: flex;
     flex-direction: column;
@@ -447,7 +506,7 @@
     letter-spacing: 0.1em;
     text-transform: uppercase;
     font-family: var(--block-header-font, inherit);
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     opacity: 0.7;
   }
 
@@ -455,8 +514,8 @@
     font-size: 0.72rem;
     padding: 2px 7px;
     border-radius: 999px;
-    background: color-mix(in srgb, var(--text, #fff) 12%, transparent);
-    color: var(--text, inherit);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 12%, transparent);
+    color: var(--text, var(--mode-text-color, inherit));
     opacity: 0.75;
     font-variant-numeric: tabular-nums;
   }
@@ -464,7 +523,7 @@
   .section-toggle {
     border: none;
     background: none;
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     cursor: pointer;
     font-size: 0.8rem;
     padding: 2px 5px;
@@ -490,15 +549,15 @@
     gap: 2px;
     padding: 4px 6px 4px 2px;
     border-radius: 9px;
-    background: color-mix(in srgb, var(--text, #fff) 6%, transparent);
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 10%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 6%, transparent);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 10%, transparent);
     min-height: 44px;
     box-sizing: border-box;
     transition: box-shadow 0.1s, opacity 0.1s;
   }
   .task-item.dragging { opacity: 0.35; }
-  .task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--text, #f5f5f5); }
-  .task-item.drag-over-after  { box-shadow: inset 0 -2px 0 0 var(--text, #f5f5f5); }
+  .task-item.drag-over-before { box-shadow: inset 0 2px 0 0 var(--text, var(--mode-text-color, #f5f5f5)); }
+  .task-item.drag-over-after  { box-shadow: inset 0 -2px 0 0 var(--text, var(--mode-text-color, #f5f5f5)); }
 
   .drag-handle {
     flex-shrink: 0;
@@ -512,7 +571,7 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     opacity: 0.3;
     align-self: flex-start;
     padding-top: 13px;
@@ -541,6 +600,15 @@
     justify-content: center;
   }
 
+  .task-text :global(p) { margin: 0 0 0.35em; }
+  .task-text :global(p:last-child) { margin-bottom: 0; }
+  .task-text :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+    vertical-align: middle;
+  }
+
   .task-text {
     flex: 1 1 auto;
     min-width: 0;
@@ -552,31 +620,61 @@
     font-size: 0.9rem;
   }
 
+  /* Markdown rendered inside a task */
+  .task-text :global(img) {
+    max-width: 100%;
+    max-height: 220px;
+    height: auto;
+    border-radius: 6px;
+    display: block;
+    margin: 4px 0;
+  }
+  .task-text :global(code) {
+    font-family: monospace;
+    font-size: 0.86em;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #ffffff)) 14%, transparent);
+  }
+  .task-text :global(a) {
+    color: inherit;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+  .task-text :global(strong) { font-weight: 700; }
+  .task-text :global(em) { font-style: italic; }
+  .task-text :global(s) { opacity: 0.7; }
+
   .task-text.done-text {
     opacity: 0.5;
     text-decoration: line-through;
   }
 
-  .task-text-input {
-    flex: 1 1 auto;
+  /* The editor fills the row and grows with its content, so a five-line task
+     still shows five lines while you're writing in it. */
+  .task-editor {
+    flex: 1;
     min-width: 0;
-    background: color-mix(in srgb, var(--text, #fff) 8%, var(--bg, #000));
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 30%, transparent);
-    border-radius: 6px;
-    color: var(--text, inherit);
-    font: inherit;
-    font-size: 0.9rem;
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 30%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 8%, var(--bg, var(--canvas-inner-bg, #000)));
+    color: var(--text, var(--mode-text-color, inherit));
+    border-radius: var(--block-control-radius, 6px);
     padding: 6px 8px;
-    box-sizing: border-box;
-    width: 100%;
-    margin-top: 4px;
   }
+  .task-editor :global(img) {
+    max-width: 100%;
+    height: auto;
+    border-radius: 6px;
+  }
+  .task-editor :global(p) { margin: 0 0 0.35em; }
+  .task-editor :global(p:last-child) { margin-bottom: 0; }
+
 
   .delete-task-btn {
     flex-shrink: 0;
     border: none;
     background: transparent;
-    color: var(--text, inherit);
+    color: var(--text, var(--mode-text-color, inherit));
     cursor: pointer;
     font-size: 1rem;
     width: 32px;
@@ -603,7 +701,7 @@
     align-items: center;
     gap: 6px;
     padding: 8px 12px 10px;
-    border-top: 1px solid color-mix(in srgb, var(--text, #fff) 10%, transparent);
+    border-top: 1px solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 10%, transparent);
     background: var(--bg, var(--canvas-inner-bg, #000));
   }
 
@@ -612,22 +710,22 @@
     min-width: 0;
     padding: 9px 12px;
     border-radius: 10px;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 25%, transparent);
-    background: color-mix(in srgb, var(--text, #fff) 8%, var(--bg, #000));
-    color: var(--text, inherit);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 25%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 8%, var(--bg, var(--canvas-inner-bg, #000)));
+    color: var(--text, var(--mode-text-color, inherit));
     font-family: var(--block-body-font, inherit);
     font-size: 0.95rem;
   }
-  .add-input::placeholder { color: var(--text, inherit); opacity: 0.45; }
+  .add-input::placeholder { color: var(--text, var(--mode-text-color, inherit)); opacity: 0.45; }
 
   .add-dir-btn {
     flex-shrink: 0;
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 25%, transparent);
-    background: color-mix(in srgb, var(--text, #fff) 8%, transparent);
-    color: var(--text, inherit);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 25%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 8%, transparent);
+    color: var(--text, var(--mode-text-color, inherit));
     cursor: pointer;
     font-size: 1rem;
     display: flex;
@@ -642,9 +740,9 @@
     width: 38px;
     height: 38px;
     border-radius: 10px;
-    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, #fff) 30%, transparent);
-    background: color-mix(in srgb, var(--text, #fff) 14%, transparent);
-    color: var(--text, inherit);
+    border: var(--block-border-width, 1px) solid color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 30%, transparent);
+    background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 14%, transparent);
+    color: var(--text, var(--mode-text-color, inherit));
     cursor: pointer;
     font-size: 1.2rem;
     display: flex;
@@ -652,7 +750,7 @@
     justify-content: center;
     transition: background 0.15s;
   }
-  .add-btn:hover { background: color-mix(in srgb, var(--text, #fff) 24%, transparent); }
+  .add-btn:hover { background: color-mix(in srgb, var(--text, var(--mode-text-color, #fff)) 24%, transparent); }
 
   .no-list-placeholder {
     flex: 1;
@@ -706,7 +804,7 @@
             class="task-tab"
             role="tab"
             aria-selected={block.id === selectedTaskId}
-            style="--tab-bg: {block.bgColor || '#000000'}; --tab-text: {block.textColor || '#ffffff'};"
+            style="{block.bgColor ? `--tab-bg: ${block.bgColor};` : ''} {block.textColor ? `--tab-text: ${block.textColor};` : ''}"
             on:click={() => selectTaskList(block.id)}
           >{getTabLabel(block, i)}</button>
         {/each}
@@ -780,22 +878,27 @@
                       </svg>
                     </button>
                     {#if editingTaskId === task.id}
-                      <input
-                        class="task-text-input"
-                        type="text"
-                        bind:value={editText}
+                      <div
+                        class="task-editor"
                         on:click|stopPropagation
                         on:keydown|stopPropagation={handleEditKeydown}
-                        on:blur={commitEditTask}
-                        use:autoFocusInput
-                      />
+                      >
+                        <TipTapEditor
+                          content={editText}
+                          emit="html"
+                          variant="inline"
+                          placeholder="Write the task…"
+                          on:change={(e) => (editText = e.detail)}
+                          on:blur={commitEditTask}
+                        />
+                      </div>
                     {:else}
                       <span
                         class="task-text"
                         title="Double-click to edit"
                         on:dblclick|stopPropagation={() => startEditTask(task)}
                         on:click|stopPropagation
-                      >{task.text}</span>
+                      >{@html renderTaskText(task.text)}</span>
                     {/if}
                   </div>
                   <button class="delete-task-btn" aria-label="Delete task" on:click={() => deleteTask(task.id)}>×</button>
@@ -855,22 +958,27 @@
                         </svg>
                       </button>
                       {#if editingTaskId === task.id}
-                        <input
-                          class="task-text-input"
-                          type="text"
-                          bind:value={editText}
+                        <div
+                          class="task-editor"
                           on:click|stopPropagation
                           on:keydown|stopPropagation={handleEditKeydown}
-                          on:blur={commitEditTask}
-                          use:autoFocusInput
-                        />
+                        >
+                          <TipTapEditor
+                            content={editText}
+                            emit="html"
+                            variant="inline"
+                            placeholder="Write the task…"
+                            on:change={(e) => (editText = e.detail)}
+                            on:blur={commitEditTask}
+                          />
+                        </div>
                       {:else}
                         <span
                           class="task-text done-text"
                           title="Double-click to edit"
                           on:dblclick|stopPropagation={() => startEditTask(task)}
                           on:click|stopPropagation
-                        >{task.text}</span>
+                        >{@html renderTaskText(task.text)}</span>
                       {/if}
                     </div>
                     <button class="delete-task-btn" aria-label="Delete task" on:click={() => deleteTask(task.id)}>×</button>
@@ -897,6 +1005,7 @@
         type="text"
         bind:value={newTaskText}
         on:keydown={handleKeydown}
+        on:paste={handleNewTaskPaste}
         placeholder="Add a task…"
       />
       <button class="add-btn" on:click={addTask} aria-label="Add task">＋</button>

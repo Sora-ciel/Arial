@@ -3,12 +3,18 @@ import { openDB } from 'idb';
 const DB_NAME = 'codex-db';
 const STORE_NAME = 'blocks';
 const FILE_STORE_NAME = 'block-files';
+// Audio for Playlist mode. Deliberately its own store, and deliberately never
+// uploaded: tracks are megabytes each, so they stay on the device and move
+// between devices through export/import instead of the cloud.
+const MUSIC_STORE_NAME = 'music-library';
+// Key under which the device-local playlist library is kept.
+const MUSIC_LIBRARY_KEY = 'library:index';
 // Bumped from 2: this DB name/origin was previously shared with an unrelated
 // project that left an IndexedDB at version 5 on some machines, and IndexedDB
 // refuses to open at a lower version than what already exists there
 // (VersionError). The upgrade callback below is idempotent (only creates
 // stores if missing), so raising this is safe and doesn't touch existing data.
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 const FILE_FIELDS = ['content', 'src', 'trackUrl', 'title', 'tasks'];
 
 function asPayloadWithTimestamp(payload, updatedAt = Date.now()) {
@@ -47,6 +53,9 @@ export async function getDB() {
       }
       if (!db.objectStoreNames.contains(FILE_STORE_NAME)) {
         db.createObjectStore(FILE_STORE_NAME);
+      }
+      if (!db.objectStoreNames.contains(MUSIC_STORE_NAME)) {
+        db.createObjectStore(MUSIC_STORE_NAME);
       }
     }
   });
@@ -253,4 +262,80 @@ export async function listSavedBlocks() {
   const db = await getDB();
   const keys = await db.getAllKeys(STORE_NAME);
   return keys.map(String);
+}
+
+// ── Music library (device-local) ─────────────────────────────────────
+// Playlists and track metadata travel with the file through sync; the audio
+// itself never leaves the device, which keeps a 100-track library from turning
+// into ~500MB of cloud storage and egress. Moving music between devices is
+// done with exportMusicLibrary/importMusicTrack instead.
+
+export async function saveMusicTrack(trackId, blob) {
+  const db = await getDB();
+  await db.put(MUSIC_STORE_NAME, blob, trackId);
+}
+
+export async function loadMusicTrack(trackId) {
+  const db = await getDB();
+  return (await db.get(MUSIC_STORE_NAME, trackId)) || null;
+}
+
+export async function deleteMusicTrack(trackId) {
+  const db = await getDB();
+  await db.delete(MUSIC_STORE_NAME, trackId);
+}
+
+export async function listMusicTrackIds() {
+  const db = await getDB();
+  return await db.getAllKeys(MUSIC_STORE_NAME);
+}
+
+// Which tracks this device actually holds — used to grey out entries that
+// synced in from another device but whose audio hasn't been imported here.
+export async function getAvailableMusicIds() {
+  const keys = await listMusicTrackIds();
+  // The store also holds cover art and the library index; neither is a track.
+  return new Set(
+    keys.filter(key => {
+      const name = String(key);
+      return !name.startsWith('cover:') && name !== MUSIC_LIBRARY_KEY;
+    })
+  );
+}
+
+// Cover art lives beside the audio, device-local. It's often 100KB+ per track,
+// so like the audio it must never end up in the synced payload.
+export async function saveMusicCover(trackId, blob) {
+  const db = await getDB();
+  await db.put(MUSIC_STORE_NAME, blob, `cover:${trackId}`);
+}
+
+export async function loadMusicCover(trackId) {
+  const db = await getDB();
+  return (await db.get(MUSIC_STORE_NAME, `cover:${trackId}`)) || null;
+}
+
+export async function deleteMusicCover(trackId) {
+  const db = await getDB();
+  await db.delete(MUSIC_STORE_NAME, `cover:${trackId}`);
+}
+
+// ── The playlist library, device-local ────────────────────────────
+// Titles, artists, playlists and the track list used to ride along in the
+// folder's mode settings, which meant they synced to the cloud. Nothing about
+// them is useful on another device — the audio itself never leaves this one —
+// so they live here instead and stay out of the synced payload entirely.
+export async function saveMusicLibrary(library) {
+  const db = await getDB();
+  await db.put(MUSIC_STORE_NAME, library || { tracks: [], playlists: [] }, MUSIC_LIBRARY_KEY);
+}
+
+export async function loadMusicLibrary() {
+  const db = await getDB();
+  const stored = await db.get(MUSIC_STORE_NAME, MUSIC_LIBRARY_KEY);
+  if (!stored) return null;
+  return {
+    tracks: Array.isArray(stored.tracks) ? stored.tracks : [],
+    playlists: Array.isArray(stored.playlists) ? stored.playlists : []
+  };
 }

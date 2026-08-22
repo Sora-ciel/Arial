@@ -186,6 +186,9 @@
 <style>
   .player {
     position: absolute;
+    /* scrollbars inside the block follow the block's own colors */
+    --sb-track: var(--bg);
+    --sb-thumb: var(--text);
     border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
     border-radius: var(--block-border-radius, 12px);
     box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));

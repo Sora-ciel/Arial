@@ -4,7 +4,17 @@
   import LeftControls from './advanced-param/LeftControls.svelte';
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './Modes/ModeSwitcher.svelte';
-  import { saveBlocks, loadBlocks, deleteBlocks, listSavedBlocks } from './storage.js';
+  import PlayerIcon from './components/PlayerIcons.svelte';
+  import ScrollingText from './components/ScrollingText.svelte';
+  import {
+    saveBlocks,
+    loadBlocks,
+    deleteBlocks,
+    listSavedBlocks,
+    loadMusicTrack,
+    saveMusicLibrary,
+    loadMusicLibrary
+  } from './storage.js';
   import {
     isFirebaseConfigured,
     onAuthStateChange,
@@ -28,6 +38,8 @@
   import { MODE_DEFINITIONS, MODE_ORDER, getModeDefinition } from "./Modes/modeRegistry.js";
   import { getCanvasViewport } from './canvasState.js';
   import { getOpeningViewportBox } from './utils/canvasFit.js';
+  import { clickOutside } from './utils/clickOutside.js';
+  import { ensureMusicCover } from './utils/musicCovers.js';
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -69,7 +81,8 @@
         focusOutline: 'transparent',
         focusShadow: 'none'
       }),
-      previewBg: 'rgba(16, 16, 20, 0.82)'
+      previewBg: 'rgba(16, 16, 20, 0.82)',
+      blockDefaults: { bgColor: '#000000', textColor: '#ffffff' }
     },
     {
       id: 'aurora-glass',
@@ -111,7 +124,8 @@
         mediaButtonBg: 'rgba(123, 224, 255, 0.18)',
         mediaButtonText: '#7be0ff'
       }),
-      previewBg: 'rgba(8, 24, 38, 0.82)'
+      previewBg: 'rgba(8, 24, 38, 0.82)',
+      blockDefaults: { bgColor: '#08202f', textColor: '#7be0ff' }
     },
     {
       id: 'paper-notebook',
@@ -156,7 +170,177 @@
         mediaButtonBg: '#e8d6c7',
         mediaButtonText: '#4a3725'
       }),
-      previewBg: '#f8efe3'
+      previewBg: '#f8efe3',
+      blockDefaults: { bgColor: '#fffaf2', textColor: '#4a3725' }
+    },
+    {
+      id: 'redline',
+      name: 'Redline',
+      description: 'Pure black with hairline red edges and a warning-light glow.',
+      controlColors: {
+        left: {
+          panelBg: '#0b0708ee',
+          textColor: '#ffe4e4',
+          buttonBg: '#1a0e10',
+          buttonText: '#ff5c5c',
+          borderColor: '#40161a',
+          inputBg: '#120a0b'
+        },
+        right: {
+          panelBg: '#0d0809f2',
+          textColor: '#ffe4e4',
+          buttonBg: '#1c1012',
+          buttonText: '#ff5c5c',
+          borderColor: '#4a1a1f'
+        },
+        canvas: {
+          outerBg: '#000000',
+          innerBg: '#050303'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: 'rgba(255, 92, 92, 0.5)',
+        borderWidth: '1px',
+        borderRadius: '10px',
+        shadow: '0 18px 40px rgba(0, 0, 0, 0.7), 0 0 16px rgba(255, 45, 45, 0.28)',
+        focusOutline: '#ff2d2d',
+        focusShadow: '0 0 0 2px rgba(255, 45, 45, 0.4), 0 0 14px rgba(255, 45, 45, 0.55)',
+        headerText: '#ff5c5c',
+        headerFont: "'Chakra Petch', 'Segoe UI', sans-serif",
+        headerLetterSpacing: '0.14em',
+        accentColor: '#ff2d2d',
+        accentText: '#100303',
+        mediaButtonBg: 'rgba(255, 92, 92, 0.16)',
+        mediaButtonText: '#ff5c5c'
+      }),
+      previewBg: '#070405',
+      blockDefaults: { bgColor: '#0a0607', textColor: '#ff5c5c' }
+    },
+    {
+      id: 'copper-lagoon',
+      name: 'Copper Lagoon',
+      description: 'Warm maroon and brown grounds lit by turquoise highlights.',
+      controlColors: {
+        left: {
+          panelBg: '#2a1512ee',
+          textColor: '#f3e2dc',
+          buttonBg: '#3d201b',
+          buttonText: '#4fd6cd',
+          borderColor: '#5a2f27',
+          inputBg: '#331a16'
+        },
+        right: {
+          panelBg: '#2e1714f2',
+          textColor: '#f3e2dc',
+          buttonBg: '#42231d',
+          buttonText: '#4fd6cd',
+          borderColor: '#63342b'
+        },
+        canvas: {
+          outerBg: '#1d0e0c',
+          innerBg: '#241210'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: 'rgba(79, 214, 205, 0.38)',
+        borderRadius: '14px',
+        shadow: '0 22px 48px rgba(20, 8, 6, 0.7), 0 0 20px rgba(79, 214, 205, 0.18)',
+        focusOutline: '#4fd6cd',
+        focusShadow: '0 0 0 2px rgba(79, 214, 205, 0.35), 0 0 14px rgba(79, 214, 205, 0.5)',
+        headerText: '#4fd6cd',
+        headerFont: "'Inter', system-ui, sans-serif",
+        headerLetterSpacing: '0.08em',
+        accentColor: '#4fd6cd',
+        accentText: '#10302e',
+        mediaButtonBg: 'rgba(79, 214, 205, 0.16)',
+        mediaButtonText: '#4fd6cd'
+      }),
+      previewBg: '#2a1512',
+      blockDefaults: { bgColor: '#3a1d18', textColor: '#6fe3dc' }
+    },
+    {
+      id: 'neon-orchid',
+      name: 'Neon Orchid',
+      description: 'Deep purple night broken by hot fuchsia signage.',
+      controlColors: {
+        left: {
+          panelBg: '#180a20ee',
+          textColor: '#f6e6fb',
+          buttonBg: '#26103048',
+          buttonText: '#ff5cc8',
+          borderColor: '#3d1a4d',
+          inputBg: '#1e0c28'
+        },
+        right: {
+          panelBg: '#1b0b24f2',
+          textColor: '#f6e6fb',
+          buttonBg: '#2a1236',
+          buttonText: '#ff5cc8',
+          borderColor: '#452055'
+        },
+        canvas: {
+          outerBg: '#100616',
+          innerBg: '#15081d'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: 'rgba(255, 92, 200, 0.42)',
+        borderRadius: '16px',
+        shadow: '0 26px 54px rgba(12, 3, 18, 0.72), 0 0 24px rgba(255, 62, 200, 0.28)',
+        focusOutline: '#ff3ec8',
+        focusShadow: '0 0 0 2px rgba(255, 62, 200, 0.38), 0 0 16px rgba(255, 62, 200, 0.55)',
+        headerText: '#ff5cc8',
+        headerFont: "'Chakra Petch', 'Segoe UI', sans-serif",
+        headerLetterSpacing: '0.12em',
+        accentColor: '#ff3ec8',
+        accentText: '#1a0417',
+        mediaButtonBg: 'rgba(255, 92, 200, 0.18)',
+        mediaButtonText: '#ff5cc8'
+      }),
+      previewBg: '#1a0a22',
+      blockDefaults: { bgColor: '#240d30', textColor: '#ff7ada' }
+    },
+    {
+      id: 'ember-slate',
+      name: 'Ember Slate',
+      description: 'Cool graphite panels with a warm amber ember running through.',
+      controlColors: {
+        left: {
+          panelBg: '#14181dee',
+          textColor: '#e8edf2',
+          buttonBg: '#1e242c',
+          buttonText: '#ffb454',
+          borderColor: '#2c343e',
+          inputBg: '#181d23'
+        },
+        right: {
+          panelBg: '#161b21f2',
+          textColor: '#e8edf2',
+          buttonBg: '#212831',
+          buttonText: '#ffb454',
+          borderColor: '#333c47'
+        },
+        canvas: {
+          outerBg: '#0d1116',
+          innerBg: '#11161c'
+        }
+      },
+      blockTheme: normalizeBlockTheme({
+        borderColor: 'rgba(255, 180, 84, 0.32)',
+        borderRadius: '12px',
+        shadow: '0 20px 44px rgba(4, 8, 12, 0.7), 0 0 18px rgba(255, 180, 84, 0.16)',
+        focusOutline: '#ffb454',
+        focusShadow: '0 0 0 2px rgba(255, 180, 84, 0.35), 0 0 14px rgba(255, 180, 84, 0.5)',
+        headerText: '#ffb454',
+        headerFont: "'Inter', system-ui, sans-serif",
+        headerLetterSpacing: '0.07em',
+        accentColor: '#ffb454',
+        accentText: '#1b1206',
+        mediaButtonBg: 'rgba(255, 180, 84, 0.15)',
+        mediaButtonText: '#ffb454'
+      }),
+      previewBg: '#161b21',
+      blockDefaults: { bgColor: '#1b2129', textColor: '#ffb454' }
     }
   ];
 
@@ -169,6 +353,15 @@
   // signing into a second account would push the first account's files up to
   // it, because bootstrap treats whatever is on this device as "mine".
   const SYNCED_UID_STORAGE_KEY = 'syncedUid';
+  const LAST_MODE_STORAGE_KEY = 'lastMode';
+  // App-wide counterpart to the per-file blocksFollowTheme switch: a device
+  // preference, so it isn't carried between folders by sync.
+  const BLOCKS_FOLLOW_THEME_ALL_KEY = 'blocksFollowThemeAllFolders';
+  const MUSIC_VOLUME_KEY = 'musicVolume';
+  const MUSIC_SHUFFLE_KEY = 'musicShuffle';
+  // What was playing and how far in, so a reload or a fresh launch can pick the
+  // listening session back up where it stopped.
+  const MUSIC_RESUME_KEY = 'musicResume';
   const FALLBACK_SAVE_NAME = 'Fallback';
   const DEFAULT_MODE_SETTINGS = {
     simple: {
@@ -177,6 +370,12 @@
     task: {
       addDirection: 'above'
     },
+    // When on, every block is repainted in the active theme's colours; each
+    // block keeps its own colours stashed so switching back restores them.
+    blocksFollowTheme: false,
+    // Track metadata and playlists sync with the folder; the audio itself
+    // stays on each device (see storage.js) and moves via export/import.
+    playlist: { tracks: [], playlists: [] },
     single: {
       backgroundImage: '',
       backgroundImageMobile: '',
@@ -206,6 +405,11 @@
         ...DEFAULT_MODE_SETTINGS.task,
         ...incomingTask,
         addDirection: incomingTask.addDirection === 'below' ? 'below' : 'above'
+      },
+      blocksFollowTheme: settings?.blocksFollowTheme === true,
+      playlist: {
+        tracks: Array.isArray(settings?.playlist?.tracks) ? settings.playlist.tracks : [],
+        playlists: Array.isArray(settings?.playlist?.playlists) ? settings.playlist.playlists : []
       },
       single: {
         ...DEFAULT_MODE_SETTINGS.single,
@@ -345,6 +549,81 @@
       return parsed && typeof parsed === 'object' ? parsed : {};
     } catch {
       return {};
+    }
+  }
+
+  function loadMusicVolume() {
+    if (typeof localStorage === 'undefined') return 1;
+    // Read as a string first: Number(null) is 0, so a missing key would
+    // otherwise start every fresh install silently muted.
+    const raw = localStorage.getItem(MUSIC_VOLUME_KEY);
+    if (raw === null || raw === '') return 1;
+    const stored = Number(raw);
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+  }
+
+  function persistMusicVolume(value) {
+    try { localStorage.setItem(MUSIC_VOLUME_KEY, String(value)); } catch { /* ignore */ }
+  }
+
+  function loadMusicResume() {
+    try {
+      const raw = localStorage.getItem(MUSIC_RESUME_KEY);
+      const parsed = raw ? JSON.parse(raw) : null;
+      return parsed && typeof parsed.trackId === 'string' ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  function persistMusicResume(state) {
+    try {
+      if (state) localStorage.setItem(MUSIC_RESUME_KEY, JSON.stringify(state));
+      else localStorage.removeItem(MUSIC_RESUME_KEY);
+    } catch { /* ignore */ }
+  }
+
+  function loadMusicShuffle() {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(MUSIC_SHUFFLE_KEY) === 'true';
+  }
+
+  function persistMusicShuffle(value) {
+    try { localStorage.setItem(MUSIC_SHUFFLE_KEY, value ? 'true' : 'false'); } catch { /* ignore */ }
+  }
+
+  function loadLastMode() {
+    if (typeof localStorage === 'undefined') return '';
+    try {
+      return localStorage.getItem(LAST_MODE_STORAGE_KEY) || '';
+    } catch {
+      return '';
+    }
+  }
+
+  function persistLastMode(nextMode) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(LAST_MODE_STORAGE_KEY, nextMode);
+    } catch {
+      /* ignore persistence failures */
+    }
+  }
+
+  function loadBlocksFollowThemeAll() {
+    if (typeof localStorage === 'undefined') return false;
+    try {
+      return localStorage.getItem(BLOCKS_FOLLOW_THEME_ALL_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  function persistBlocksFollowThemeAll(value) {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(BLOCKS_FOLLOW_THEME_ALL_KEY, value ? 'true' : 'false');
+    } catch {
+      /* ignore persistence failures */
     }
   }
 
@@ -599,6 +878,409 @@
   let showAdvancedCssPage = false;
 
   $: availableThemes = [...STYLE_PRESETS, ...customThemes];
+  // New blocks are born in the active theme's colours instead of always
+  // black-on-white. Themes without their own defaults (custom ones) keep the
+  // original pair.
+  $: activeTheme = availableThemes.find(theme => theme.id === selectedThemeId) || null;
+  $: newBlockColors = {
+    bgColor: activeTheme?.blockDefaults?.bgColor || '#000000',
+    textColor: activeTheme?.blockDefaults?.textColor || '#ffffff'
+  };
+  // ── Music player ──────────────────────────────────────────────────
+  // Lives here rather than inside Playlist mode: switching modes unmounts the
+  // mode component, and playback has to keep going while you work elsewhere.
+  // Device-local, never synced: the audio only ever exists on this machine, so
+  // its titles and playlists are of no use to another device. Kept in
+  // IndexedDB rather than the folder's mode settings, which do sync.
+  let musicLibrary = { tracks: [], playlists: [] };
+
+  // Anything saved by an earlier version still sits in the synced settings.
+  // Moving it across has to wait for the folder to actually load: running on
+  // the first reactive pass sees the empty defaults, adopts nothing, and then
+  // never looks again — which is exactly how an earlier attempt at this lost
+  // the library from view.
+  let musicLibraryLoaded = false;
+  let musicLibraryMigrated = false;
+
+  async function loadLocalMusicLibrary() {
+    const local = await loadMusicLibrary();
+    if (local && (local.tracks.length || local.playlists.length)) {
+      musicLibrary = local;
+      // Already local, so there's nothing left to bring across.
+      musicLibraryMigrated = true;
+    }
+    musicLibraryLoaded = true;
+  }
+
+  async function migrateSyncedMusicLibrary(synced) {
+    musicLibrary = {
+      tracks: Array.isArray(synced.tracks) ? synced.tracks : [],
+      playlists: Array.isArray(synced.playlists) ? synced.playlists : []
+    };
+    await saveMusicLibrary(musicLibrary);
+    // Cleared from the folder so it stops being uploaded from here on.
+    await handleModeSettingChange({ detail: { playlist: { tracks: [], playlists: [] } } });
+  }
+
+  $: if (musicLibraryLoaded && !musicLibraryMigrated && modeSettings?.playlist) {
+    const synced = modeSettings.playlist;
+    if ((synced.tracks || []).length || (synced.playlists || []).length) {
+      musicLibraryMigrated = true;
+      migrateSyncedMusicLibrary(synced);
+    }
+  }
+
+  let audioEl;
+  let nowPlayingId = null;
+  let musicQueue = [];
+  let isPlaying = false;
+  let nowPlayingUrl = '';
+  let playerExpanded = false;
+  let playerToggleRef;
+  let musicShuffle = loadMusicShuffle();
+  let musicVolume = loadMusicVolume();
+  let nowPlayingCoverUrl = '';
+  // Where we are in the track, for the panel's seek bar.
+  let musicPosition = 0;
+  let musicDuration = 0;
+
+  function formatClock(seconds) {
+    if (!Number.isFinite(seconds) || seconds < 0) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${String(secs).padStart(2, '0')}`;
+  }
+
+  function seekMusic(value) {
+    const next = Number(value);
+    if (!audioEl || !Number.isFinite(next)) return;
+    audioEl.currentTime = next;
+    // Moved straight away so the handle doesn't spring back while the media
+    // element catches up.
+    musicPosition = next;
+  }
+
+  function syncMusicTime() {
+    if (!audioEl) return;
+    musicPosition = audioEl.currentTime || 0;
+    musicDuration = Number.isFinite(audioEl.duration) ? audioEl.duration : 0;
+  }
+
+  $: nowPlayingTrack = musicLibrary.tracks?.find(t => t.id === nowPlayingId) || null;
+
+  // The cover sits behind a veil of the theme's own panel colour, so the art
+  // tints the control rather than fighting the palette. The veil keeps a little
+  // transparency on purpose — a fully opaque theme colour would hide the art
+  // completely and there'd be nothing to show.
+  function artBackground(url, veilVar, fallbackVar) {
+    const veil = `color-mix(in srgb, var(${veilVar}, var(${fallbackVar})) 82%, transparent)`;
+    if (!url) return '';
+    return (
+      `background-image: linear-gradient(${veil}, ${veil}), url('${url}');` +
+      ' background-size: cover; background-position: center;'
+    );
+  }
+  $: miniPlayerArtStyle = artBackground(nowPlayingCoverUrl, '--controls-bg', '--controls-bg');
+  $: panelArtStyle = artBackground(nowPlayingCoverUrl, '--dlg-bg', '--dlg-bg');
+  // Volume is a device setting, not a per-file one, so it survives reloads
+  // without riding along with the folder.
+  $: if (audioEl) audioEl.volume = musicVolume;
+
+  function setMusicVolume(value) {
+    musicVolume = Math.min(1, Math.max(0, Number(value)));
+    persistMusicVolume(musicVolume);
+  }
+
+  function toggleShuffle() {
+    musicShuffle = !musicShuffle;
+    persistMusicShuffle(musicShuffle);
+  }
+
+  async function showCoverFor(trackId) {
+    if (nowPlayingCoverUrl) {
+      URL.revokeObjectURL(nowPlayingCoverUrl);
+      nowPlayingCoverUrl = '';
+    }
+    const cover = await ensureMusicCover(trackId);
+    if (cover) nowPlayingCoverUrl = URL.createObjectURL(cover);
+  }
+
+  async function playMusicTrack(trackId, queue = []) {
+    const blob = await loadMusicTrack(trackId);
+    if (!blob) {
+      await appAlert("That track's audio isn't on this device yet. Import it from a music export.");
+      return;
+    }
+    if (nowPlayingUrl) URL.revokeObjectURL(nowPlayingUrl);
+    nowPlayingUrl = URL.createObjectURL(blob);
+    nowPlayingId = trackId;
+    musicPosition = 0;
+    musicDuration = 0;
+    if (queue.length) musicQueue = queue;
+    showCoverFor(trackId);
+    await tick();
+    if (audioEl) {
+      audioEl.src = nowPlayingUrl;
+      audioEl.volume = musicVolume;
+      try {
+        await audioEl.play();
+        isPlaying = true;
+      } catch (error) {
+        console.error('Playback failed:', error);
+        isPlaying = false;
+      }
+    }
+    rememberPlaybackPosition();
+  }
+
+  function toggleMusic() {
+    if (!audioEl || !nowPlayingId) return;
+    if (audioEl.paused) {
+      audioEl.play().then(() => (isPlaying = true)).catch(() => (isPlaying = false));
+    } else {
+      audioEl.pause();
+      isPlaying = false;
+    }
+  }
+
+  function stopMusic() {
+    audioEl?.pause();
+    isPlaying = false;
+    nowPlayingId = null;
+    if (nowPlayingUrl) {
+      URL.revokeObjectURL(nowPlayingUrl);
+      nowPlayingUrl = '';
+    }
+    playerExpanded = false;
+    persistMusicResume(null);
+  }
+
+  function stepMusic(offset) {
+    if (!musicQueue.length || !nowPlayingId) return;
+
+    // Shuffle picks anything but the current track, so a two-track queue still
+    // alternates instead of repeating the same one.
+    if (musicShuffle && musicQueue.length > 1) {
+      const others = musicQueue.filter(id => id !== nowPlayingId);
+      playMusicTrack(others[Math.floor(Math.random() * others.length)]);
+      return;
+    }
+
+    const index = musicQueue.indexOf(nowPlayingId);
+    if (index === -1) return;
+    const next = musicQueue[(index + offset + musicQueue.length) % musicQueue.length];
+    if (next) playMusicTrack(next);
+  }
+
+  async function handleLibraryChange(next) {
+    musicLibrary = next || { tracks: [], playlists: [] };
+    await saveMusicLibrary(musicLibrary);
+  }
+
+  // ── Lock screen / notification controls ───────────────────────────
+  // The Media Session API is what puts the track on the phone's notification
+  // shade and lock screen, and it's also what tells the OS this tab is playing
+  // real audio — which is what keeps it running once the screen goes off.
+  let mediaSessionCoverUrl = '';
+
+  async function updateMediaSession(track) {
+    const ms = navigator.mediaSession;
+    if (!ms || typeof MediaMetadata === 'undefined') return;
+    if (!track) {
+      ms.metadata = null;
+      ms.playbackState = 'none';
+      return;
+    }
+
+    // The notification can't read a blob: URL from IndexedDB, so the cover is
+    // re-encoded as a data URL it can actually fetch.
+    const artwork = [];
+    try {
+      const cover = await ensureMusicCover(track.id);
+      if (cover) {
+        if (mediaSessionCoverUrl) mediaSessionCoverUrl = '';
+        const dataUrl = await new Promise(resolve => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => resolve('');
+          reader.readAsDataURL(cover);
+        });
+        if (dataUrl) {
+          mediaSessionCoverUrl = dataUrl;
+          artwork.push({ src: dataUrl, type: cover.type || 'image/jpeg', sizes: '512x512' });
+        }
+      }
+    } catch { /* artwork is optional */ }
+
+    ms.metadata = new MediaMetadata({
+      title: track.title || 'Untitled',
+      artist: track.artist || '',
+      album: track.album || '',
+      artwork
+    });
+  }
+
+  function setupMediaSessionHandlers() {
+    const ms = navigator.mediaSession;
+    if (!ms || typeof ms.setActionHandler !== 'function') return;
+    const handlers = {
+      play: () => { if (!isPlaying) toggleMusic(); },
+      pause: () => { if (isPlaying) toggleMusic(); },
+      stop: stopMusic,
+      previoustrack: () => stepMusic(-1),
+      nexttrack: () => stepMusic(1),
+      seekto: details => {
+        if (audioEl && Number.isFinite(details?.seekTime)) audioEl.currentTime = details.seekTime;
+      }
+    };
+    for (const [action, handler] of Object.entries(handlers)) {
+      // Not every platform supports every action; an unsupported one throws.
+      try { ms.setActionHandler(action, handler); } catch { /* ignore */ }
+    }
+  }
+
+  $: if (navigator.mediaSession) {
+    navigator.mediaSession.playbackState = nowPlayingId ? (isPlaying ? 'playing' : 'paused') : 'none';
+  }
+  $: updateMediaSession(nowPlayingTrack);
+
+  // ── Resuming where you left off ───────────────────────────────────
+  let resumeSeekTo = 0;
+
+  function handleVisibilityForMusic() {
+    if (document.visibilityState === 'hidden') rememberPlaybackPosition();
+  }
+
+  // timeupdate fires several times a second; the position only needs writing
+  // every few seconds for a resume to feel right.
+  let lastPositionWrite = 0;
+  function throttledRememberPosition() {
+    const now = Date.now();
+    if (now - lastPositionWrite < 4000) return;
+    lastPositionWrite = now;
+    rememberPlaybackPosition();
+  }
+
+  function rememberPlaybackPosition() {
+    if (!nowPlayingId) {
+      persistMusicResume(null);
+      return;
+    }
+    persistMusicResume({
+      trackId: nowPlayingId,
+      queue: musicQueue,
+      position: audioEl?.currentTime || 0
+    });
+  }
+
+  // Loads the last session without starting it: browsers refuse to autoplay
+  // before you've interacted with the page, so the track is queued up paused
+  // and the first tap on play carries on from the saved position.
+  async function restoreLastListeningSession() {
+    const saved = loadMusicResume();
+    if (!saved) return;
+    const track = musicLibrary.tracks?.find(t => t.id === saved.trackId);
+    if (!track) return;
+    const blob = await loadMusicTrack(saved.trackId);
+    if (!blob) return;
+
+    if (nowPlayingUrl) URL.revokeObjectURL(nowPlayingUrl);
+    nowPlayingUrl = URL.createObjectURL(blob);
+    nowPlayingId = saved.trackId;
+    musicQueue = Array.isArray(saved.queue) && saved.queue.length ? saved.queue : [saved.trackId];
+    resumeSeekTo = Number(saved.position) || 0;
+    showCoverFor(saved.trackId);
+    await tick();
+    if (audioEl) {
+      audioEl.src = nowPlayingUrl;
+      audioEl.volume = musicVolume;
+    }
+    isPlaying = false;
+  }
+
+  // The library only exists once a folder has loaded, so the restore waits for
+  // it rather than running on mount. It runs once per session.
+  let listeningSessionRestored = false;
+  $: if (!listeningSessionRestored && musicLibrary.tracks?.length) {
+    listeningSessionRestored = true;
+    restoreLastListeningSession();
+  }
+
+  function applyResumePosition() {
+    if (resumeSeekTo > 0 && audioEl && Number.isFinite(audioEl.duration)) {
+      audioEl.currentTime = Math.min(resumeSeekTo, Math.max(0, audioEl.duration - 1));
+    }
+    resumeSeekTo = 0;
+  }
+
+  let blocksFollowThemeAll = loadBlocksFollowThemeAll();
+  // Per-folder switch travels with the file through sync; the app-wide one is
+  // a device preference that forces it on regardless of the folder.
+  $: blocksFollowTheme = blocksFollowThemeAll || modeSettings.blocksFollowTheme === true;
+  // Repaint whenever the switch is on and the theme's colours move. It's a
+  // no-op once everything already matches, so re-running costs nothing.
+  $: if (blocksFollowTheme && blocks.length) paintBlocksWithTheme(newBlockColors);
+
+  // Applies theme colours across every block in every mode, stashing each
+  // block's own colours the first time so turning the switch off restores
+  // exactly what the user had picked.
+  function paintBlocksWithTheme(colors) {
+    let touched = false;
+    const next = blocks.map(block => {
+      const alreadyStashed = block._baseBgColor !== undefined;
+      if (alreadyStashed && block.bgColor === colors.bgColor && block.textColor === colors.textColor) {
+        return block;
+      }
+      touched = true;
+      return {
+        ...block,
+        _baseBgColor: alreadyStashed ? block._baseBgColor : block.bgColor,
+        _baseTextColor: alreadyStashed ? block._baseTextColor : block.textColor,
+        bgColor: colors.bgColor,
+        textColor: colors.textColor,
+        _version: (block._version || 0) + 1
+      };
+    });
+    if (!touched) return;
+    blocks = next;
+    pushHistory(blocks, modeOrders);
+  }
+
+  function restoreBlockColors() {
+    let touched = false;
+    const next = blocks.map(block => {
+      if (block._baseBgColor === undefined) return block;
+      touched = true;
+      const restored = {
+        ...block,
+        bgColor: block._baseBgColor,
+        textColor: block._baseTextColor,
+        _version: (block._version || 0) + 1
+      };
+      delete restored._baseBgColor;
+      delete restored._baseTextColor;
+      return restored;
+    });
+    if (!touched) return;
+    blocks = next;
+    pushHistory(blocks, modeOrders);
+  }
+
+  // Per-folder switch. Turning it off while the app-wide one is on leaves the
+  // blocks painted, since that setting still applies.
+  async function toggleBlocksFollowTheme() {
+    const next = !(modeSettings.blocksFollowTheme === true);
+    if (next) paintBlocksWithTheme(newBlockColors);
+    else if (!blocksFollowThemeAll) restoreBlockColors();
+    await handleModeSettingChange({ detail: { blocksFollowTheme: next } });
+  }
+
+  async function toggleBlocksFollowThemeAll() {
+    blocksFollowThemeAll = !blocksFollowThemeAll;
+    persistBlocksFollowThemeAll(blocksFollowThemeAll);
+    if (blocksFollowThemeAll) paintBlocksWithTheme(newBlockColors);
+    else if (modeSettings.blocksFollowTheme !== true) restoreBlockColors();
+  }
 
   function applyThemePreset(preset, { persistSelection = true } = {}) {
     if (!preset) return;
@@ -999,7 +1681,13 @@
   setContext('appDialogs', { alert: appAlert, confirm: appConfirm, prompt: appPrompt });
 
   $: leftTheme = controlColors.left || CONTROL_COLOR_DEFAULTS.left;
-  $: controlsStyle = `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};`;
+  // The toolbar's buttons are coloured with buttonText, not textColor, and on
+  // several themes (Copper Lagoon among them) those two differ sharply. The
+  // player sits among those buttons, so it follows the same one they do.
+  $: controlsStyle =
+    `--controls-bg: ${leftTheme.panelBg}; --controls-border: ${leftTheme.borderColor};` +
+    ` --controls-text: ${leftTheme.textColor};` +
+    ` --controls-button-text: ${leftTheme.buttonText};`;
   // Dialogs and the sync banner render outside .app, so they can't inherit its
   // theme vars — hand them the right-panel palette directly.
   $: rightTheme = controlColors.right || CONTROL_COLOR_DEFAULTS.right;
@@ -1007,7 +1695,14 @@
     `--dlg-bg: ${rightTheme.panelBg}; --dlg-text: ${rightTheme.textColor};` +
     ` --dlg-border: ${rightTheme.borderColor}; --dlg-btn-bg: ${rightTheme.buttonBg};` +
     ` --dlg-btn-text: ${rightTheme.buttonText};`;
-  $: canvasTheme = controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas;
+  // Modes used to derive their own readable text colour from the canvas
+  // background, which meant they ignored the palette the theme actually
+  // specifies. Hand them the theme's text colour and let them fall back to the
+  // derived one only when a theme doesn't state one.
+  $: canvasTheme = {
+    ...(controlColors.canvas || CONTROL_COLOR_DEFAULTS.canvas),
+    textColor: activeTheme?.blockDefaults?.textColor || ''
+  };
   let Pc = window.innerWidth > MOBILE_BREAKPOINT;
   let birthdayUnlockExpiry = loadBirthdayUnlockExpiry();
   let birthdayUnlockMessage = "";
@@ -1290,6 +1985,36 @@
     }
   }
 
+  // F11 toggles fullscreen. Using the web Fullscreen API rather than Tauri's
+  // window API keeps one code path across the desktop app, the site and
+  // Android — WebView2 honours it and drops the title bar. Escape leaves
+  // fullscreen on its own, handled by the browser.
+  async function toggleFullscreen() {
+    try {
+      if (document.fullscreenElement) {
+        await document.exitFullscreen();
+      } else {
+        await document.documentElement.requestFullscreen();
+      }
+    } catch (error) {
+      // Denied (no user gesture, or the platform refuses) — not worth a dialog.
+      console.error('Fullscreen toggle failed:', error);
+    }
+  }
+
+  // Only the desktop shell needs this: a real browser already has its own F11,
+  // and hijacking it there would swap familiar behaviour for a worse copy.
+  function isDesktopShell() {
+    return typeof window !== 'undefined'
+      && !!(window.__TAURI_INTERNALS__ || window.__TAURI__);
+  }
+
+  function handleFullscreenShortcut(event) {
+    if (event.key !== 'F11' || !isDesktopShell()) return;
+    event.preventDefault();
+    toggleFullscreen();
+  }
+
   function handleUndoRedoShortcut(event) {
     const key = event.key?.toLowerCase();
     const hasCommand = event.ctrlKey || event.metaKey;
@@ -1308,6 +2033,29 @@
   // viewport the user is actually looking at (when on the canvas), with a
   // fine-grained sweep that finds real gaps instead of jumping to wherever
   // some unrelated existing block happens to sit.
+  // Drop a block where the user is actually looking. Repeat additions cascade
+  // by a small step rather than stacking invisibly on the same spot.
+  function findViewportCenterPosition(existingBlocks, width, height) {
+    const vp = getCanvasViewport();
+    if (!vp) return null;
+
+    const CASCADE_STEP = 28;
+    const centreX = Math.max(0, vp.canvasX + (vp.canvasVisibleW - width) / 2);
+    const centreY = Math.max(0, vp.canvasY + (vp.canvasVisibleH - height) / 2);
+
+    const occupied = (x, y) => existingBlocks.some(b =>
+      Math.abs((b.position?.x ?? 0) - x) < 1 && Math.abs((b.position?.y ?? 0) - y) < 1
+    );
+
+    let x = centreX;
+    let y = centreY;
+    for (let step = 0; step < 40 && occupied(x, y); step++) {
+      x = centreX + (step + 1) * CASCADE_STEP;
+      y = centreY + (step + 1) * CASCADE_STEP;
+    }
+    return { x, y };
+  }
+
   function findFreePosition(existingBlocks, width, height) {
     const PADDING = 4;
     const SWEEP_STEP = 28;
@@ -1411,7 +2159,11 @@
       type = "cleantext";
     }
     const blockW = 300, blockH = 200;
-    const position = mode === 'default' ? findFreePosition(blocks, blockW, blockH) : { x: 100, y: 100 };
+    // Added deliberately from the menu, so put it where the user is looking —
+    // unlike a burst of dropped media, which tiles with findFreePosition.
+    const position = mode === 'default'
+      ? (findViewportCenterPosition(blocks, blockW, blockH) ?? findFreePosition(blocks, blockW, blockH))
+      : { x: 100, y: 100 };
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
       type,
@@ -1420,8 +2172,7 @@
       ...(type === "task" ? { tasks: [], title: "Task List" } : {}),
       position,
       size: { width: blockW, height: blockH },
-      bgColor: "#000000",
-      textColor: "#ffffff",
+      ...newBlockColors,
       _version: 0
     });
     blocks = [...blocks, newBlock];
@@ -1570,8 +2321,7 @@
       src,
       position: mode === 'default' ? findFreePosition(blocks, imgW, imgH) : { x: 100, y: 100 },
       size: { width: imgW, height: imgH },
-      bgColor: '#000000',
-      textColor: '#ffffff',
+      ...newBlockColors,
       _version: 0
     });
 
@@ -1648,8 +2398,7 @@
       src: '',
       position: mode === 'default' ? findFreePosition(blocks, txtW, txtH) : { x: 100, y: 100 },
       size: { width: txtW, height: txtH },
-      bgColor: '#000000',
-      textColor: '#ffffff',
+      ...newBlockColors,
       _version: 0
     });
     blocks = [...blocks, newBlock];
@@ -2387,6 +3136,14 @@
       patch = { ...patch, single: { ...patch.single, ...detail.single } };
     }
 
+    if (detail.blocksFollowTheme !== undefined) {
+      patch = { ...patch, blocksFollowTheme: detail.blocksFollowTheme === true };
+    }
+
+    if (detail.playlist && typeof detail.playlist === 'object') {
+      patch = { ...patch, playlist: { ...patch.playlist, ...detail.playlist } };
+    }
+
     const nextModeSettings = normalizeModeSettings(patch);
     modeSettings = nextModeSettings;
     await persistAutosave(blocks, modeOrders, nextModeSettings, { immediate: true });
@@ -2494,6 +3251,7 @@
     if (nextMode === "birthday" && !birthdayModeUnlocked) return;
     if (nextMode === mode) return;
     mode = nextMode;
+    persistLastMode(nextMode);
 
     if (
       mode === "single" &&
@@ -2516,7 +3274,14 @@
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
     window.addEventListener("resize", handleWindowResize);
     window.addEventListener("keydown", handleUndoRedoShortcut);
+    window.addEventListener("keydown", handleFullscreenShortcut);
     window.addEventListener("paste", handlePaste);
+    // Backgrounding the app is the moment most likely to be followed by the
+    // process being killed, so the position is written out there too.
+    document.addEventListener("visibilitychange", handleVisibilityForMusic);
+    window.addEventListener("pagehide", rememberPlaybackPosition);
+    setupMediaSessionHandlers();
+    loadLocalMusicLibrary();
     adjustCanvasPadding();
 
     if (firebaseReady) {
@@ -2601,6 +3366,13 @@
       if (mode === "birthday") mode = getDefaultModeForViewport();
     }
 
+    // Reopen in whatever mode was last used, rather than always falling back
+    // to the viewport default. Birthday mode is skipped — it's password-gated.
+    const storedMode = loadLastMode();
+    if (storedMode && KNOWN_MODES.includes(storedMode) && storedMode !== 'birthday') {
+      mode = storedMode;
+    }
+
     history = [];
     historyIndex = -1;
     await pushHistory(blocks, modeOrders);
@@ -2626,7 +3398,10 @@
   onDestroy(() => {
     window.removeEventListener("resize", handleWindowResize);
     window.removeEventListener("keydown", handleUndoRedoShortcut);
+    window.removeEventListener("keydown", handleFullscreenShortcut);
     window.removeEventListener("paste", handlePaste);
+    document.removeEventListener("visibilitychange", handleVisibilityForMusic);
+    window.removeEventListener("pagehide", rememberPlaybackPosition);
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
@@ -2716,6 +3491,245 @@
 .right-controls {
   margin-left: auto;
 }
+
+/* Matches the height of the toolbar buttons beside it rather than sitting
+   short in the middle of the bar. Everything inside inherits the toolbar's
+   theme text colour, so the icons recolour with the theme. */
+.mini-player {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+  padding: 0 6px;
+  align-self: stretch;
+  min-height: 42px;
+  border-radius: 8px;
+  border: 1px solid var(--controls-border, #333);
+  background: color-mix(in srgb, var(--controls-bg, #111) 75%, transparent);
+  color: var(--controls-button-text, var(--controls-text, #fff));
+  max-width: 300px;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+.mini-player.open {
+  border-color: color-mix(in srgb, var(--controls-button-text, var(--controls-text, #fff)) 55%, transparent);
+}
+
+.mini-player + .right-controls { margin-left: 8px; }
+
+.mini-btn {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 5px;
+  min-height: 0;
+  line-height: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 6px;
+}
+.mini-btn:hover { background: color-mix(in srgb, var(--controls-button-text, var(--controls-text, #fff)) 16%, transparent); }
+
+.mini-cover {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+  border-radius: 4px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: color-mix(in srgb, var(--controls-button-text, #fff) 16%, transparent);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.mini-cover-blank { opacity: 0.8; box-shadow: none; }
+
+/* The name is the handle for the bigger controls. */
+.mini-title-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 170px;
+  color: inherit;
+  font-size: 0.78rem;
+  text-align: left;
+  padding: 5px 6px;
+  opacity: 0.92;
+}
+
+
+/* Expanded panel: a player card — art and title on top, the seek bar beneath,
+   transport under that, with the volume standing as a slim column down the
+   right. Themed like the other popovers. */
+.player-panel {
+  /* Feeds the shared scrollbar/slider colours from the panel's own palette. */
+  --sb-track: var(--dlg-bg, #17171a);
+  --sb-thumb: var(--dlg-btn-text, var(--dlg-text, #f0f0f0));
+  position: fixed;
+  top: calc(var(--controls-height, 56px) + 8px);
+  right: 8px;
+  z-index: 1400;
+  width: min(94vw, 400px);
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid var(--dlg-border, #333);
+  /* The art layer is supplied inline and overrides this when there is a
+     cover; without one the panel still needs its own ground. */
+  background: var(--dlg-bg, #17171a);
+  color: var(--dlg-btn-text, var(--dlg-text, #f0f0f0));
+  box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: stretch;
+  gap: 14px;
+  box-sizing: border-box;
+}
+
+.pp-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.pp-now { display: flex; gap: 11px; align-items: center; min-width: 0; }
+.pp-cover {
+  width: 60px;
+  height: 60px;
+  border-radius: 10px;
+  object-fit: cover;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--dlg-text, #fff) 12%, transparent);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+.pp-cover-blank {
+  display: grid;
+  place-items: center;
+  opacity: 0.55;
+  color: var(--dlg-btn-text, var(--dlg-text, #fff));
+  box-shadow: none;
+}
+.pp-meta { min-width: 0; flex: 1; }
+.pp-title { font-size: 0.94rem; font-weight: 600; min-width: 0; }
+.pp-sub {
+  font-size: 0.76rem;
+  opacity: 0.7;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pp-seek { display: flex; align-items: center; gap: 8px; }
+.pp-seek-range { flex: 1; min-width: 0; }
+.pp-seek-range:disabled { opacity: 0.45; cursor: default; }
+.pp-time {
+  font-size: 0.7rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  min-width: 28px;
+}
+.pp-time:last-child { text-align: right; }
+
+/* Three columns with matching outer widths, so the middle one — prev, play,
+   next as a single cluster — lands dead centre of the row, and therefore
+   centred under the seek bar. Shuffle sits out at the end. */
+.pp-row {
+  display: grid;
+  grid-template-columns: 38px 1fr 38px;
+  align-items: center;
+}
+.pp-row-gutter { display: block; }
+.pp-transport {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+.pp-shuffle { justify-self: end; }
+.pp-btn {
+  flex: 0 0 auto;
+  width: 38px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  background: none;
+  border: none;
+  color: inherit;
+  border-radius: 9px;
+  padding: 0;
+  min-height: 0;
+  cursor: pointer;
+  opacity: 0.85;
+}
+.pp-btn:hover {
+  opacity: 1;
+  background: color-mix(in srgb, var(--dlg-btn-text, var(--dlg-text, #fff)) 14%, transparent);
+}
+.pp-btn.on {
+  opacity: 1;
+  background: color-mix(in srgb, var(--dlg-btn-text, var(--dlg-text, #fff)) 22%, transparent);
+}
+.pp-play {
+  width: 44px;
+  height: 38px;
+  opacity: 1;
+}
+
+/* Volume runs the full height of the card so the two columns balance. */
+/* Deliberately unadorned: no panel, no border, nothing dimmed — the same
+   treatment as the seek bar, just stood on end. */
+.pp-volume {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  width: 26px;
+  color: var(--dlg-btn-text, var(--dlg-text, #fff));
+  cursor: pointer;
+}
+/* Geometry comes from the shared .vertical variant in app.css. Left at its
+   fixed height on purpose: letting it stretch made the slider drive the card's
+   height instead of the other way round, and the panel grew a good 40px. */
+.pp-volume-range { padding: 0; }
+/* Number then icon, both in the button text colour, matching the timeline's
+   readouts. */
+.pp-vol-readout {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 0.7rem;
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+  color: var(--dlg-btn-text, var(--dlg-text, #fff));
+}
+
+@media (max-width: 1024px) {
+  /* Sized to the toolbar buttons rather than stretched to the row, which on
+     phones is a few pixels taller than the buttons themselves. Only the name
+     shows here, and the whole strip is the tap target for the big controls. */
+  .mini-player {
+    max-width: 46vw;
+    align-self: center;
+    min-height: 0;
+    height: 32px;
+    padding: 0;
+    gap: 0;
+  }
+  .mini-title-btn {
+    max-width: none;
+    height: 100%;
+    padding: 0 8px;
+    font-size: 0.74rem;
+    border-radius: 7px;
+  }
+}
+
 
 .startup-warning {
   display: flex;
@@ -2930,6 +3944,145 @@
       on:moveDown={moveFocusedBlockDown}
       on:modeSettingChange={handleModeSettingChange}
     />
+    <!-- Mini player: present in every mode so what's playing stays reachable
+         without going back to Playlist mode. -->
+    {#if nowPlayingTrack}
+      <!-- The whole strip opens the bigger controls; only the transport
+           buttons keep their own click. The cover art is already the strip's
+           background, so no thumbnail competes with the title for room. -->
+      <div
+        class="mini-player"
+        class:open={playerExpanded}
+        style={miniPlayerArtStyle}
+        bind:this={playerToggleRef}
+        role="button"
+        tabindex="0"
+        aria-expanded={playerExpanded}
+        aria-label="Show music controls"
+        title={playerExpanded ? 'Hide music controls' : 'Show music controls'}
+        on:click={() => (playerExpanded = !playerExpanded)}
+        on:keydown={(event) => {
+          if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            playerExpanded = !playerExpanded;
+          }
+        }}
+      >
+        {#if Pc}
+          <button
+            class="mini-btn"
+            on:click|stopPropagation={() => stepMusic(-1)}
+            aria-label="Previous track"
+          ><PlayerIcon name="prev" /></button>
+          <button
+            class="mini-btn"
+            on:click|stopPropagation={toggleMusic}
+            aria-label={isPlaying ? 'Pause' : 'Play'}
+          ><PlayerIcon name={isPlaying ? 'pause' : 'play'} /></button>
+          <button
+            class="mini-btn"
+            on:click|stopPropagation={() => stepMusic(1)}
+            aria-label="Next track"
+          ><PlayerIcon name="next" /></button>
+        {/if}
+
+        <div class="mini-title-btn">
+          {#if nowPlayingCoverUrl}
+            <img class="mini-cover" src={nowPlayingCoverUrl} alt="" />
+          {:else}
+            <span class="mini-cover mini-cover-blank">
+              <PlayerIcon name={isPlaying ? 'pause' : 'music'} size={12} />
+            </span>
+          {/if}
+          <ScrollingText text={nowPlayingTrack.title || 'Untitled'} always={!Pc} />
+        </div>
+      </div>
+
+      {#if playerExpanded}
+        <div
+          class="player-panel"
+          style={`${overlayThemeStyle} ${panelArtStyle}`}
+          use:clickOutside={{ onOutside: () => (playerExpanded = false), ignore: () => [playerToggleRef] }}
+        >
+          <div class="pp-main-col">
+            <div class="pp-now">
+              {#if nowPlayingCoverUrl}
+                <img class="pp-cover" src={nowPlayingCoverUrl} alt="" />
+              {:else}
+                <div class="pp-cover pp-cover-blank"><PlayerIcon name="music" size={26} /></div>
+              {/if}
+              <div class="pp-meta">
+                <div class="pp-title">
+                  <ScrollingText text={nowPlayingTrack.title || 'Untitled'} />
+                </div>
+                <div class="pp-sub">
+                  {[nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · ') || '—'}
+                </div>
+              </div>
+            </div>
+
+            <!-- Where you are in the track, and a handle to move it. -->
+            <div class="pp-seek">
+              <span class="pp-time">{formatClock(musicPosition)}</span>
+              <input
+                class="themed-range pp-seek-range"
+                type="range"
+                min="0"
+                max={musicDuration || 0}
+                step="0.1"
+                value={musicPosition}
+                disabled={!musicDuration}
+                on:input={(e) => seekMusic(e.target.value)}
+                aria-label="Position in track"
+              />
+              <span class="pp-time">{formatClock(musicDuration)}</span>
+            </div>
+
+            <div class="pp-row">
+              <!-- Empty cell mirroring the shuffle button, so the three
+                   transport icons sit centred on the seek bar above rather
+                   than being pushed off by shuffle's width. -->
+              <span class="pp-row-gutter" aria-hidden="true"></span>
+
+              <div class="pp-transport">
+                <button class="pp-btn" on:click={() => stepMusic(-1)} aria-label="Previous">
+                  <PlayerIcon name="prev" size={18} />
+                </button>
+                <button class="pp-btn pp-play" on:click={toggleMusic} aria-label={isPlaying ? 'Pause' : 'Play'}>
+                  <PlayerIcon name={isPlaying ? 'pause' : 'play'} size={20} />
+                </button>
+                <button class="pp-btn" on:click={() => stepMusic(1)} aria-label="Next">
+                  <PlayerIcon name="next" size={18} />
+                </button>
+              </div>
+
+              <button
+                class="pp-btn pp-shuffle"
+                class:on={musicShuffle}
+                title={musicShuffle ? 'Shuffle on' : 'Shuffle off'}
+                aria-pressed={musicShuffle}
+                on:click={toggleShuffle}
+              ><PlayerIcon name="shuffle" size={18} /></button>
+            </div>
+          </div>
+
+          <label class="pp-volume" title="Volume">
+            <input
+              class="themed-range vertical pp-volume-range"
+              type="range" min="0" max="1" step="0.01"
+              value={musicVolume}
+              on:input={(e) => setMusicVolume(e.target.value)}
+              aria-label="Volume"
+            />
+            <span class="pp-vol-readout">
+              {Math.round(musicVolume * 100)}
+              <PlayerIcon name={musicVolume === 0 ? 'mute' : 'volume'} size={13} />
+            </span>
+          </label>
+        </div>
+      {/if}
+    {/if}
+
     {#if showRightControls}
     <div class="right-controls">
       <RightControls
@@ -2945,11 +4098,15 @@
         {uploadInProgress}
         {downloadInProgress}
         {autoSyncEnabled}
+        blocksFollowTheme={modeSettings.blocksFollowTheme === true}
+        {blocksFollowThemeAll}
         on:googleSignIn={signInGoogle}
         on:googleSignOut={signOutGoogle}
         on:uploadNow={uploadAllLocalToCloud}
         on:downloadNow={downloadAllCloudToLocal}
         on:toggleAutoSync={toggleAutoSync}
+        on:toggleBlocksFollowTheme={toggleBlocksFollowTheme}
+        on:toggleBlocksFollowThemeAll={toggleBlocksFollowThemeAll}
         on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
@@ -2985,6 +4142,10 @@
       {simpleNoteColumnCount}
       {singleNoteSettings}
       {taskAddDirection}
+      {musicLibrary}
+      {nowPlayingId}
+      {isPlaying}
+      shuffle={musicShuffle}
       {groupedBlocks}
       {focusedBlockId}
       modeLabels={MODE_LABELS}
@@ -2995,10 +4156,30 @@
       on:delete={deleteBlockHandler}
       on:focusToggle={handleFocusToggle}
       on:swapBlocks={(e) => swapBlocksInMode(e.detail)}
+      on:libraryChange={(e) => handleLibraryChange(e.detail)}
+      on:play={(e) => playMusicTrack(e.detail.trackId, e.detail.queue)}
+      on:toggle={toggleMusic}
+      on:stop={stopMusic}
+      on:toggleShuffle={toggleShuffle}
+      on:notify={(e) => appAlert(e.detail)}
       on:modeSettingChange={handleModeSettingChange}
     />
   </div>
 </div>
+
+<!-- Outside .app so it is never unmounted by a mode change. -->
+<audio
+  bind:this={audioEl}
+  on:ended={() => stepMusic(1)}
+  on:play={() => (isPlaying = true)}
+  on:pause={() => { isPlaying = false; rememberPlaybackPosition(); }}
+  on:loadedmetadata={() => { applyResumePosition(); syncMusicTime(); }}
+  on:durationchange={syncMusicTime}
+  on:seeked={syncMusicTime}
+  on:timeupdate={() => { syncMusicTime(); throttledRememberPosition(); }}
+  preload="metadata"
+  hidden
+></audio>
 
 {#if dialogState}
   <div class="app-dialog-overlay" role="presentation" style={overlayThemeStyle} on:click={handleDialogCancel}>
