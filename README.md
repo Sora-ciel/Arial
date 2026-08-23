@@ -4,11 +4,18 @@ A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebas
 
 ## Download
 
-- 📱 APK: [Download APK](https://github.com/Sora-ciel/Arial/releases/download/v0.8.36/Arial_0.8.36.apk)
-- 💻 Windows: [Download exe](https://github.com/Sora-ciel/Arial/releases/download/v0.8.36/Arial_0.8.36_x64-setup.exe) or [Download msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.36/Arial_0.8.36_x64_en-US.msi)
+Latest release: **v0.8.38**
 
-  
-[![ALL Latest releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest/tag/v0.8.36/)
+- 🌐 Web: <https://arial-473c1.web.app> — nothing to install
+- 📱 Android: [Arial_0.8.38.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.38/Arial_0.8.38.apk)
+- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.38/Arial_0.8.38_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.38/Arial_0.8.38_x64_en-US.msi)
+
+[![All releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest)
+
+The Android build is unlisted, so Android will warn about installing outside
+the Play Store. Music plays with the screen off, which needs the notification
+permission it asks for on first play — denying it stops playback when the
+phone sleeps.
 
 ## Local development
 
@@ -44,45 +51,38 @@ VITE_FIREBASE_SYNC_NAMESPACE=default
 
 ### 3) Apply secure RTDB rules
 
-Use these rules so each user can access only their own subtree:
+The rules that ship with the project are in [`database.rules.json`](database.rules.json);
+deploy them with `firebase deploy --only database` rather than copying a
+snippet, so what runs is what's in version control.
 
-```json
-{
-  "rules": {
-    "sync": {
-      "$ns": {
-        "users": {
-          "$uid": {
-            ".read": "auth != null && auth.uid == $uid",
-            ".write": "auth != null && auth.uid == $uid"
-          }
-        }
-      }
-    }
-  }
-}
-```
+They do two things beyond scoping access to `auth.uid`:
+
+- **Write is granted on `files` and `index` only**, not on the whole user
+  node. Granting it at the user level lets a signed-in account put arbitrary
+  data anywhere beneath it and use the database as free storage.
+- A file must carry a numeric `updatedAt`, and an index entry a `fileId`
+  matching its key. Validation is skipped on delete, so removal still works.
 
 > Do **not** use open rules like `".read": true` / `".write": true`.
 
 
 ### 4) Apply secure Cloud Storage rules
 
-Use Storage rules scoped per authenticated uid:
+The rules are in [`storage.rules`](storage.rules) and are referenced from
+`firebase.json`, so `firebase deploy --only storage` applies them.
 
-```txt
-rules_version = '2';
-service firebase.storage {
-  match /b/{bucket}/o {
-    match /users/{uid}/{allPaths=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-    }
-    match /{allPaths=**} {
-      allow read, write: if false;
-    }
-  }
-}
-```
+Keep them in the repo rather than editing in the console: with no rules file,
+whatever the console happens to hold is the only thing separating one
+account's attachments from another's, and Firebase's default for Storage
+allows any signed-in user to read and write the entire bucket.
+
+Note that `create, update` and `delete` are granted separately. Using `write`
+for all three would apply the upload size check to deletes as well, where
+`request.resource` is null.
+
+> Files already handed out as download URLs stay reachable through those URLs:
+> a Firebase download token grants access on its own and is not subject to
+> these rules.
 
 ### 5) Billing note (important)
 
@@ -98,7 +98,7 @@ All synced data is written under:
 
 - `/sync/{namespace}/users/{uid}/files/{fileId}`
 - `/sync/{namespace}/users/{uid}/index/{fileId}`
-- `users/{uid}/attachments/{attachmentId}.{ext}` (Cloud Storage)
+- `users/{uid}/attachments/{fileId}/{blockId}/{field}/{object}` (Cloud Storage)
 
 Where:
 - `namespace` = `VITE_FIREBASE_SYNC_NAMESPACE` (default `default`)

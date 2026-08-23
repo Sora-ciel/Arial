@@ -24,3 +24,6 @@ dist-ssr
 *.sw?
 .env
 .firebase/
+
+# packaged installers, staged for a GitHub release
+release/
