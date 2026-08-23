@@ -39,12 +39,22 @@ function persistCoverless() {
   } catch { /* ignore */ }
 }
 
-export async function ensureMusicCover(trackId) {
+/**
+ * A track's cover.
+ *
+ * `deepScan` decides whether a miss is allowed to open the audio file and hunt
+ * for artwork inside it. That costs a full read and parse — on the order of
+ * 100ms for a normal music file — which is fine for one track but catastrophic
+ * across a library: 1500 of them is several minutes of solid work. So browsing
+ * asks for the cheap store lookup only, and the deep read is reserved for the
+ * track being played and the explicit re-read.
+ */
+export async function ensureMusicCover(trackId, { deepScan = true } = {}) {
   if (!trackId) return null;
 
   const stored = await loadMusicCover(trackId);
   if (stored) return stored;
-  if (knownCoverless.has(trackId)) return null;
+  if (!deepScan || knownCoverless.has(trackId)) return null;
 
   try {
     const audio = await loadMusicTrack(trackId);

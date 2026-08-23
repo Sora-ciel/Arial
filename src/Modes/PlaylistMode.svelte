@@ -50,6 +50,12 @@
     ? selectedPlaylist.trackIds.map(id => tracks.find(t => t.id === id)).filter(Boolean)
     : tracks;
 
+  // Rows are rendered a page at a time. A library of a few thousand builds a
+  // punishing amount of DOM in one go on a phone, and nobody scrolls that far
+  // before searching anyway.
+  const PAGE_SIZE = 200;
+  let visibleLimit = PAGE_SIZE;
+
   // Search runs over everything the tags gave us, not just the title, so
   // "beatles" or "1998" finds the track as readily as its name does.
   let search = '';
@@ -60,6 +66,10 @@
       .some(field => String(field).toLowerCase().includes(needle));
   }
   $: searchNeedle = search.trim().toLowerCase();
+  // Back to the first page whenever the list itself changes.
+  $: searchNeedle, selectedPlaylistId, (visibleLimit = PAGE_SIZE);
+  $: renderedTracks = visibleTracks.slice(0, visibleLimit);
+  $: loadCoversFor(renderedTracks);
   $: listedTracks = searchNeedle
     ? playlistTracks.filter(track => matchesSearch(track, searchNeedle))
     : playlistTracks;
@@ -78,18 +88,28 @@
   // Cover art is device-local, so it's fetched here rather than carried in the
   // synced metadata. Object URLs are revoked on teardown.
   let coverUrls = {};
-  async function loadCovers(list) {
-    for (const track of list) {
-      if (coverUrls[track.id] !== undefined) continue;
-      coverUrls[track.id] = null; // claim the slot so we only fetch once
-      const blob = await ensureMusicCover(track.id);
-      if (blob) {
-        coverUrls = { ...coverUrls, [track.id]: URL.createObjectURL(blob) };
-      }
-    }
+
+  // Fetched per row as it comes into view, rather than for the whole library
+  // at once. Walking every track on open meant a store read each — and, for
+  // anything without stored artwork, a full read and parse of the audio — so
+  // a large library locked the app up for minutes before it drew anything.
+  async function loadCoverFor(trackId) {
+    if (!trackId || coverUrls[trackId] !== undefined) return;
+    coverUrls[trackId] = null; // claim the slot so it's only fetched once
+    // Browsing never opens the audio file; that's for playback and the
+    // explicit re-read, which know they're paying for it.
+    const blob = await ensureMusicCover(trackId, { deepScan: false });
+    if (blob) coverUrls = { ...coverUrls, [trackId]: URL.createObjectURL(blob) };
   }
 
-  $: loadCovers(tracks);
+  // Fetched for the rows currently rendered, which is one page rather than the
+  // whole library. Deliberately not an IntersectionObserver: that reports
+  // nothing while the page isn't being composited, so artwork would silently
+  // never load in a backgrounded window. A page of cheap store reads is quick
+  // enough that the extra machinery buys nothing.
+  async function loadCoversFor(list) {
+    for (const track of list) await loadCoverFor(track.id);
+  }
 
   onDestroy(() => {
     for (const url of Object.values(coverUrls)) if (url) URL.revokeObjectURL(url);
@@ -919,6 +939,12 @@
     background: color-mix(in srgb, var(--mode-text-color, #fff) 12%, transparent);
   }
 
+  .pl-show-more {
+    display: block;
+    width: 100%;
+    margin: 10px 0 4px;
+  }
+
   .pl-empty { opacity: 0.6; font-size: 0.85rem; padding: 20px 4px; line-height: 1.5; }
   .pl-busy { font-size: 0.8rem; opacity: 0.8; }
 
@@ -1098,7 +1124,7 @@
       {:else if !listedTracks.length && searchNeedle}
         <div class="pl-empty">Nothing matches “{search}”.</div>
       {:else}
-        {#each (selectedPlaylist ? playlistTracks.filter(t => matchesSearch(t, searchNeedle)) : listedTracks) as track (track.id)}
+        {#each renderedTracks as track (track.id)}
           {@const available = availableIds.has(track.id)}
           {@const inPlaylist = selectedPlaylist?.trackIds.includes(track.id)}
           <div
@@ -1164,6 +1190,13 @@
             {/if}
           </div>
         {/each}
+        {#if visibleTracks.length > visibleLimit}
+          <button
+            class="pl-btn pl-show-more"
+            on:click={() => (visibleLimit += PAGE_SIZE)}
+          >Show {Math.min(PAGE_SIZE, visibleTracks.length - visibleLimit)} more
+            ({visibleTracks.length - visibleLimit} left)</button>
+        {/if}
       {/if}
     </div>
   </div>
