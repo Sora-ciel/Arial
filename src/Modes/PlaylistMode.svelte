@@ -289,10 +289,13 @@
         console.warn('Could not read tags for a track:', error);
       }
 
-      if (sinceCommit >= SCAN_COMMIT_EVERY) {
-        commit();
-        await new Promise(resolve => setTimeout(resolve, 0));
-      }
+      if (sinceCommit >= SCAN_COMMIT_EVERY) commit();
+
+      // Handing the thread back after every track, not every batch. Reading a
+      // file's tags is heavy enough that a run of them makes the app feel
+      // stuck, and the music is already playable by this point — so the scan
+      // gives way to anything else going on rather than racing to finish.
+      await new Promise(resolve => setTimeout(resolve, 0));
     }
 
     commit();
