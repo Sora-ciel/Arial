@@ -40,6 +40,7 @@
   import { getOpeningViewportBox } from './utils/canvasFit.js';
   import { clickOutside } from './utils/clickOutside.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
+  import { startBackgroundAudio, stopBackgroundAudio } from './utils/backgroundAudio.js';
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -1143,6 +1144,19 @@
     navigator.mediaSession.playbackState = nowPlayingId ? (isPlaying ? 'playing' : 'paused') : 'none';
   }
   $: updateMediaSession(nowPlayingTrack);
+
+  // On Android the foreground service is what keeps playback alive once the
+  // screen goes off. It's held for as long as a track is loaded — including
+  // while paused, since the process has to survive for you to resume from the
+  // lock screen — and released when playback is stopped altogether.
+  $: if (nowPlayingTrack) {
+    startBackgroundAudio({
+      title: nowPlayingTrack.title || 'Untitled',
+      body: [nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · ')
+    });
+  } else {
+    stopBackgroundAudio();
+  }
 
   // ── Resuming where you left off ───────────────────────────────────
   let resumeSeekTo = 0;

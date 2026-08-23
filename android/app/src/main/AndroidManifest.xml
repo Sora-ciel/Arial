@@ -24,6 +24,18 @@
 
         </activity>
 
+        <!--
+            Keeps audio playing once the screen goes off. An Android WebView is
+            suspended in the background unless a foreground service holds the
+            process up; the type must be mediaPlayback and must match the type
+            passed when the service is started, or Android 14+ refuses to start
+            it.
+        -->
+        <service
+            android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
+            android:foregroundServiceType="mediaPlayback" />
+        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -38,4 +50,11 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- Background playback. FOREGROUND_SERVICE_MEDIA_PLAYBACK is required
+         from Android 14 for a service of that type; WAKE_LOCK keeps playback
+         running rather than being throttled while the device sleeps. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 </manifest>

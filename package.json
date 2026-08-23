@@ -20,6 +20,7 @@
     "@capacitor/android": "^7.4.2",
     "@capacitor/cli": "^7.4.2",
     "@capacitor/core": "^7.4.2",
+    "@capawesome-team/capacitor-android-foreground-service": "^7.0.1",
     "@capgo/capacitor-social-login": "^7.20.0",
     "@tiptap/core": "^3.0.7",
     "@tiptap/extension-color": "^3.0.7",
