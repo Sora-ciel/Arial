@@ -2229,11 +2229,59 @@
     return Math.min(SCREENSHOT_SCALE, scale);
   }
 
+  // Temporarily opens every scrollable pane inside `root` so its whole content
+  // is laid out, and hands back a function that puts them all back.
+  function expandScrollers(root) {
+    if (!root?.querySelectorAll) return () => {};
+    const touched = [];
+
+    const openUp = element => {
+      const style = getComputedStyle(element);
+      const scrolls =
+        ['auto', 'scroll'].includes(style.overflowY) || ['auto', 'scroll'].includes(style.overflowX);
+      const overflowing =
+        element.scrollHeight > element.clientHeight + 1 ||
+        element.scrollWidth > element.clientWidth + 1;
+      if (!scrolls || !overflowing) return;
+
+      touched.push({
+        element,
+        overflow: element.style.overflow,
+        height: element.style.height,
+        maxHeight: element.style.maxHeight,
+        width: element.style.width,
+        maxWidth: element.style.maxWidth
+      });
+      element.style.overflow = 'visible';
+      element.style.height = 'auto';
+      element.style.maxHeight = 'none';
+      element.style.maxWidth = 'none';
+    };
+
+    openUp(root);
+    for (const element of root.querySelectorAll('*')) openUp(element);
+
+    return () => {
+      for (const entry of touched) {
+        entry.element.style.overflow = entry.overflow;
+        entry.element.style.height = entry.height;
+        entry.element.style.maxHeight = entry.maxHeight;
+        entry.element.style.width = entry.width;
+        entry.element.style.maxWidth = entry.maxWidth;
+      }
+    };
+  }
+
   async function handleScreenshot() {
     if (screenshotBusy) return;
     screenshotBusy = true;
+    let restoreScrollers = () => {};
     try {
-      const html2canvas = (await import('html2canvas')).default;
+      // html2canvas-pro rather than html2canvas: the original stops at
+      // "unsupported color function" on anything using color-mix(), which the
+      // themes lean on throughout, so capturing any mode but the plainest
+      // simply failed.
+      const html2canvas = (await import('html2canvas-pro')).default;
 
       // In Canvas and Simple Note the board itself is .canvas-inner; the
       // element around it is only the window onto it, so capturing that would
@@ -2248,8 +2296,13 @@
       const previousTransform = board ? board.style.transform : null;
       if (board) board.style.transform = 'none';
 
-      // scrollWidth/Height rather than the visible box, so content scrolled out
-      // of view is included.
+      // Modes other than Canvas scroll their own panes — the task list, the
+      // track list — and only the visible slice of those would be drawn.
+      // Opening them up for the capture is what makes this work for every mode
+      // rather than just the board.
+      restoreScrollers = expandScrollers(target);
+
+      // Measured after expanding, so the size covers the content now on show.
       const width = Math.max(target.scrollWidth, target.clientWidth, 1);
       const height = Math.max(target.scrollHeight, target.clientHeight, 1);
       const scale = fittingScale(width, height);
@@ -2272,6 +2325,8 @@
       });
 
       if (board) board.style.transform = previousTransform || '';
+      restoreScrollers();
+      restoreScrollers = () => {};
 
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('The image came back empty.');
@@ -2293,6 +2348,9 @@
       if (board && board.style.transform === 'none') board.style.transform = '';
       await appAlert("Couldn't capture this view.");
     } finally {
+      // Panes are put back even if the capture threw part-way through,
+      // otherwise the mode would be left with its scrollers hanging open.
+      restoreScrollers();
       screenshotBusy = false;
     }
   }
@@ -4167,7 +4225,7 @@
             <div class="pp-seek">
               <span class="pp-time">{formatClock(musicPosition)}</span>
               <input
-                class="themed-range pp-seek-range"
+                class="pp-seek-range"
                 type="range"
                 min="0"
                 max={musicDuration || 0}
@@ -4210,7 +4268,7 @@
 
           <label class="pp-volume" title="Volume">
             <input
-              class="themed-range vertical pp-volume-range"
+              class="vertical pp-volume-range"
               type="range" min="0" max="1" step="0.01"
               value={musicVolume}
               on:input={(e) => setMusicVolume(e.target.value)}

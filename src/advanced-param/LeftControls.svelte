@@ -48,6 +48,10 @@
 
   $: theme = { ...defaultColors, ...(colors || {}) };
   $: leftCssVars = Object.entries({
+    // Feeds the shared scrollbar/slider colours, so controls like the column
+    // slider follow the theme instead of the browser's default blue.
+    "--sb-track": theme.panelBg,
+    "--sb-thumb": theme.buttonText,
     "--left-panel-bg": theme.panelBg,
     "--left-text-color": theme.textColor,
     "--left-button-bg": theme.buttonBg,
@@ -448,10 +452,11 @@ onMount(() => {
     box-sizing: border-box;
   }
 
+  /* Only the width is set here. The track, thumb and colour come from the
+     shared range styling, which follows the theme — the old max-height
+     squashed the thumb flat and the accent-color pinned it to one colour. */
   .simple-columns-control input[type="range"] {
     width: min(150px, 18vw);
-    max-height:0.2em;
-    accent-color: var(--left-text-color, #ffffff);
     cursor: pointer;
   }
 

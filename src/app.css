@@ -47,10 +47,10 @@
 
 /* ── Sliders follow the same colors as the scrollbars ──────────────
    Same contract as above: the container sets --sb-track and --sb-thumb, and
-   the slider picks them up. Add `class="themed-range"` to any new range input
-   so it matches the scrollbars instead of falling back to the browser's own
-   blue. */
-input[type="range"].themed-range {
+   every range input picks them up, so a new slider matches the theme without
+   having to opt in. A component that draws its own track and thumb overrides
+   these, since its selectors are more specific. */
+input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
   height: 14px;
@@ -61,17 +61,17 @@ input[type="range"].themed-range {
   cursor: pointer;
   accent-color: var(--sb-thumb, rgba(255, 255, 255, 0.4));
 }
-input[type="range"].themed-range::-webkit-slider-runnable-track {
+input[type="range"]::-webkit-slider-runnable-track {
   height: 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent));
 }
-input[type="range"].themed-range::-moz-range-track {
+input[type="range"]::-moz-range-track {
   height: 6px;
   border-radius: 999px;
   background: color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent));
 }
-input[type="range"].themed-range::-webkit-slider-thumb {
+input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
   width: 14px;
@@ -82,7 +82,7 @@ input[type="range"].themed-range::-webkit-slider-thumb {
   border: none;
   background: var(--sb-thumb, rgba(255, 255, 255, 0.4));
 }
-input[type="range"].themed-range::-moz-range-thumb {
+input[type="range"]::-moz-range-thumb {
   width: 14px;
   height: 14px;
   border-radius: 50%;
@@ -93,7 +93,7 @@ input[type="range"].themed-range::-moz-range-thumb {
 /* Upright variant. writing-mode is the modern way to turn a range; the
    slider-vertical appearance is kept for WebKit, which doesn't honour it yet.
    The thumb offset flips axis with it. */
-input[type="range"].themed-range.vertical {
+input[type="range"].vertical {
   writing-mode: vertical-lr;
   direction: rtl;
   /* Deliberately NOT `appearance: slider-vertical`: that hands the control
@@ -105,15 +105,15 @@ input[type="range"].themed-range.vertical {
   width: 14px;
   height: 84px;
 }
-input[type="range"].themed-range.vertical::-webkit-slider-runnable-track {
+input[type="range"].vertical::-webkit-slider-runnable-track {
   width: 6px;
   height: 100%;
 }
-input[type="range"].themed-range.vertical::-moz-range-track {
+input[type="range"].vertical::-moz-range-track {
   width: 6px;
   height: 100%;
 }
-input[type="range"].themed-range.vertical::-webkit-slider-thumb {
+input[type="range"].vertical::-webkit-slider-thumb {
   margin-top: 0;
   margin-left: -4px;
 }

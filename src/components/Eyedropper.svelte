@@ -22,7 +22,7 @@
 
   async function capture() {
     try {
-      const html2canvas = (await import('html2canvas')).default;
+      const html2canvas = (await import('html2canvas-pro')).default;
       // Color sampling doesn't need retina-level fidelity, and every extra
       // scale factor multiplies the pixel count html2canvas has to render —
       // devicePixelRatio (2-3x on most laptops/phones) was the single

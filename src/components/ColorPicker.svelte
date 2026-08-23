@@ -18,7 +18,7 @@
   // Only worth prewarming on browsers that will actually fall back to it;
   // no point paying that cost on browsers using the native picker.
   onMount(() => {
-    if (!hasNativeEyeDropper) import('html2canvas');
+    if (!hasNativeEyeDropper) import('html2canvas-pro');
   });
 
   async function startEyedropper() {
