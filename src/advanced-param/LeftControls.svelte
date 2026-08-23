@@ -242,8 +242,7 @@ onMount(() => {
      (the field below resolves the same variables correctly) but this rule was
      losing the cascade. Restating it one level deeper settles it, so the
      buttons and their icons finally follow the theme. */
-  .left-controls-wrapper .left-controls button,
-  .left-controls-wrapper .mobile-menu button {
+  .left-controls-wrapper .left-controls button {
     background: var(--left-button-bg, #333333);
     color: var(--left-button-text, #ffffff);
   }
@@ -276,7 +275,9 @@ onMount(() => {
     padding: 0;
     min-height: 0;
     width: 11ch;
-    font-size: 0.86rem;
+    /* Same type as the buttons, so the name sits among them as an equal
+       rather than reading as small print. */
+    font: inherit;
     outline: none;
   }
   .left-controls-wrapper .file-name-field input::placeholder {
@@ -903,7 +904,6 @@ onMount(() => {
       style="display: none"
     />
     <label class="file-name-field">
-      <ControlIcon name="folder" size={14} />
       <input bind:value={currentSaveName} placeholder="File name" />
     </label>
     {#if isSimpleNoteMode}

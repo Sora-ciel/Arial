@@ -176,7 +176,11 @@
 
   .right-controls summary {
     all: unset; /* remove browser default styles */
-    display: block;
+    /* flex, not block: the icon beside the label is an element of its own and
+       was being pushed onto a second line. */
+    display: flex;
+    align-items: center;
+    gap: 7px;
     cursor: pointer;
     padding: 6px 12px;
     background: var(--right-button-bg, #222222);

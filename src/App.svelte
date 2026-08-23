@@ -554,14 +554,20 @@
     }
   }
 
+  // Full volume is a harsh first impression, especially on headphones, so
+  // playback starts at a quarter until it's been set.
+  const DEFAULT_MUSIC_VOLUME = 0.25;
+
   function loadMusicVolume() {
-    if (typeof localStorage === 'undefined') return 1;
+    if (typeof localStorage === 'undefined') return DEFAULT_MUSIC_VOLUME;
     // Read as a string first: Number(null) is 0, so a missing key would
     // otherwise start every fresh install silently muted.
     const raw = localStorage.getItem(MUSIC_VOLUME_KEY);
-    if (raw === null || raw === '') return 1;
+    if (raw === null || raw === '') return DEFAULT_MUSIC_VOLUME;
     const stored = Number(raw);
-    return Number.isFinite(stored) && stored >= 0 && stored <= 1 ? stored : 1;
+    return Number.isFinite(stored) && stored >= 0 && stored <= 1
+      ? stored
+      : DEFAULT_MUSIC_VOLUME;
   }
 
   function persistMusicVolume(value) {
@@ -2897,6 +2903,10 @@
     if (remoteFingerprint === lastRemoteSyncFingerprint) return false;
 
     let downloadedAny = false;
+    // Remounting reloads the open folder, which visibly redraws the whole
+    // workspace. Doing that because some *other* folder changed on another
+    // device is a flash for no reason, so it's tracked separately.
+    let openFileChanged = false;
     for (const [fileName, remoteMeta] of remoteEntries) {
       const localPayload = savedList.includes(fileName) ? await loadBlocks(fileName) : null;
       const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
@@ -2908,6 +2918,7 @@
         await saveBlocks(fileName, remotePayload);
         rememberCloudSyncForFile(fileName, Number(remoteMeta?.lastSyncedAt || Date.now()));
         downloadedAny = true;
+        if (fileName === currentSaveName) openFileChanged = true;
       }
     }
 
@@ -2915,7 +2926,8 @@
 
     if (downloadedAny) {
       savedList = await listSavedBlocks();
-      await remountCurrentSaveIfLoaded();
+      // Only when the folder on screen is the one that actually changed.
+      if (openFileChanged) await remountCurrentSaveIfLoaded();
       if (options.showInfo) {
         await appAlert('Cloud download complete. Newer cloud updates were applied.');
       }
