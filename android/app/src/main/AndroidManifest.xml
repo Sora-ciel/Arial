@@ -32,9 +32,9 @@
             it.
         -->
         <service
-            android:name="io.capawesome.capacitorjs.plugins.foregroundservice.AndroidForegroundService"
+            android:name=".MediaNotificationService"
+            android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
-        <receiver android:name="io.capawesome.capacitorjs.plugins.foregroundservice.NotificationActionBroadcastReceiver" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
@@ -57,4 +57,9 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Android 13 shows no notification at all without this, which is how
+         playback could keep running with nothing in the shade to control it.
+         It used to arrive through a plugin's own manifest; it is declared here
+         so it doesn't depend on one. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 </manifest>

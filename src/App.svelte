@@ -1162,10 +1162,15 @@
   // lock screen — and released when playback is stopped altogether.
   // Re-run on play state too, so the notification's button flips between play
   // and pause along with the player.
+  // Re-runs on the play state and on the artwork, so the notification's
+  // button flips with the player and the cover appears as soon as it's read.
   $: if (nowPlayingTrack) {
     startBackgroundAudio({
       title: nowPlayingTrack.title || 'Untitled',
-      body: [nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · '),
+      artist: [nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · '),
+      // The same data URL the lock screen gets: a blob: URL means nothing
+      // outside the page that created it.
+      artwork: mediaSessionCoverUrl,
       isPlaying
     });
   } else {
@@ -3473,7 +3478,8 @@
     setBackgroundAudioActions({
       previous: () => stepMusic(-1),
       toggle: toggleMusic,
-      next: () => stepMusic(1)
+      next: () => stepMusic(1),
+      stop: stopMusic
     });
     loadLocalMusicLibrary();
     adjustCanvasPadding();

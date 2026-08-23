@@ -1,53 +1,26 @@
-// Keeps music playing on Android once the screen goes off.
+// Keeps music playing on Android once the screen goes off, and puts what's
+// playing in the notification shade.
 //
-// The Media Session API is what puts the track on the lock screen, but it does
-// not keep the app alive: an Android WebView is suspended in the background, so
-// playback simply stops when the phone sleeps. Holding a foreground service of
-// type mediaPlayback is what tells the OS this process is doing something the
-// user can hear, and keeps it running.
+// Two separate things are at work here, and they're easy to conflate. A
+// foreground service is what stops Android suspending the WebView, so playback
+// survives the screen going off. A media session is what makes the
+// notification a *media* notification — the wide one with artwork and
+// transport controls that other music players post — instead of a plain line
+// of text.
 //
-// Only Android has this problem. On the web and in the desktop shell the
-// browser keeps playing on its own, so everything here is a no-op there and the
-// plugin is never even loaded.
+// This talks to a small native plugin that owns both. An earlier version used
+// a generic foreground-service plugin: playback kept running, but it could
+// only post an ordinary notification, and none appeared at all when the
+// notification permission hadn't been granted.
+//
+// Only Android needs any of it. On the web and in the desktop shell the
+// browser keeps playing on its own, so everything here is a no-op there.
 
 let plugin = null;
 let pluginLoadFailed = false;
-let serviceRunning = false;
-let permissionRequested = false;
-
-const NOTIFICATION_ID = 4711;
-
-// Buttons drawn on the playback notification, so it can be controlled from the
-// shade or the lock screen without opening the app.
-const BUTTON_PREVIOUS = 'previous';
-const BUTTON_TOGGLE = 'toggle';
-const BUTTON_NEXT = 'next';
-
-let actionHandlers = {};
 let listenerAttached = false;
-
-/**
- * Registers what the notification's buttons should do. Called once, with the
- * player's own controls.
- */
-export function setBackgroundAudioActions(handlers) {
-  actionHandlers = handlers || {};
-}
-
-async function attachButtonListener(service) {
-  if (listenerAttached) return;
-  listenerAttached = true;
-  try {
-    await service.addListener('buttonClicked', event => {
-      if (event?.buttonId === BUTTON_PREVIOUS) actionHandlers.previous?.();
-      else if (event?.buttonId === BUTTON_TOGGLE) actionHandlers.toggle?.();
-      else if (event?.buttonId === BUTTON_NEXT) actionHandlers.next?.();
-    });
-  } catch (error) {
-    console.warn('Could not listen for notification buttons:', error);
-    listenerAttached = false;
-  }
-}
+let shown = false;
+let actionHandlers = {};
 
 function isNativeAndroid() {
   const capacitor = typeof window !== 'undefined' ? window.Capacitor : null;
@@ -55,87 +28,75 @@ function isNativeAndroid() {
   return capacitor.getPlatform?.() === 'android';
 }
 
-async function getPlugin() {
+function getPlugin() {
   if (plugin || pluginLoadFailed) return plugin;
-  try {
-    // Imported on demand so the web and desktop builds never pull it in.
-    const module = await import('@capawesome-team/capacitor-android-foreground-service');
-    plugin = module.ForegroundService;
-  } catch (error) {
-    // A missing plugin must never break playback — it just means no background
-    // audio on this build.
-    console.warn('Foreground service plugin unavailable:', error);
-    pluginLoadFailed = true;
-  }
+  const registry = window.Capacitor?.Plugins;
+  if (registry?.MediaNotification) plugin = registry.MediaNotification;
+  else pluginLoadFailed = true;
   return plugin;
 }
 
-// Android 13+ won't show the notification without this, and a foreground
-// service with no visible notification is killed.
-async function ensureNotificationPermission(service) {
-  if (permissionRequested) return;
-  permissionRequested = true;
+/** Registers what the notification's controls should do. */
+export function setBackgroundAudioActions(handlers) {
+  actionHandlers = handlers || {};
+}
+
+function attachActionListener(service) {
+  if (listenerAttached) return;
+  listenerAttached = true;
   try {
-    const status = await service.checkPermissions();
-    if (status?.display !== 'granted') await service.requestPermissions();
+    service.addListener('action', event => {
+      const action = event?.action;
+      if (action === 'previous') actionHandlers.previous?.();
+      else if (action === 'toggle') actionHandlers.toggle?.();
+      else if (action === 'next') actionHandlers.next?.();
+      else if (action === 'stop') actionHandlers.stop?.();
+    });
   } catch (error) {
-    console.warn('Could not confirm the notification permission:', error);
+    console.warn('Could not listen for notification controls:', error);
+    listenerAttached = false;
   }
 }
 
 /**
- * Starts (or updates) the playback service. Safe to call repeatedly — while it
- * is already running this only refreshes the notification text, which is how
- * the track name stays current.
+ * Shows or refreshes the notification. Safe to call repeatedly — the same
+ * notification is updated in place, which is how the track name and the
+ * play/pause button stay current.
+ *
+ * `artwork` is a data URL: the notification can't read a blob: URL, since
+ * those only mean anything inside the page that made them.
  */
-export async function startBackgroundAudio({ title, body, isPlaying = false } = {}) {
+export async function startBackgroundAudio({ title, artist, artwork, isPlaying = false } = {}) {
   if (!isNativeAndroid()) return;
-  const service = await getPlugin();
+  const service = getPlugin();
   if (!service) return;
 
-  await ensureNotificationPermission(service);
-  await attachButtonListener(service);
-
-  const options = {
-    id: NOTIFICATION_ID,
-    title: title || 'Playing',
-    body: body || '',
-    smallIcon: 'ic_stat_music',
-    buttons: [
-      { id: BUTTON_PREVIOUS, title: '⏮' },
-      { id: BUTTON_TOGGLE, title: isPlaying ? '⏸' : '▶' },
-      { id: BUTTON_NEXT, title: '⏭' }
-    ],
-    // FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK. The plugin's own enum only names
-    // Location and Microphone, but it passes the value straight through to
-    // startForeground, and this is the constant Android expects. It has to
-    // match android:foregroundServiceType on the service in the manifest.
-    serviceType: 2,
-    silent: true
-  };
+  attachActionListener(service);
 
   try {
-    if (serviceRunning) await service.updateForegroundService(options);
-    else {
-      await service.startForegroundService(options);
-      serviceRunning = true;
-    }
+    await service.show({
+      title: title || 'Playing',
+      artist: artist || '',
+      artwork: artwork || '',
+      playing: isPlaying
+    });
+    shown = true;
   } catch (error) {
-    console.warn('Could not start background playback:', error);
+    console.warn('Could not show the playback notification:', error);
   }
 }
 
-/** Stops the service. Called when nothing is playing any more. */
+/** Takes the notification down. Called when playback stops altogether. */
 export async function stopBackgroundAudio() {
-  if (!isNativeAndroid() || !serviceRunning) return;
-  const service = await getPlugin();
+  if (!isNativeAndroid() || !shown) return;
+  const service = getPlugin();
   if (!service) return;
   try {
-    await service.stopForegroundService();
+    await service.hide();
   } catch (error) {
-    console.warn('Could not stop background playback:', error);
+    console.warn('Could not hide the playback notification:', error);
   } finally {
-    // Cleared either way: leaving it true would block a later start.
-    serviceRunning = false;
+    // Cleared either way, so a later start isn't blocked.
+    shown = false;
   }
 }
