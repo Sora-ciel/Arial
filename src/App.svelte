@@ -5,6 +5,7 @@
   import AdvancedCssPage from './advanced-param/AdvancedCssPage.svelte';
   import ModeArea from './Modes/ModeSwitcher.svelte';
   import PlayerIcon from './components/PlayerIcons.svelte';
+  import ControlIcon from './components/ControlIcon.svelte';
   import ScrollingText from './components/ScrollingText.svelte';
   import {
     saveBlocks,
@@ -2194,37 +2195,80 @@
     pushHistory(blocks, modeOrders);
   }
 
-  // ── Screenshot the current view ───────────────────────────────────
-  // Modes like Canvas position themselves fixed, so the whole document is
-  // snapshotted and then cropped to the region below the controls bar —
-  // capturing the canvas element alone would miss anything painted outside it.
+  // ── Screenshot the whole canvas ───────────────────────────────────
+  // Captures everything the mode holds, not just the part on screen: a canvas
+  // is usually larger than the window and scrolled around, so cropping to the
+  // viewport threw away most of it.
+  //
+  // Rendered at twice the canvas's own pixel size, so a canvas the size of a
+  // 1080p screen comes out at 2160p.
   let screenshotBusy = false;
+
+  const SCREENSHOT_SCALE = 2;
+  // Browsers refuse to allocate a canvas beyond roughly 16384px on a side, and
+  // cap the total area as well. Rather than fail outright on a very large
+  // board, the scale is reduced until the result fits.
+  const MAX_CANVAS_EDGE = 16384;
+  const MAX_CANVAS_AREA = 16384 * 16384;
+
+  function fittingScale(width, height) {
+    let scale = SCREENSHOT_SCALE;
+    scale = Math.min(scale, MAX_CANVAS_EDGE / Math.max(1, width));
+    scale = Math.min(scale, MAX_CANVAS_EDGE / Math.max(1, height));
+    const areaLimited = Math.sqrt(MAX_CANVAS_AREA / Math.max(1, width * height));
+    scale = Math.min(scale, areaLimited);
+    // Deliberately allowed below 1:1. A board already wider than the browser's
+    // limit has to be scaled down to be captured at all, and a smaller image is
+    // a better outcome than a failed one.
+    return Math.min(SCREENSHOT_SCALE, scale);
+  }
 
   async function handleScreenshot() {
     if (screenshotBusy) return;
     screenshotBusy = true;
     try {
       const html2canvas = (await import('html2canvas')).default;
-      const controlsH = controlsRef?.offsetHeight || 56;
-      const canvas = await html2canvas(document.body, {
-        backgroundColor: canvasTheme?.outerBg || '#000000',
-        scale: 4, // high resolution rather than screen resolution
+
+      // In Canvas and Simple Note the board itself is .canvas-inner; the
+      // element around it is only the window onto it, so capturing that would
+      // frame the visible part and letterbox the rest. Other modes lay out
+      // normally, and their root is the thing to capture.
+      const board = canvasRef?.querySelector?.('.canvas-inner');
+      const target = board || canvasRef || document.body;
+
+      // The board carries the zoom as a transform. Rendering it while scaled
+      // would bake the current zoom into the image, so it is neutralised for
+      // the capture and put back afterwards.
+      const previousTransform = board ? board.style.transform : null;
+      if (board) board.style.transform = 'none';
+
+      // scrollWidth/Height rather than the visible box, so content scrolled out
+      // of view is included.
+      const width = Math.max(target.scrollWidth, target.clientWidth, 1);
+      const height = Math.max(target.scrollHeight, target.clientHeight, 1);
+      const scale = fittingScale(width, height);
+
+      const canvas = await html2canvas(target, {
+        backgroundColor: canvasTheme?.innerBg || canvasTheme?.outerBg || '#000000',
+        scale,
         logging: false,
         useCORS: true,
-        x: 0,
-        y: controlsH,
-        width: window.innerWidth,
-        height: Math.max(1, window.innerHeight - controlsH),
-        windowWidth: window.innerWidth,
-        windowHeight: window.innerHeight,
+        width,
+        height,
+        windowWidth: width,
+        windowHeight: height,
+        scrollX: 0,
+        scrollY: 0,
         // The button itself and any open popover are furniture, not content.
         ignoreElements: element =>
           element.classList?.contains('screenshot-btn') ||
           element.classList?.contains('player-panel')
       });
 
+      if (board) board.style.transform = previousTransform || '';
+
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
-      if (!blob) return;
+      if (!blob) throw new Error('The image came back empty.');
 
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -2237,6 +2281,10 @@
       setTimeout(() => URL.revokeObjectURL(url), 1000);
     } catch (error) {
       console.error('Screenshot failed', error);
+      // Put the zoom back even if the capture threw part-way through,
+      // otherwise the board would be left sitting at 1:1.
+      const board = canvasRef?.querySelector?.('.canvas-inner');
+      if (board && board.style.transform === 'none') board.style.transform = '';
       await appAlert("Couldn't capture this view.");
     } finally {
       screenshotBusy = false;
@@ -3556,6 +3604,9 @@
 }
 
 .screenshot-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   flex-shrink: 0;
   min-height: 42px;
   padding: 8px 12px;
@@ -4168,7 +4219,7 @@
       disabled={screenshotBusy}
       title="Screenshot this view (PNG)"
       aria-label="Screenshot this view"
-    >{screenshotBusy ? '…' : '📷'}</button>
+    >{#if screenshotBusy}…{:else}<ControlIcon name="camera" size={17} />{/if}</button>
 
     {#if showRightControls}
     <div class="right-controls">

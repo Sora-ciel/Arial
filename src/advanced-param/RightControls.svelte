@@ -1,4 +1,5 @@
 <script>
+  import ControlIcon from '../components/ControlIcon.svelte';
   export let savedList = [];
   export let load;
   export let deleteSave;
@@ -388,7 +389,7 @@
 
 <div class="right-controls" style={rightCssVars} bind:this={rightControlsRef}>
   <details bind:open={isOpen}>
-    <summary>⚙️ Settings</summary>
+    <summary><ControlIcon name="settings" /> Settings</summary>
 
     <div class="dropdown-content">
       <div class="controls-scroll">

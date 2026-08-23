@@ -1,4 +1,5 @@
 <script>
+  import ControlIcon from '../components/ControlIcon.svelte';
   import { createEventDispatcher, onMount } from "svelte";
   import { getModeDefinition, getModeOptions } from "../Modes/modeRegistry.js";
   import { getBlockDefinitions } from "../components/blockRegistry.js";
@@ -236,6 +237,53 @@ onMount(() => {
     transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
   }
 
+  /* The toolbar buttons declare the theme's button colours but were rendering
+     the #333/#fff fallbacks on every theme — the palette reaches the element
+     (the field below resolves the same variables correctly) but this rule was
+     losing the cascade. Restating it one level deeper settles it, so the
+     buttons and their icons finally follow the theme. */
+  .left-controls-wrapper .left-controls button,
+  .left-controls-wrapper .mobile-menu button {
+    background: var(--left-button-bg, #333333);
+    color: var(--left-button-text, #ffffff);
+  }
+
+  /* The folder name sits among the buttons but isn't one, so it reads as a
+     quieter field: no filled background, just a hairline that firms up when
+     focused. Text follows the button colour so it belongs to the same set. */
+  .file-name-field {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    /* border-box so the hairline doesn't push it 2px taller than the buttons */
+    box-sizing: border-box;
+    min-height: 42px;
+    padding: 0 11px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--left-button-text, #ffffff) 26%, transparent);
+    background: color-mix(in srgb, var(--left-button-text, #ffffff) 7%, transparent);
+    color: var(--left-button-text, #ffffff);
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+  .file-name-field:focus-within {
+    border-color: color-mix(in srgb, var(--left-button-text, #ffffff) 60%, transparent);
+    background: color-mix(in srgb, var(--left-button-text, #ffffff) 12%, transparent);
+  }
+  .left-controls-wrapper .file-name-field input {
+    border: none;
+    background: none;
+    color: inherit;
+    padding: 0;
+    min-height: 0;
+    width: 11ch;
+    font-size: 0.86rem;
+    outline: none;
+  }
+  .left-controls-wrapper .file-name-field input::placeholder {
+    color: inherit;
+    opacity: 0.5;
+  }
+
   .mode-switcher {
     position: relative;
     display: inline-flex;
@@ -336,6 +384,12 @@ onMount(() => {
     padding: 8px 12px;
     min-height: 42px;
     cursor: pointer;
+    /* Icon and label on one baseline, with a consistent gap, now that the
+       icons are elements rather than glyphs inside the text. */
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
   }
 
   .left-controls-wrapper button:disabled {
@@ -702,7 +756,8 @@ onMount(() => {
       bind:this={toggleRef}
       on:click={() => (showMobileMenu = !showMobileMenu)}
     >
-      {showMobileMenu ? "✖ Close" : "☰ Menu"}
+      <ControlIcon name={showMobileMenu ? 'close' : 'menu'} />
+      {showMobileMenu ? "Close" : "Menu"}
       </button>
       <div class="mode-switcher">
         <button
@@ -711,7 +766,8 @@ onMount(() => {
           aria-haspopup="listbox"
           aria-expanded={showModeLadder}
         >
-          📝 Mode
+          <ControlIcon name="mode" />
+          Mode
         </button>
         {#if showModeLadder}
           <div class="mode-ladder" bind:this={modeMenuRef} role="listbox">
@@ -758,7 +814,8 @@ onMount(() => {
         aria-haspopup="listbox"
         aria-expanded={showModeLadder}
       >
-        📝 {modeLabels?.[mode] ?? mode}
+        <ControlIcon name="mode" />
+        {modeLabels?.[mode] ?? mode}
       </button>
       {#if showModeLadder}
         <div class="mode-ladder" bind:this={modeMenuDesktopRef} role="listbox">
@@ -795,7 +852,8 @@ onMount(() => {
         aria-haspopup="listbox"
         aria-expanded={showAddBlockMenu}
       >
-        ➕ Add block
+        <ControlIcon name="plus" />
+        Add block
       </button>
       {#if showAddBlockMenu}
         <div class="add-block-list" bind:this={addBlockMenuDesktopRef} role="listbox">
@@ -813,7 +871,7 @@ onMount(() => {
         aria-label="Move block down"
         title="Move block down"
       >
-        ⬇
+        <ControlIcon name="down" />
       </button>
       <button
         class="thin-action-btn"
@@ -822,14 +880,14 @@ onMount(() => {
         aria-label="Move block up"
         title="Move block up"
       >
-        ⬆
+        <ControlIcon name="up" />
       </button>
     </div>
-    <button on:click={clear}>🗑️ Clear</button>
-    <button on:click={exportJSON}>⬇ Export</button>
-    <button on:click={triggerFileInput}>📁 Import JSON</button>
-    <button on:click={() => dispatch('undo')}>↩ Undo</button>
-    <button on:click={() => dispatch('redo')}>↪ Redo</button>
+    <button on:click={clear}><ControlIcon name="trash" /> Clear</button>
+    <button on:click={exportJSON}><ControlIcon name="export" /> Export</button>
+    <button on:click={triggerFileInput}><ControlIcon name="import" /> Import JSON</button>
+    <button on:click={() => dispatch('undo')}><ControlIcon name="undo" /> Undo</button>
+    <button on:click={() => dispatch('redo')}><ControlIcon name="redo" /> Redo</button>
 
     <div class="mobile-block-actions">
       {#each addBlockDefinitions as blockDef}
@@ -844,7 +902,10 @@ onMount(() => {
       bind:this={fileInputRef}
       style="display: none"
     />
-    <input bind:value={currentSaveName} placeholder="File name" />
+    <label class="file-name-field">
+      <ControlIcon name="folder" size={14} />
+      <input bind:value={currentSaveName} placeholder="File name" />
+    </label>
     {#if isSimpleNoteMode}
       <label class="simple-columns-control mobile-only">
         Columns
