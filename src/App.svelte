@@ -2194,6 +2194,55 @@
     pushHistory(blocks, modeOrders);
   }
 
+  // ── Screenshot the current view ───────────────────────────────────
+  // Modes like Canvas position themselves fixed, so the whole document is
+  // snapshotted and then cropped to the region below the controls bar —
+  // capturing the canvas element alone would miss anything painted outside it.
+  let screenshotBusy = false;
+
+  async function handleScreenshot() {
+    if (screenshotBusy) return;
+    screenshotBusy = true;
+    try {
+      const html2canvas = (await import('html2canvas')).default;
+      const controlsH = controlsRef?.offsetHeight || 56;
+      const canvas = await html2canvas(document.body, {
+        backgroundColor: canvasTheme?.outerBg || '#000000',
+        scale: 4, // high resolution rather than screen resolution
+        logging: false,
+        useCORS: true,
+        x: 0,
+        y: controlsH,
+        width: window.innerWidth,
+        height: Math.max(1, window.innerHeight - controlsH),
+        windowWidth: window.innerWidth,
+        windowHeight: window.innerHeight,
+        // The button itself and any open popover are furniture, not content.
+        ignoreElements: element =>
+          element.classList?.contains('screenshot-btn') ||
+          element.classList?.contains('player-panel')
+      });
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+      if (!blob) return;
+
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      link.href = url;
+      link.download = `${currentSaveName || 'arial'}-${mode}-${stamp}.png`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (error) {
+      console.error('Screenshot failed', error);
+      await appAlert("Couldn't capture this view.");
+    } finally {
+      screenshotBusy = false;
+    }
+  }
+
   function deleteBlockHandler(event) {
     const id = event.detail?.id;
     const deletingBlock = blocks.find(block => block.id === id);
@@ -3506,6 +3555,23 @@
   margin-left: auto;
 }
 
+.screenshot-btn {
+  flex-shrink: 0;
+  min-height: 42px;
+  padding: 8px 12px;
+  margin-left: 8px;
+  border-radius: 8px;
+  border: 1px solid var(--controls-border, #333);
+  background: var(--controls-bg, #333);
+  color: var(--controls-button-text, var(--controls-text, #fff));
+  cursor: pointer;
+  font-size: 1.05rem;
+  line-height: 1;
+  transition: filter 0.15s ease;
+}
+.screenshot-btn:hover:not(:disabled) { filter: brightness(1.18); }
+.screenshot-btn:disabled { opacity: 0.6; cursor: default; }
+
 /* Matches the height of the toolbar buttons beside it rather than sitting
    short in the middle of the bar. Everything inside inherits the toolbar's
    theme text colour, so the icons recolour with the theme. */
@@ -3530,7 +3596,6 @@
   border-color: color-mix(in srgb, var(--controls-button-text, var(--controls-text, #fff)) 55%, transparent);
 }
 
-.mini-player + .right-controls { margin-left: 8px; }
 
 .mini-btn {
   background: none;
@@ -4096,6 +4161,14 @@
         </div>
       {/if}
     {/if}
+
+    <button
+      class="screenshot-btn"
+      on:click={handleScreenshot}
+      disabled={screenshotBusy}
+      title="Screenshot this view (PNG)"
+      aria-label="Screenshot this view"
+    >{screenshotBusy ? '…' : '📷'}</button>
 
     {#if showRightControls}
     <div class="right-controls">
