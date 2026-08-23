@@ -234,14 +234,18 @@
     z-index: 1003;
   }
 
-    /* Header button only — the controls inside the drawer keep their own size. */
+    /* Header button only — the controls inside the drawer keep their own size.
+       The label is dropped so the button is just its icon: every pixel spent
+       here pushes the toolbar towards needing to scroll. */
     .right-controls summary {
       min-height: 36px;
-      padding: 5px 11px;
+      padding: 5px 9px;
       font-size: 0.98rem;
       display: flex;
       align-items: center;
+      gap: 0;
     }
+    .right-controls summary .summary-label { display: none; }
 
     .dropdown-content {
     display: none;
@@ -393,7 +397,7 @@
 
 <div class="right-controls" style={rightCssVars} bind:this={rightControlsRef}>
   <details bind:open={isOpen}>
-    <summary><ControlIcon name="settings" /> Settings</summary>
+    <summary><ControlIcon name="settings" /><span class="summary-label">Settings</span></summary>
 
     <div class="dropdown-content">
       <div class="controls-scroll">

@@ -1162,7 +1162,6 @@
                 on:click={() => toggleTrackInPlaylist(track.id)}
               >{inPlaylist ? '✓' : '＋'}</button>
             {/if}
-            <button class="pl-icon-btn" title="Remove from library" on:click={() => removeTrack(track.id)}>🗑</button>
           </div>
         {/each}
       {/if}

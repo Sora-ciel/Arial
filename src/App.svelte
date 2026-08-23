@@ -41,7 +41,11 @@
   import { getOpeningViewportBox } from './utils/canvasFit.js';
   import { clickOutside } from './utils/clickOutside.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
-  import { startBackgroundAudio, stopBackgroundAudio } from './utils/backgroundAudio.js';
+  import {
+    startBackgroundAudio,
+    stopBackgroundAudio,
+    setBackgroundAudioActions
+  } from './utils/backgroundAudio.js';
   const BLOCK_THEME_STORAGE_KEY = 'blockTheme';
   const BLOCK_THEME_ID_STORAGE_KEY = 'blockThemeId';
   const CUSTOM_THEMES_STORAGE_KEY = 'customThemes';
@@ -1156,10 +1160,13 @@
   // screen goes off. It's held for as long as a track is loaded — including
   // while paused, since the process has to survive for you to resume from the
   // lock screen — and released when playback is stopped altogether.
+  // Re-run on play state too, so the notification's button flips between play
+  // and pause along with the player.
   $: if (nowPlayingTrack) {
     startBackgroundAudio({
       title: nowPlayingTrack.title || 'Untitled',
-      body: [nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · ')
+      body: [nowPlayingTrack.artist, nowPlayingTrack.album].filter(Boolean).join(' · '),
+      isPlaying
     });
   } else {
     stopBackgroundAudio();
@@ -3462,6 +3469,12 @@
     document.addEventListener("visibilitychange", handleVisibilityForMusic);
     window.addEventListener("pagehide", rememberPlaybackPosition);
     setupMediaSessionHandlers();
+    // What the notification's own buttons do.
+    setBackgroundAudioActions({
+      previous: () => stepMusic(-1),
+      toggle: toggleMusic,
+      next: () => stepMusic(1)
+    });
     loadLocalMusicLibrary();
     adjustCanvasPadding();
 
@@ -3913,8 +3926,11 @@
   /* Sized to the toolbar buttons rather than stretched to the row, which on
      phones is a few pixels taller than the buttons themselves. Only the name
      shows here, and the whole strip is the tap target for the big controls. */
+  /* Kept deliberately narrow: the toolbar has to fit the menu, mode, camera
+     and settings buttons beside it, and anything wider tips the whole row
+     into scrolling. */
   .mini-player {
-    max-width: 46vw;
+    max-width: 19vw;
     align-self: center;
     min-height: 0;
     height: 32px;
@@ -3924,9 +3940,18 @@
   .mini-title-btn {
     max-width: none;
     height: 100%;
-    padding: 0 8px;
-    font-size: 0.74rem;
+    padding: 0 5px;
+    gap: 4px;
+    font-size: 0.72rem;
     border-radius: 7px;
+  }
+  .mini-cover { width: 17px; height: 17px; }
+
+  /* Icon only, so it costs as little of the row as the settings button. */
+  .screenshot-btn {
+    margin-left: 4px;
+    padding: 6px 8px;
+    min-height: 36px;
   }
 }
 

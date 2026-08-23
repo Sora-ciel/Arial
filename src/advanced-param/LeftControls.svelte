@@ -438,17 +438,22 @@ onMount(() => {
     display: none;
   }
 
+  /* Matches the buttons it sits between: same height, same type, and the
+     button text colour rather than the panel's. */
   .simple-columns-control {
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    color: var(--left-text-color, #ffffff);
-    font-weight: 700;
+    color: var(--left-button-text, #ffffff);
+    font: inherit;
+    /* Buttons carry 500 from the base stylesheet; `font: inherit` alone picks
+       up the panel's 400 and the control reads lighter than its neighbours. */
+    font-weight: 500;
     background: var(--left-button-bg, #333333);
     border: 1px solid var(--left-border-color, #444444);
     border-radius: 6px;
-    padding: 8px 10px;
-    min-height: 42px;
+    padding: 0 10px;
+    height: 42px;
     box-sizing: border-box;
   }
 

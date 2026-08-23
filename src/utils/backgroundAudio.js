@@ -17,6 +17,38 @@ let permissionRequested = false;
 
 const NOTIFICATION_ID = 4711;
 
+// Buttons drawn on the playback notification, so it can be controlled from the
+// shade or the lock screen without opening the app.
+const BUTTON_PREVIOUS = 'previous';
+const BUTTON_TOGGLE = 'toggle';
+const BUTTON_NEXT = 'next';
+
+let actionHandlers = {};
+let listenerAttached = false;
+
+/**
+ * Registers what the notification's buttons should do. Called once, with the
+ * player's own controls.
+ */
+export function setBackgroundAudioActions(handlers) {
+  actionHandlers = handlers || {};
+}
+
+async function attachButtonListener(service) {
+  if (listenerAttached) return;
+  listenerAttached = true;
+  try {
+    await service.addListener('buttonClicked', event => {
+      if (event?.buttonId === BUTTON_PREVIOUS) actionHandlers.previous?.();
+      else if (event?.buttonId === BUTTON_TOGGLE) actionHandlers.toggle?.();
+      else if (event?.buttonId === BUTTON_NEXT) actionHandlers.next?.();
+    });
+  } catch (error) {
+    console.warn('Could not listen for notification buttons:', error);
+    listenerAttached = false;
+  }
+}
+
 function isNativeAndroid() {
   const capacitor = typeof window !== 'undefined' ? window.Capacitor : null;
   if (!capacitor?.isNativePlatform?.()) return false;
@@ -56,18 +88,24 @@ async function ensureNotificationPermission(service) {
  * is already running this only refreshes the notification text, which is how
  * the track name stays current.
  */
-export async function startBackgroundAudio({ title, body } = {}) {
+export async function startBackgroundAudio({ title, body, isPlaying = false } = {}) {
   if (!isNativeAndroid()) return;
   const service = await getPlugin();
   if (!service) return;
 
   await ensureNotificationPermission(service);
+  await attachButtonListener(service);
 
   const options = {
     id: NOTIFICATION_ID,
     title: title || 'Playing',
     body: body || '',
     smallIcon: 'ic_stat_music',
+    buttons: [
+      { id: BUTTON_PREVIOUS, title: '⏮' },
+      { id: BUTTON_TOGGLE, title: isPlaying ? '⏸' : '▶' },
+      { id: BUTTON_NEXT, title: '⏭' }
+    ],
     // FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK. The plugin's own enum only names
     // Location and Microphone, but it passes the value straight through to
     // startForeground, and this is the constant Android expects. It has to
