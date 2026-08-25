@@ -5,10 +5,34 @@
   // ships, so they never followed the theme and looked different on every
   // device. These are drawn with currentColor, so they take the colour of the
   // control they sit in.
+  //
+  // While the Hato guest theme is on, a few of them are replaced by characters
+  // cropped out of its wallpaper (see utils/hatoTheme.js).
+  import { hatoThemeId, hatoBuddySrc } from '../utils/hatoTheme.js';
+
   export let name;
   export let size = 15;
+
+  $: buddy = $hatoThemeId ? hatoBuddySrc(name) : '';
+  // Drawn larger than the glyph it stands in for — a face needs the extra
+  // pixels to read at all — then pulled back by half the difference so the
+  // button keeps the height it had.
+  $: buddySize = Math.round(size * 1.5);
+  $: buddyBleed = (buddySize - size) / 2;
 </script>
 
+{#if buddy}
+  <img
+    class="ci buddy"
+    src={buddy}
+    width={buddySize}
+    height={buddySize}
+    style="margin: {-buddyBleed}px"
+    alt=""
+    aria-hidden="true"
+    draggable="false"
+  />
+{:else}
 <svg
   class="ci"
   width={size}
@@ -65,6 +89,7 @@
     <path d="M3 6h6l2 2.5h10V19H3z" />
   {/if}
 </svg>
+{/if}
 
 <style>
   .ci {

@@ -147,11 +147,19 @@
     const file = event.target?.files?.[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = () => setBgSetting({ [bgImageKey]: String(reader.result || '') });
+    reader.onload = () =>
+      setBgSetting({ [bgImageKey]: String(reader.result || ''), bgThemeOptOut: false });
     reader.readAsDataURL(file);
     event.target.value = '';
   }
   function clearBgImage() {
+    // Clearing the slot is enough for an image the reader picked, but a
+    // background the theme supplied isn't stored in the file at all — it has
+    // to be opted out of, or it would reappear on the next render.
+    if (singleNoteSettings?.backgroundFromTheme) {
+      setBgSetting({ backgroundImage: '', backgroundImageMobile: '', bgThemeOptOut: true });
+      return;
+    }
     setBgSetting({ [bgImageKey]: '' });
   }
 

@@ -4,11 +4,11 @@ A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebas
 
 ## Download
 
-Latest release: **v0.8.40**
+Latest release: **v0.8.41**
 
 - 🌐 Web: <https://arial-473c1.web.app> — nothing to install
-- 📱 Android: [Arial_0.8.40.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.40/Arial_0.8.40.apk)
-- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.40/Arial_0.8.40_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.40/Arial_0.8.40_x64_en-US.msi)
+- 📱 Android: [Arial_0.8.41.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.41/Arial_0.8.41.apk)
+- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.41/Arial_0.8.41_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.41/Arial_0.8.41_x64_en-US.msi)
 
 [![All releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest)
 
@@ -16,6 +16,18 @@ The Android build is unlisted, so Android will warn about installing outside
 the Play Store. Music plays with the screen off, which needs the notification
 permission it asks for on first play — denying it stops playback when the
 phone sleeps.
+
+## Themes
+
+Style presets live under **Settings → Style presets**. Alongside the built-in
+set the app currently ships **Mr.Lee Dusk** and **Mr.Lee Day**, a guest theme
+that also supplies a Single Note mode background and swaps a few toolbar icons
+for characters from its artwork. It is temporary — see
+[`HATO_THEME.md`](HATO_THEME.md) for what it touches and how to remove it, and
+[`ASSETS-LICENSE.md`](ASSETS-LICENSE.md) for the terms on its artwork.
+
+Matching Brave/Chrome browser themes are in
+[`../Hato skins/brave`](../Hato%20skins/brave).
 
 ## Local development
 
@@ -118,6 +130,52 @@ Old anonymous/public sync paths are intentionally ignored for safety.
 Inline/base64 media in existing saves are migrated on the next signed-in save (uploaded to Storage and replaced with refs in RTDB).
 Resolved download URLs are runtime-only and are not written back to RTDB.
 If you need legacy path migration, do it with an explicit one-off admin script and user consent.
+
+## Releasing
+
+Bump the patch version **before** building, never after — the artifacts are
+named by version, and rebuilding under one already published leaves two
+different binaries claiming to be the same release. Three places have to
+agree, plus the links at the top of this file:
+
+| file | field |
+| --- | --- |
+| `src-tauri/tauri.conf.json` | `version` |
+| `android/app/build.gradle` | `versionName`, and `versionCode` +1 |
+| `README.md` | the version and the download links under **Download** |
+
+Then:
+
+```bash
+npm run build          # web -> dist/, deployed with deploy-firebase.bat
+build_tauri.bat        # windows -> .msi + .exe
+build_apk.bat          # android -> signed .apk
+```
+
+Copy all three into `release/` as `Arial_<version>.*` to match the download
+links. The browser themes version separately, from `THEME_VERSION` in
+`../Hato skins/tools/build_hato_assets.py`.
+
+Two things this machine needs, both handled inside `build_apk.bat` — worth
+knowing if you ever run gradle by hand:
+
+- **`TEMP` must point somewhere ASCII.** Gradle opens a unix-domain socket in
+  the temp directory, and it cannot do that under the default one, because
+  the real path runs through a Windows user folder with an accented name.
+  Without this every gradle command fails at once with *Unable to establish
+  loopback connection*. Setting `java.io.tmpdir` does not help; the socket
+  path follows `TEMP`/`TMP`.
+- **`JAVA_HOME` must be a JDK 21.** The project compiles against 21; Android
+  Studio uses its own bundled runtime, but a shell build follows `JAVA_HOME`,
+  which is a 17 install here and fails with *invalid source release: 21*.
+
+## Licence
+
+The source code is MIT — see [`LICENSE.txt`](LICENSE.txt).
+
+The Mr.Lee theme artwork under `public/hato/` is **not** covered by it. See
+[`ASSETS-LICENSE.md`](ASSETS-LICENSE.md) before publishing a build anywhere
+public.
 
 ## Sanity checks
 

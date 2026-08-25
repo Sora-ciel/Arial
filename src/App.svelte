@@ -36,6 +36,13 @@
     normalizeControlColors
   } from './utils/themeDefaults.js';
 
+  import {
+    HATO_PRESETS,
+    HATO_ID_PREFIX,
+    hatoThemeId,
+    isHatoBackground
+  } from './utils/hatoTheme.js';
+
   import { MODE_DEFINITIONS, MODE_ORDER, getModeDefinition } from "./Modes/modeRegistry.js";
   import { getCanvasViewport } from './canvasState.js';
   import { getOpeningViewportBox } from './utils/canvasFit.js';
@@ -347,7 +354,9 @@
       }),
       previewBg: '#161b21',
       blockDefaults: { bgColor: '#1b2129', textColor: '#ffb454' }
-    }
+    },
+    // Guest theme, meant to be pulled back out later — see utils/hatoTheme.js.
+    ...HATO_PRESETS
   ];
 
   const CONTROL_COLOR_STORAGE_KEY = 'controlColors';
@@ -388,9 +397,17 @@
       bgOpacity: 100,
       bgBlur: 0,
       bgLuminosity: 100,
-      bgSize: 'cover'
+      bgSize: 'cover',
+      // Set when the reader removes a background the theme supplied, so it
+      // stays removed for this file instead of coming straight back.
+      bgThemeOptOut: false
     }
   };
+
+  function readStoredBackground(value) {
+    if (typeof value !== 'string' || isHatoBackground(value)) return '';
+    return value;
+  }
 
   function normalizeModeSettings(settings) {
     const incomingSimple = settings?.simple || {};
@@ -420,19 +437,35 @@
       single: {
         ...DEFAULT_MODE_SETTINGS.single,
         ...incomingSingle,
-        backgroundImage: typeof incomingSingle.backgroundImage === 'string' ? incomingSingle.backgroundImage : '',
-        backgroundImageMobile: typeof incomingSingle.backgroundImageMobile === 'string' ? incomingSingle.backgroundImageMobile : '',
-        // 0-100: 100 shows the image fully opaque, 0 hides it. Values of 1 or
-        // less come from the older 0-1 fraction and are scaled up in place.
+        // A theme's own wallpaper is layered on at render time and never
+        // belongs in a save. An earlier build of the Hato theme did write its
+        // path in, so those are dropped here — otherwise the stored copy
+        // outranks the theme, survives switching to another one, and turns
+        // into a dead image reference the day the theme is removed.
+        backgroundImage: readStoredBackground(incomingSingle.backgroundImage),
+        backgroundImageMobile: readStoredBackground(incomingSingle.backgroundImageMobile),
+        // 0-100: 100 shows the image fully opaque, 0 hides it. Saves from
+        // before 0.8.35 stored a 0-1 fraction instead and are scaled up.
+        // Which format a save uses is read off bgLuminosity, which landed with
+        // the 0-100 rewrite — deciding by magnitude instead made a legitimate
+        // 1% jump to 100%, because the two formats overlap at exactly 1.
         bgOpacity: (() => {
           const raw = Number(incomingSingle.bgOpacity);
           if (!Number.isFinite(raw)) return DEFAULT_MODE_SETTINGS.single.bgOpacity;
-          return clampRange(raw <= 1 ? raw * 100 : raw, 0, 100, DEFAULT_MODE_SETTINGS.single.bgOpacity);
+          const legacyFraction =
+            incomingSingle.bgLuminosity === undefined && raw > 0 && raw <= 1;
+          return clampRange(
+            legacyFraction ? raw * 100 : raw,
+            0,
+            100,
+            DEFAULT_MODE_SETTINGS.single.bgOpacity
+          );
         })(),
         bgBlur: Math.max(0, Number(incomingSingle.bgBlur) || 0),
         // Luminosity 0-200: 100 = untouched, below blends black in, above white.
         bgLuminosity: clampRange(incomingSingle.bgLuminosity, 0, 200, DEFAULT_MODE_SETTINGS.single.bgLuminosity),
-        bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover'
+        bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover',
+        bgThemeOptOut: incomingSingle.bgThemeOptOut === true
       }
     };
   }
@@ -1325,6 +1358,12 @@
     selectedThemeId = preset.id;
     currentThemePreviewBg = preset.previewBg ?? DEFAULT_PREVIEW_BG;
 
+    hatoThemeId.set(
+      typeof preset.id === 'string' && preset.id.startsWith(HATO_ID_PREFIX)
+        ? preset.id
+        : null
+    );
+
     if (persistSelection) {
       persistControlColors(nextControlColors);
       persistBlockTheme(nextBlockTheme, preset.id);
@@ -1615,7 +1654,25 @@
   let mode = getDefaultModeForViewport();
   let modeSettings = normalizeModeSettings();
   $: simpleNoteColumnCount = modeSettings.simple.columnCount;
-  $: singleNoteSettings = modeSettings.single;
+  // A theme may bring its own single-note background. It is layered over the
+  // file's settings instead of being written into the save, so it follows the
+  // theme across every file rather than sticking to whichever one happened to
+  // be open when the theme was picked — and it leaves saves untouched, so
+  // dropping the theme takes the background with it.
+  $: singleNoteSettings = withThemeBackground(modeSettings.single, activeTheme);
+
+  function withThemeBackground(single, theme) {
+    const themeBg = theme?.singleBackground;
+    // A background the reader chose themselves outranks the theme's, and
+    // removing the theme's one sets bgThemeOptOut so it stays gone.
+    if (!themeBg || single.bgThemeOptOut || single.backgroundImage) return single;
+    return {
+      ...single,
+      backgroundImage: themeBg.desktop,
+      backgroundImageMobile: single.backgroundImageMobile || themeBg.mobile,
+      backgroundFromTheme: true
+    };
+  }
   $: taskAddDirection = modeSettings.task.addDirection;
   $: activeModeDefinition = getModeDefinition(mode);
   $: showRightControls = activeModeDefinition?.showRightControls !== false;

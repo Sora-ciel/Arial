@@ -1,17 +1,21 @@
-// Parses a hex (#fff / #ffffff) or rgb()/rgba() color string into [r, g, b].
+// Parses a hex (#fff / #ffff / #ffffff / #ffffffff) or rgb()/rgba() color
+// string into [r, g, b]. The alpha channel is parsed and discarded: callers
+// want to know how light the colour reads, and a theme that leans on
+// translucent panels would otherwise fall through to the null branch and get
+// white text on every surface regardless of its colour.
 // Returns null if the string isn't recognized.
 export function parseColor(color) {
   const trimmed = color.trim();
   if (trimmed.startsWith('#')) {
     const hex = trimmed.slice(1);
-    if (hex.length === 3) {
+    if (hex.length === 3 || hex.length === 4) {
       return [
         parseInt(hex[0] + hex[0], 16),
         parseInt(hex[1] + hex[1], 16),
         parseInt(hex[2] + hex[2], 16)
       ];
     }
-    if (hex.length === 6) {
+    if (hex.length === 6 || hex.length === 8) {
       return [
         parseInt(hex.slice(0, 2), 16),
         parseInt(hex.slice(2, 4), 16),
