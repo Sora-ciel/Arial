@@ -28,8 +28,24 @@ const MAX_STEP_CHARS = 24;      // an uninterrupted run this long
 const WORD_END = /[\s.,;:!?)\]}"'’”]$/; // finishing a word or clause
 
 // Tags carry no meaning for step size — only the words the person typed do.
+function plainText(html) {
+  return String(html ?? '').replace(/<[^>]*>/g, '');
+}
+
 function plainLength(html) {
-  return String(html ?? '').replace(/<[^>]*>/g, '').length;
+  return plainText(html).length;
+}
+
+// What was actually added, found by comparing the two versions rather than by
+// looking at the end of the document. Typing usually happens in the middle of
+// something already written, where the last characters of the document never
+// change — testing those told us nothing about the word being typed.
+function insertedText(before, after) {
+  const limit = Math.min(before.length, after.length);
+  let start = 0;
+  while (start < limit && before[start] === after[start]) start += 1;
+  const growth = after.length - before.length;
+  return growth > 0 ? after.slice(start, start + growth) : '';
 }
 
 // Enough to step back through a long session without holding a whole
@@ -80,8 +96,10 @@ export function recordText(key, content, caret = null) {
   if (content === entry.current) return;
 
   const now = Date.now();
-  const length = plainLength(content);
-  const previousLength = plainLength(entry.current);
+  const nextText = plainText(content);
+  const previousText = plainText(entry.current);
+  const length = nextText.length;
+  const previousLength = previousText.length;
   const direction = length >= previousLength ? 'insert' : 'delete';
 
   const startsNewStep =
@@ -104,10 +122,15 @@ export function recordText(key, content, caret = null) {
   entry.currentCaret = caret;
   entry.lastDirection = direction;
   entry.lastRecordedAt = now;
-  // Reaching the end of a word closes the step, so the next character begins a
-  // new one. This is what keeps undo at roughly word granularity while typing
+  // Finishing a word closes the step, so the next character begins a new one.
+  // This is what keeps undo at roughly word granularity while typing
   // continuously, rather than swallowing whole paragraphs.
-  if (direction === 'insert' && WORD_END.test(String(content ?? '').replace(/<[^>]*>/g, ''))) {
+  //
+  // The test is on the characters just inserted, wherever in the document they
+  // went. Testing the end of the document instead only worked while writing at
+  // the very end of it: editing anywhere earlier left the tail unchanged, the
+  // rule never fired, and steps grew to a paragraph at a time.
+  if (direction === 'insert' && WORD_END.test(insertedText(previousText, nextText))) {
     entry.lastRecordedAt = 0;
   }
   // A fresh edit is a new branch, so anything undone past this point is gone.
