@@ -21,15 +21,25 @@ const histories = new Map();
 //
 // A rolling pause alone is not enough: while someone keeps typing the window
 // keeps being pushed back, so an unbroken paragraph collapses into a single
-// step and one Ctrl+Z erases the lot. Editors people are used to step back by
-// roughly a word, so a step is closed by whichever of these comes first.
-const COALESCE_MS = 400;        // a pause in typing
-const MAX_STEP_CHARS = 24;      // an uninterrupted run this long
-const WORD_END = /[\s.,;:!?)\]}"'’”]$/; // finishing a word or clause
+// step and one Ctrl+Z erases the lot. But breaking at every word is the
+// opposite mistake — it took twenty-nine presses to walk back three sentences,
+// where any other editor takes a handful. Notepad steps back a whole typing
+// run; ProseMirror's own history groups on a half-second pause and nothing
+// else. A sentence is the unit that sits between those, so a step is closed by
+// whichever of these comes first.
+const COALESCE_MS = 500;        // a pause in typing
+const MAX_STEP_CHARS = 80;      // an uninterrupted run this long
+const SENTENCE_END = /[.!?\n]$/; // finishing a sentence, or a new line
 
 // Tags carry no meaning for step size — only the words the person typed do.
+// Block ends become newlines first, so that starting a new paragraph reads as
+// a break here rather than running two paragraphs together.
+const BLOCK_BREAK = /<\/(?:p|div|h[1-6]|li|blockquote|pre)>|<br\s*\/?>/gi;
+
 function plainText(html) {
-  return String(html ?? '').replace(/<[^>]*>/g, '');
+  return String(html ?? '')
+    .replace(BLOCK_BREAK, '\n')
+    .replace(/<[^>]*>/g, '');
 }
 
 function plainLength(html) {
@@ -122,15 +132,16 @@ export function recordText(key, content, caret = null) {
   entry.currentCaret = caret;
   entry.lastDirection = direction;
   entry.lastRecordedAt = now;
-  // Finishing a word closes the step, so the next character begins a new one.
-  // This is what keeps undo at roughly word granularity while typing
-  // continuously, rather than swallowing whole paragraphs.
+  // Finishing a sentence closes the step, so the next character begins a new
+  // one. Together with the length cap this keeps undo somewhere between a
+  // phrase and a sentence while typing continuously, rather than swallowing a
+  // whole paragraph at one end or crawling word by word at the other.
   //
   // The test is on the characters just inserted, wherever in the document they
   // went. Testing the end of the document instead only worked while writing at
   // the very end of it: editing anywhere earlier left the tail unchanged, the
   // rule never fired, and steps grew to a paragraph at a time.
-  if (direction === 'insert' && WORD_END.test(insertedText(previousText, nextText))) {
+  if (direction === 'insert' && SENTENCE_END.test(insertedText(previousText, nextText))) {
     entry.lastRecordedAt = 0;
   }
   // A fresh edit is a new branch, so anything undone past this point is gone.
