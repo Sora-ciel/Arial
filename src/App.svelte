@@ -2936,20 +2936,33 @@
 
   // Shared per-file upload loop, guarded by uploadInProgress so the manual
   // "upload all" action and the auto-sync tick never race each other.
+  // One folder failing used to end the whole run: the loop threw, every folder
+  // behind it in the queue was never attempted, and the only trace was a line
+  // in the console. A folder the database refuses could stop an entire account
+  // syncing indefinitely, which is exactly what a note holding a large inline
+  // picture did. Each folder is now attempted on its own, and the names that
+  // actually made it are reported back so a failed one is retried rather than
+  // being marked as done.
   async function uploadFilesToCloud(names, options = {}) {
-    if (uploadInProgress) return 0;
+    if (uploadInProgress) return { uploadedCount: 0, uploadedNames: [], failures: [] };
     uploadInProgress = true;
     try {
-      let uploadedCount = 0;
+      const uploadedNames = [];
+      const failures = [];
       for (const fileName of names) {
-        const localPayload = await loadBlocks(fileName);
-        const uploadAttachments = options.shouldUploadAttachments
-          ? options.shouldUploadAttachments(fileName)
-          : true;
-        await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments });
-        uploadedCount += 1;
+        try {
+          const localPayload = await loadBlocks(fileName);
+          const uploadAttachments = options.shouldUploadAttachments
+            ? options.shouldUploadAttachments(fileName)
+            : true;
+          await saveRemoteFileWithMemory(fileName, localPayload, { uploadAttachments });
+          uploadedNames.push(fileName);
+        } catch (error) {
+          failures.push({ fileName, error });
+          console.error(`Could not sync "${fileName}" to the cloud:`, error);
+        }
       }
-      return uploadedCount;
+      return { uploadedCount: uploadedNames.length, uploadedNames, failures };
     } finally {
       uploadInProgress = false;
     }
@@ -2971,12 +2984,18 @@
     try {
       const names = await listSavedBlocks();
       const uploadAttachments = options.uploadAttachments !== false;
-      const uploadedCount = await uploadFilesToCloud(names, {
+      const { uploadedCount, failures } = await uploadFilesToCloud(names, {
         shouldUploadAttachments: () => uploadAttachments
       });
 
       if (showInfo) {
-        await appAlert(`Upload complete. Uploaded ${uploadedCount} save file(s).`);
+        // Asked for by hand, so a folder that would not go up is said out loud
+        // rather than left in the console.
+        const failed = failures.length
+          ? `
+${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join(', ')}`
+          : '';
+        await appAlert(`Upload complete. Uploaded ${uploadedCount} save file(s).${failed}`);
       }
       autoSyncDirty = false;
     } catch (error) {
@@ -2997,10 +3016,36 @@
       names.map(async fileName => {
         const payload = await loadBlocks(fileName);
         const blocks = Array.isArray(payload?.blocks) ? payload.blocks : [];
+        // What counts as an attachment is any picture, wherever it sits. Only
+        // image blocks were looked at here, so a note that gained a picture
+        // pasted into its text looked unchanged, the attachment pass was
+        // skipped, and the base64 was written to the database inline.
+        //
+        // Embedded pictures are summarised by how many there are and how long
+        // they are rather than by their bytes: the signature is only compared
+        // for equality, and holding megabytes of base64 in it to do that would
+        // be a waste.
         const attachmentSignature = blocks
           .map(block => {
-            if (block?.type !== 'image') return '';
-            return `${block.id}:${block.src || ''}:${block.content || ''}:${block.trackUrl || ''}`;
+            if (block?.type === 'image') {
+              return `${block.id}:${block.src || ''}:${block.content || ''}:${block.trackUrl || ''}`;
+            }
+
+            const written = [block?.src, block?.content, block?.trackUrl];
+            if (Array.isArray(block?.tasks)) {
+              for (const task of block.tasks) written.push(task?.text);
+            }
+
+            let count = 0;
+            let bytes = 0;
+            for (const value of written) {
+              if (typeof value !== 'string' || !value.includes('data:')) continue;
+              for (const match of value.match(/data:[a-z0-9.+-]+\/[a-z0-9.+-]+[^"')\s>]*/gi) || []) {
+                count += 1;
+                bytes += match.length;
+              }
+            }
+            return count ? `${block.id}:embedded:${count}:${bytes}` : '';
           })
           .filter(Boolean)
           .join('|');
@@ -3123,16 +3168,21 @@
       return;
     }
 
-    await uploadFilesToCloud(changedNames, {
+    const { uploadedNames, failures } = await uploadFilesToCloud(changedNames, {
       shouldUploadAttachments: fileName =>
         force || perFile[fileName].attachmentFingerprint !== lastAutoSyncAttachmentFingerprintByFile[fileName]
     });
 
-    for (const fileName of changedNames) {
+    // Only what actually reached the cloud is remembered as sent. Recording a
+    // folder that failed would leave it looking synced while its changes sat on
+    // this device alone.
+    for (const fileName of uploadedNames) {
       lastAutoSyncFingerprintByFile[fileName] = perFile[fileName].fingerprint;
       lastAutoSyncAttachmentFingerprintByFile[fileName] = perFile[fileName].attachmentFingerprint;
     }
-    autoSyncDirty = false;
+    // A folder left behind is still owed an upload, so the next tick tries it
+    // again instead of waiting for another edit to mark things dirty.
+    autoSyncDirty = failures.length > 0;
   }
 
   async function toggleAutoSync() {

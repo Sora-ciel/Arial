@@ -103,6 +103,22 @@ async function getFirebaseContext() {
   return firebaseContextPromise;
 }
 
+// Where a picture already sent to Storage ended up, so the same one is not
+// pushed twice in a session. Keyed by object path, which is derived from the
+// bytes, so two blocks holding the same picture share the upload.
+const uploadedAttachmentUrls = new Map();
+
+// FNV-1a. Short, stable and good enough to name an object by its contents;
+// nothing here depends on it being hard to forge.
+function hashText(text) {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) {
+    hash ^= text.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36) + '-' + text.length.toString(36);
+}
+
 function inferExtensionFromMime(mime = '') {
   const normalized = String(mime).toLowerCase();
   if (normalized.includes('jpeg')) return 'jpg';
@@ -117,6 +133,56 @@ function inferExtensionFromMime(mime = '') {
   return 'bin';
 }
 
+// A picture is not always the whole of a value. An image block's src is
+// nothing but the data: URL, which is all `startsWith('data:')` ever caught —
+// but a picture pasted into written text arrives *inside* the value, as an
+// <img src="data:…"> in a note's HTML or a ![](data:…) in a task. Those were
+// never recognised, so the base64 went into the database inline: megabytes of
+// it in a single field, and the write carrying it failed. One failed write
+// stopped the whole upload loop, so the note stopped syncing and every note
+// behind it in the queue stopped with it.
+//
+// Both shapes are matched here. A base64 payload contains no quote, bracket or
+// space, which is what bounds each match.
+const EMBEDDED_DATA_URL_PATTERNS = [
+  /(?:src|href)\s*=\s*"(data:[^"]+)"/gi, // HTML attribute, double quoted
+  /(?:src|href)\s*=\s*'(data:[^']+)'/gi, // HTML attribute, single quoted
+  /\]\((data:[^)\s]+)\)/g               // markdown image or link
+];
+
+function findEmbeddedDataUrls(text) {
+  const found = new Set();
+  for (const pattern of EMBEDDED_DATA_URL_PATTERNS) {
+    for (const match of text.matchAll(pattern)) found.add(match[1]);
+  }
+  return [...found];
+}
+
+/**
+ * Replaces every data: URL embedded in a string with a Storage link. The same
+ * picture used twice is uploaded once.
+ */
+async function uploadEmbeddedDataUrls(text, options) {
+  const dataUrls = findEmbeddedDataUrls(text);
+  if (!dataUrls.length) return text;
+
+  let replaced = text;
+  for (const dataUrl of dataUrls) {
+    const uploadedUrl = await uploadAttachmentFromDataUrl(dataUrl, options);
+    if (uploadedUrl) replaced = replaced.split(dataUrl).join(uploadedUrl);
+  }
+  return replaced;
+}
+
+/** True if anything anywhere in the payload is still inline base64. */
+export function payloadCarriesDataUrl(payload) {
+  try {
+    return JSON.stringify(payload ?? null).includes('data:');
+  } catch {
+    return false;
+  }
+}
+
 async function uploadBlockAttachments(fileId, payload, ctx, uid) {
   if (!Array.isArray(payload?.blocks)) return payload;
 
@@ -124,43 +190,54 @@ async function uploadBlockAttachments(fileId, payload, ctx, uid) {
     const next = { ...block };
     const blockId = block?.id || `block-${index + 1}`;
 
-    // Task text can carry pasted images as ![](data:…) markdown. Left inline
-    // they'd be written to the database as base64; push them to Storage and
-    // keep just the link, like every other attachment.
+    // Tasks used to be plain text holding markdown; they hold HTML now, so the
+    // picture in one is written <img src="data:…"> and the old markdown-only
+    // test stopped matching. Both shapes go through the same path now.
     if (Array.isArray(next.tasks)) {
       next.tasks = await Promise.all(next.tasks.map(async task => {
         const text = task?.text;
-        if (typeof text !== 'string' || !text.includes('](data:')) return task;
+        if (typeof text !== 'string') return task;
 
-        let replaced = text;
-        for (const match of text.match(/data:[^)\s]+/g) || []) {
-          const uploadedUrl = await uploadAttachmentFromDataUrl(match, {
-            fileId,
-            blockId,
-            field: `task-${task?.id || 'item'}`,
-            uid,
-            ctx
-          });
-          if (uploadedUrl) replaced = replaced.split(match).join(uploadedUrl);
-        }
+        const replaced = await uploadEmbeddedDataUrls(text, {
+          fileId,
+          blockId,
+          field: `task-${task?.id || 'item'}`,
+          uid,
+          ctx
+        });
         return replaced === text ? task : { ...task, text: replaced };
       }));
     }
 
     for (const field of ATTACHMENT_FIELDS) {
       const value = next[field];
-      if (typeof value !== 'string' || !value.startsWith('data:')) continue;
+      if (typeof value !== 'string') continue;
 
-      const uploadedUrl = await uploadAttachmentFromDataUrl(value, {
-        fileId,
-        blockId,
-        field,
-        uid,
-        ctx
-      });
+      // The value *is* the picture — an image block's src.
+      if (value.startsWith('data:')) {
+        const uploadedUrl = await uploadAttachmentFromDataUrl(value, {
+          fileId,
+          blockId,
+          field,
+          uid,
+          ctx
+        });
 
-      if (uploadedUrl) {
-        next[field] = uploadedUrl;
+        if (uploadedUrl) {
+          next[field] = uploadedUrl;
+        }
+        continue;
+      }
+
+      // The picture is somewhere inside written text.
+      if (value.includes('data:')) {
+        next[field] = await uploadEmbeddedDataUrls(value, {
+          fileId,
+          blockId,
+          field,
+          uid,
+          ctx
+        });
       }
     }
 
@@ -369,7 +446,14 @@ export async function saveRemoteFile(fileId, payload, options = {}) {
   if (!isFirebaseConfigured()) return null;
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
-  const shouldUploadAttachments = options.uploadAttachments !== false;
+  // The caller skips the attachment pass when it believes nothing has changed.
+  // That belief is only ever about *pictures*, and it was wrong often enough to
+  // matter: the copy on this device keeps its base64 after an upload, so a note
+  // whose picture had already been sent still carried the inline bytes, and the
+  // next ordinary text edit wrote all of them to the database. Whatever the
+  // caller thinks, a payload still holding a data: URL gets the pass.
+  const shouldUploadAttachments =
+    options.uploadAttachments !== false || payloadCarriesDataUrl(payload);
   let payloadWithRemoteAttachments = payload;
   if (shouldUploadAttachments) {
     payloadWithRemoteAttachments = await uploadBlockAttachments(fileId, payload, ctx, user.uid);
@@ -450,8 +534,17 @@ export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {
   const fileId = String(options.fileId || 'unknown-file');
   const blockId = String(options.blockId || 'unknown-block');
   const field = String(options.field || 'attachment');
-  const objectName = `${Date.now()}-${Math.random().toString(36).slice(2, 10)}.${ext}`;
+  // Named after the bytes rather than the clock. Uploading is not a one-time
+  // event: the copy on this device keeps its base64, so the same picture comes
+  // back round on every later edit of the note. With a random name each pass
+  // left another copy in Storage; named this way a repeat simply overwrites the
+  // one already there, and the link stays the same.
+  const objectName = `${hashText(dataUrl)}.${ext}`;
   const objectPath = `${getStorageUserPath(uid, `attachments/${fileId}/${blockId}/${field}`)}/${objectName}`;
+
+  const cached = uploadedAttachmentUrls.get(objectPath);
+  if (cached) return cached;
+
   const storageRef = ctx.storageApi.ref(ctx.storage, objectPath);
 
   await ctx.storageApi.uploadBytes(storageRef, blob, {
@@ -459,7 +552,9 @@ export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {
     cacheControl: 'public,max-age=31536000'
   });
 
-  return await ctx.storageApi.getDownloadURL(storageRef);
+  const downloadUrl = await ctx.storageApi.getDownloadURL(storageRef);
+  uploadedAttachmentUrls.set(objectPath, downloadUrl);
+  return downloadUrl;
 }
 
 export async function resolveAttachmentUrl(value) {
