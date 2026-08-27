@@ -47,10 +47,21 @@
     return i;
   }
 
-  // Turns an offset into the visible text into a document position. A stored
-  // position cannot be reused directly: the restored document is a different
-  // shape, and the same number lands on a different line once paragraph
-  // boundaries shift, which is what made the caret jump about.
+  // The document as a plain string, counting text and nothing else.
+  //
+  // It has to agree exactly with the walker below, or the offset is measured
+  // in one alphabet and spent in another. getText() was the earlier choice and
+  // does not agree: it emits a character for every line break, so a note with
+  // a run of empty lines drifted by one position per break and the caret ended
+  // up near the bottom. Both separators are emptied here so only real text
+  // counts, on both sides.
+  function documentText(doc) {
+    return doc.textBetween(0, doc.content.size, '', '');
+  }
+
+  // Turns an offset into that text into a document position. A stored position
+  // cannot be reused directly: the restored document is a different shape, and
+  // the same number lands on a different line once paragraph boundaries shift.
   function positionForTextOffset(doc, offset) {
     let position = null;
     let seen = 0;
@@ -73,11 +84,7 @@
     if (!step || !editor) return false;
     const { content } = step;
     // Measured before the document is replaced, so the two can be compared.
-    // blockSeparator is emptied deliberately: getText() otherwise inserts
-    // characters between paragraphs that the walker below does not count, so
-    // the two would be measuring different things and the caret would land a
-    // paragraph or more away from the edit.
-    const textBefore = editor.getText({ blockSeparator: '' });
+    const textBefore = documentText(editor.state.doc);
     applyingHistory = true;
     try {
       editor.commands.setContent(content || '', false);
@@ -89,7 +96,7 @@
       // its own transaction and falls back to the selection the editor has
       // stored — which after setContent is the end of the document, so it
       // undid the position that had just been set.
-      const textAfter = editor.getText({ blockSeparator: '' });
+      const textAfter = documentText(editor.state.doc);
       // Held as an offset into the text, not as a document position. The
       // content goes out to the parent and comes back as a prop, which can
       // replace the document again; a position worked out beforehand would
