@@ -103,7 +103,14 @@
       // then point at the wrong place, which is why the caret sometimes landed
       // a paragraph or two away. An offset stays meaningful, so it is resolved
       // against whatever document is actually there at the moment of placing.
-      const targetOffset = divergencePoint(textBefore, textAfter);
+      //
+      // Undoing takes text away, and the caret belongs where it went from —
+      // the point the two versions diverge. Redoing puts text back, and the
+      // caret belongs after it, the way it would sit had you just typed it.
+      // Using the divergence for both left redo sitting at the start of what
+      // had reappeared, a step behind itself.
+      const restored = Math.max(0, textAfter.length - textBefore.length);
+      const targetOffset = divergencePoint(textBefore, textAfter) + restored;
 
       const placeCaret = () => {
         if (!editor || editor.isDestroyed) return;
