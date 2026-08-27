@@ -37,9 +37,47 @@
   // it causes isn't recorded as a fresh edit.
   let applyingHistory = false;
 
+  // Where two versions of the text first differ. Undoing an insertion diverges
+  // where the inserted text began; undoing a deletion, where the removed text
+  // began. Either way that is the spot the change happened.
+  function divergencePoint(before, after) {
+    const limit = Math.min(before.length, after.length);
+    let i = 0;
+    while (i < limit && before[i] === after[i]) i += 1;
+    return i;
+  }
+
+  // Turns an offset into the visible text into a document position. A stored
+  // position cannot be reused directly: the restored document is a different
+  // shape, and the same number lands on a different line once paragraph
+  // boundaries shift, which is what made the caret jump about.
+  function positionForTextOffset(doc, offset) {
+    let position = null;
+    let seen = 0;
+    doc.descendants((node, nodePos) => {
+      if (position !== null) return false;
+      if (node.isText) {
+        const length = node.text.length;
+        if (seen + length >= offset) {
+          position = nodePos + (offset - seen);
+          return false;
+        }
+        seen += length;
+      }
+      return true;
+    });
+    return position ?? Math.max(1, doc.content.size - 1);
+  }
+
   function applyHistory(step) {
     if (!step || !editor) return false;
-    const { content, caret } = step;
+    const { content } = step;
+    // Measured before the document is replaced, so the two can be compared.
+    // blockSeparator is emptied deliberately: getText() otherwise inserts
+    // characters between paragraphs that the walker below does not count, so
+    // the two would be measuring different things and the caret would land a
+    // paragraph or more away from the edit.
+    const textBefore = editor.getText({ blockSeparator: '' });
     applyingHistory = true;
     try {
       editor.commands.setContent(content || '', false);
@@ -51,25 +89,25 @@
       // its own transaction and falls back to the selection the editor has
       // stored — which after setContent is the end of the document, so it
       // undid the position that had just been set.
-      const size = editor.state.doc.content.size;
-      const target =
-        typeof caret === 'number'
-          // The document has changed, so the old offset is clamped into it.
-          ? Math.max(1, Math.min(caret, Math.max(1, size - 1)))
-          : null;
+      const textAfter = editor.getText({ blockSeparator: '' });
+      // Held as an offset into the text, not as a document position. The
+      // content goes out to the parent and comes back as a prop, which can
+      // replace the document again; a position worked out beforehand would
+      // then point at the wrong place, which is why the caret sometimes landed
+      // a paragraph or two away. An offset stays meaningful, so it is resolved
+      // against whatever document is actually there at the moment of placing.
+      const targetOffset = divergencePoint(textBefore, textAfter);
 
       const placeCaret = () => {
         if (!editor || editor.isDestroyed) return;
-        if (target === null) {
-          editor.commands.focus('end');
-          return;
-        }
         // Focus first, then select. focus() resolves to whatever selection the
         // editor has stored, which after setContent is the end of the
         // document, so it has to run before the position is set rather than
         // after it.
         editor.commands.focus();
-        editor.commands.setTextSelection(target);
+        editor.commands.setTextSelection(
+          positionForTextOffset(editor.state.doc, targetOffset)
+        );
       };
 
       placeCaret();
