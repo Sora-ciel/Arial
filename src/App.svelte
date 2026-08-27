@@ -1804,6 +1804,11 @@
   let cloudBootstrapInProgress = false;
   let cloudBootstrapComplete = false;
   let cloudSyncGateInProgress = false;
+  // What the last upload attempt actually said, so a folder that will not go up
+  // says so on screen. It used to fail into the console alone, where nobody
+  // running the packaged app can see it, which is how an account could stop
+  // syncing without anything looking wrong.
+  let syncFailureNotice = '';
   let cloudSyncMemoryByFile = loadCloudSyncMemory();
   let autoSyncEnabled = loadAutoSyncEnabled();
   let autoSyncUploadIntervalId = null;
@@ -3180,6 +3185,16 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       lastAutoSyncFingerprintByFile[fileName] = perFile[fileName].fingerprint;
       lastAutoSyncAttachmentFingerprintByFile[fileName] = perFile[fileName].attachmentFingerprint;
     }
+    if (failures.length) {
+      const [{ fileName, error }] = failures;
+      const detail = error?.message || String(error || 'unknown error');
+      syncFailureNotice = failures.length > 1
+        ? `${failures.length} folders could not sync. "${fileName}": ${detail}`
+        : `"${fileName}" could not sync: ${detail}`;
+    } else {
+      syncFailureNotice = '';
+    }
+
     // A folder left behind is still owed an upload, so the next tick tries it
     // again instead of waiting for another edit to mark things dirty.
     autoSyncDirty = failures.length > 0;
@@ -4137,6 +4152,31 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   opacity: 0.8;
 }
 
+/* Qualified by the base class so it wins on specificity: the plain
+   .sync-lock-banner rule is defined below this one and would otherwise take the
+   border colour back. */
+.sync-lock-banner.sync-failed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(90vw, 620px);
+  /* Left alone by the dim the lock banner applies, since this one is the only
+     thing on screen explaining why nothing is being saved to the account. */
+  pointer-events: auto;
+  border-color: #b3452f;
+}
+
+.sync-failed-dismiss {
+  flex-shrink: 0;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1px solid var(--dlg-border, #444);
+  background: transparent;
+  color: inherit;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+
 .sync-lock-banner {
   position: fixed;
   top: 72px;
@@ -4499,6 +4539,11 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   <div class="modes" class:sync-lock-active={cloudBootstrapInProgress || cloudSyncGateInProgress} role="region" aria-label="Workspace" on:dragover={handleModeDragOver} on:drop={handleModeDrop}>
     {#if cloudBootstrapInProgress || cloudSyncGateInProgress}
       <div class="sync-lock-banner" style={overlayThemeStyle}>Syncing with the cloud… editing resumes in a moment.</div>
+    {:else if syncFailureNotice}
+      <div class="sync-lock-banner sync-failed" style={overlayThemeStyle} role="alert">
+        {syncFailureNotice}
+        <button type="button" class="sync-failed-dismiss" on:click={() => (syncFailureNotice = '')}>Dismiss</button>
+      </div>
     {/if}
     <ModeArea
       {mode}
