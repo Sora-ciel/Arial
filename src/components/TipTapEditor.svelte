@@ -5,6 +5,13 @@
   import Placeholder from '@tiptap/extension-placeholder';
   import Image from '@tiptap/extension-image';
   import { Markdown } from 'tiptap-markdown';
+  import {
+    initTextHistory,
+    recordText,
+    undoText,
+    redoText,
+    syncTextHistory
+  } from '../utils/textHistory.js';
 
   export let content = '';
   export let placeholder = 'Write here…';
@@ -16,12 +23,51 @@
   // 'inline' drops the note-sized padding and min-height so the editor can sit
   // inside a single task row.
   export let variant = 'block'; // 'block' | 'inline'
+  // Identifies whose history this is — normally the block's id. The history
+  // lives outside the editor so it survives this component being rebuilt,
+  // which happens on a move and on every mode switch.
+  export let historyKey = '';
 
   const dispatch = createEventDispatcher();
 
   let wrapEl;
   let element;
   let editor;
+  // Set while an undo or redo is being written into the editor, so the update
+  // it causes isn't recorded as a fresh edit.
+  let applyingHistory = false;
+
+  function applyHistory(content) {
+    if (content === null || !editor) return false;
+    applyingHistory = true;
+    try {
+      editor.commands.setContent(content || '', false);
+      // setContent leaves the caret where it lands; putting it at the end is
+      // predictable and keeps typing possible straight away.
+      editor.commands.focus('end');
+      lastPushedContent = content;
+      dispatch('change', content);
+    } finally {
+      applyingHistory = false;
+    }
+    return true;
+  }
+
+  function handleHistoryKeys(view, event) {
+    const mod = event.ctrlKey || event.metaKey;
+    if (!mod) return false;
+    const key = event.key?.toLowerCase();
+
+    const isRedo = key === 'y' || (key === 'z' && event.shiftKey);
+    const isUndo = key === 'z' && !event.shiftKey;
+    if (!isUndo && !isRedo) return false;
+
+    // Handled here whether or not there is anything left to step through, so
+    // the keystroke never falls through to the workspace's own undo.
+    event.preventDefault();
+    applyHistory(isRedo ? redoText(historyKey) : undoText(historyKey));
+    return true;
+  }
 
   // StarterKit ships no image node, so markdown like ![alt](url) had nothing
   // to become and silently did nothing. Add the node, and give it a width that
@@ -190,7 +236,10 @@
     editor = new Editor({
       element,
       extensions: [
-        StarterKit,
+        // History off: the editor's own would be a second, competing undo
+        // stack that dies with the component. Text history is kept per block
+        // in utils/textHistory.js instead, so it outlives a remount.
+        StarterKit.configure({ history: false }),
         // html:true so setContent can parse BOTH legacy markdown content and the
         // HTML we now store. We store HTML (getHTML) because markdown collapses
         // consecutive blank lines — HTML keeps every empty paragraph.
@@ -208,6 +257,7 @@
       content: content || '',
       editorProps: {
         attributes: { class: 'tiptap-inner', spellcheck: 'false' },
+        handleKeyDown: handleHistoryKeys,
       },
       onUpdate({ editor: e }) {
         const value =
@@ -217,6 +267,7 @@
         // Tracked in the same format we emit, so the reactive push below can
         // tell "the parent echoed our own value back" from a real change.
         lastPushedContent = value;
+        if (!applyingHistory) recordText(historyKey, value);
         dispatch('change', value);
       },
       onFocus({ event }) {
@@ -227,6 +278,7 @@
       },
     });
     lastPushedContent = content;
+    initTextHistory(historyKey, content || '');
     // Restore scroll after editor settles
     if (initialScrollTop && wrapEl) {
       requestAnimationFrame(() => { wrapEl.scrollTop = initialScrollTop; });
@@ -237,6 +289,10 @@
   $: if (editor && content !== lastPushedContent) {
     editor.commands.setContent(content || '', false);
     lastPushedContent = content;
+    // The change came from outside — a cloud download, or the workspace undo
+    // restoring a snapshot — so the history is told about it rather than
+    // being left pointing at a version this block no longer has.
+    syncTextHistory(historyKey, content || '');
   }
 
   onDestroy(() => {

@@ -384,6 +384,7 @@
     {#key noteBlock.id}
       <TipTapEditor
         content={noteContent}
+        historyKey={noteBlock.id}
         placeholder="Write your note here..."
         on:change={(e) => {
           updateBlock(noteBlock.id, { content: e.detail }, { pushToHistory: false, changedKeys: ['content'] });

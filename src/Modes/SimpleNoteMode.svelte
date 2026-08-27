@@ -1059,6 +1059,7 @@ input[type="text"] {
           {#if block.type === 'text' || block.type === 'cleantext'}
             <TipTapEditor
               content={block.content}
+              historyKey={block.id}
               placeholder="Type your note here..."
               on:change={(e) => {
                 updateBlock(block.id, { content: e.detail }, { pushToHistory: false, changedKeys: ['content'] });

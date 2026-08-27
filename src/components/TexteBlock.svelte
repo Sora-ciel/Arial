@@ -330,6 +330,7 @@
     <TipTapEditor
       {content}
       {initialScrollTop}
+      historyKey={id}
       placeholder=""
       on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
       on:scroll={handleTextScroll}
