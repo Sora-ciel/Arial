@@ -43,6 +43,9 @@ function historyFor(key) {
       past: [],
       future: [],
       current: null,
+      // Where the caret sat in the current state, so undo can put it back
+      // instead of dropping it at the end of the block.
+      currentCaret: null,
       lastRecordedAt: 0,
       // Length at the start of the current step, so its size can be measured.
       stepStartLength: 0,
@@ -65,8 +68,13 @@ export function initTextHistory(key, content) {
   if (entry.current === null) entry.current = content ?? '';
 }
 
+function pushPast(entry) {
+  entry.past.push({ content: entry.current, caret: entry.currentCaret });
+  if (entry.past.length > MAX_STEPS) entry.past.shift();
+}
+
 /** Records a new state, coalescing a burst of typing into one step. */
-export function recordText(key, content) {
+export function recordText(key, content, caret = null) {
   if (!key) return;
   const entry = historyFor(key);
   if (content === entry.current) return;
@@ -86,14 +94,14 @@ export function recordText(key, content) {
   // Only the state *before* a step is kept: recording every intermediate value
   // would make undo crawl back letter by letter.
   if (startsNewStep) {
-    entry.past.push(entry.current);
-    if (entry.past.length > MAX_STEPS) entry.past.shift();
+    pushPast(entry);
     entry.stepStartLength = previousLength;
   } else if (entry.current === null) {
     entry.stepStartLength = length;
   }
 
   entry.current = content;
+  entry.currentCaret = caret;
   entry.lastDirection = direction;
   entry.lastRecordedAt = now;
   // Reaching the end of a word closes the step, so the next character begins a
@@ -111,12 +119,13 @@ export function undoText(key) {
   const entry = histories.get(key);
   if (!entry || !entry.past.length) return null;
   const previous = entry.past.pop();
-  entry.future.push(entry.current);
-  entry.current = previous;
+  entry.future.push({ content: entry.current, caret: entry.currentCaret });
+  entry.current = previous.content;
+  entry.currentCaret = previous.caret;
   // Closes the current step so the next keystroke starts a new one.
   entry.lastRecordedAt = 0;
   entry.lastDirection = null;
-  entry.stepStartLength = plainLength(previous);
+  entry.stepStartLength = plainLength(previous.content);
   return previous;
 }
 
@@ -125,11 +134,12 @@ export function redoText(key) {
   const entry = histories.get(key);
   if (!entry || !entry.future.length) return null;
   const next = entry.future.pop();
-  entry.past.push(entry.current);
-  entry.current = next;
+  pushPast(entry);
+  entry.current = next.content;
+  entry.currentCaret = next.caret;
   entry.lastRecordedAt = 0;
   entry.lastDirection = null;
-  entry.stepStartLength = plainLength(next);
+  entry.stepStartLength = plainLength(next.content);
   return next;
 }
 
@@ -151,11 +161,9 @@ export function syncTextHistory(key, content) {
   if (!key) return;
   const entry = historyFor(key);
   if (entry.current === content) return;
-  if (entry.current !== null) {
-    entry.past.push(entry.current);
-    if (entry.past.length > MAX_STEPS) entry.past.shift();
-  }
+  if (entry.current !== null) pushPast(entry);
   entry.current = content;
+  entry.currentCaret = null;
   entry.future = [];
   entry.lastRecordedAt = 0;
   entry.lastDirection = null;

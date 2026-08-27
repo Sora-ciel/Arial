@@ -213,11 +213,12 @@
   function shouldLetNestedScrollerHandleWheel(event) {
     if (!canvasRef || !(event.target instanceof Element)) return false;
 
-    const focusedBlock = event.target.closest('[aria-pressed="true"]');
-    if (!focusedBlock || !canvasRef.contains(focusedBlock)) return false;
-
+    // Deliberately not limited to the focused block. Requiring focus meant the
+    // wheel over a text block that happened not to be marked focused was taken
+    // by the canvas instead, which is why the page moved under the pointer
+    // seemingly at random.
     let current = event.target;
-    while (current && current !== focusedBlock) {
+    while (current && current !== canvasRef) {
       const style = getComputedStyle(current);
       const overflowY = style.overflowY;
       const overflowX = style.overflowX;

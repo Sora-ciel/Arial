@@ -37,14 +37,23 @@
   // it causes isn't recorded as a fresh edit.
   let applyingHistory = false;
 
-  function applyHistory(content) {
-    if (content === null || !editor) return false;
+  function applyHistory(step) {
+    if (!step || !editor) return false;
+    const { content, caret } = step;
     applyingHistory = true;
     try {
       editor.commands.setContent(content || '', false);
-      // setContent leaves the caret where it lands; putting it at the end is
-      // predictable and keeps typing possible straight away.
-      editor.commands.focus('end');
+      // Put the caret back where it was when this state was recorded. Dropping
+      // it at the end of the block instead is disorienting: you undo a word in
+      // the middle of a paragraph and the cursor leaps to the bottom.
+      const size = editor.state.doc.content.size;
+      if (typeof caret === 'number') {
+        // The document has changed, so the old offset is clamped into it.
+        editor.commands.setTextSelection(Math.max(1, Math.min(caret, size)));
+        editor.commands.focus();
+      } else {
+        editor.commands.focus('end');
+      }
       lastPushedContent = content;
       dispatch('change', content);
     } finally {
@@ -267,7 +276,7 @@
         // Tracked in the same format we emit, so the reactive push below can
         // tell "the parent echoed our own value back" from a real change.
         lastPushedContent = value;
-        if (!applyingHistory) recordText(historyKey, value);
+        if (!applyingHistory) recordText(historyKey, value, e.state.selection.from);
         dispatch('change', value);
       },
       onFocus({ event }) {
@@ -311,6 +320,10 @@
     display: flex;
     flex-direction: column;
     overflow-y: auto;
+    /* Reaching the top or bottom of a note stops there. Without this the
+       browser hands the rest of the gesture to whatever is underneath, so
+       scrolling to the end of the text carried on into the canvas. */
+    overscroll-behavior: contain;
     background: var(--active-note-bg, var(--canvas-inner-bg, #000));
     color: var(--active-note-text, var(--mode-text-color, #fff));
     box-sizing: border-box;
