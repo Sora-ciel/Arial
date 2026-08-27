@@ -62,8 +62,14 @@
           if (typeof getPos !== 'function') return;
           const pos = getPos();
           if (typeof pos !== 'number') return;
+          // Read the node back out of the document rather than using the one
+          // captured when this view was built. That copy is a snapshot: after
+          // a resize it still carries the old width, so aligning would quietly
+          // undo the size, and vice versa.
+          const current = view.view.state.doc.nodeAt(pos);
+          if (!current) return;
           view.view.dispatch(
-            view.view.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, align: value })
+            view.view.state.tr.setNodeMarkup(pos, undefined, { ...current.attrs, align: value })
           );
         };
 
@@ -125,9 +131,17 @@
           if (typeof getPos === 'function') {
             const pos = getPos();
             if (typeof pos === 'number') {
-              view.view.dispatch(
-                view.view.state.tr.setNodeMarkup(pos, undefined, { ...node.attrs, width: finalWidth })
-              );
+              // Same as above: the live node, not the captured snapshot, so a
+              // resize keeps whatever alignment the image currently has.
+              const current = view.view.state.doc.nodeAt(pos);
+              if (current) {
+                view.view.dispatch(
+                  view.view.state.tr.setNodeMarkup(pos, undefined, {
+                    ...current.attrs,
+                    width: finalWidth
+                  })
+                );
+              }
             }
           }
         };

@@ -2105,10 +2105,28 @@
     toggleFullscreen();
   }
 
+  // Anywhere text is being edited, undo belongs to that editor.
+  function isTextEntry(node) {
+    if (!node || node.nodeType !== 1) return false;
+    if (node.isContentEditable) return true;
+    const tag = node.tagName;
+    return tag === 'INPUT' || tag === 'TEXTAREA';
+  }
+
   function handleUndoRedoShortcut(event) {
     const key = event.key?.toLowerCase();
     const hasCommand = event.ctrlKey || event.metaKey;
     if (!hasCommand || key !== "z") return;
+
+    // The editors carry their own undo history, and this listener sits on the
+    // window, so a single Ctrl+Z used to run both: the editor stepped back one
+    // edit and the workspace stepped back a whole snapshot at the same time.
+    // That is how a keystroke meant to remove one image took a page of writing
+    // with it, and why redo appeared to work for an instant before the two
+    // histories disagreed and it snapped back.
+    //
+    // While the caret is in text, this one stands aside.
+    if (isTextEntry(event.target) || isTextEntry(document.activeElement)) return;
 
     event.preventDefault();
 
