@@ -119,6 +119,12 @@ export function undoText(key) {
   const entry = histories.get(key);
   if (!entry || !entry.past.length) return null;
   const previous = entry.past.pop();
+  // The caret goes where the undone change was, not where it sat when the
+  // older state was recorded. Those are different places: the state before an
+  // edit was left with the caret at the end of whatever had been typed then,
+  // so restoring that is what sent the cursor to the bottom of the block. The
+  // position being left behind is the one that marks the edit.
+  const caretAtEdit = entry.currentCaret;
   entry.future.push({ content: entry.current, caret: entry.currentCaret });
   entry.current = previous.content;
   entry.currentCaret = previous.caret;
@@ -126,7 +132,7 @@ export function undoText(key) {
   entry.lastRecordedAt = 0;
   entry.lastDirection = null;
   entry.stepStartLength = plainLength(previous.content);
-  return previous;
+  return { content: previous.content, caret: caretAtEdit ?? previous.caret };
 }
 
 /** Steps forward again. Returns the content to show, or null. */
@@ -136,6 +142,8 @@ export function redoText(key) {
   const next = entry.future.pop();
   pushPast(entry);
   entry.current = next.content;
+  // Redo puts it where the change lands, which is the position recorded with
+  // the state being restored.
   entry.currentCaret = next.caret;
   entry.lastRecordedAt = 0;
   entry.lastDirection = null;

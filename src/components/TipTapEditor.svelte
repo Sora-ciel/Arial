@@ -46,14 +46,39 @@
       // Put the caret back where it was when this state was recorded. Dropping
       // it at the end of the block instead is disorienting: you undo a word in
       // the middle of a paragraph and the cursor leaps to the bottom.
+      //
+      // Selecting and focusing has to be one call. Done as two, focus() runs
+      // its own transaction and falls back to the selection the editor has
+      // stored — which after setContent is the end of the document, so it
+      // undid the position that had just been set.
       const size = editor.state.doc.content.size;
-      if (typeof caret === 'number') {
-        // The document has changed, so the old offset is clamped into it.
-        editor.commands.setTextSelection(Math.max(1, Math.min(caret, size)));
+      const target =
+        typeof caret === 'number'
+          // The document has changed, so the old offset is clamped into it.
+          ? Math.max(1, Math.min(caret, Math.max(1, size - 1)))
+          : null;
+
+      const placeCaret = () => {
+        if (!editor || editor.isDestroyed) return;
+        if (target === null) {
+          editor.commands.focus('end');
+          return;
+        }
+        // Focus first, then select. focus() resolves to whatever selection the
+        // editor has stored, which after setContent is the end of the
+        // document, so it has to run before the position is set rather than
+        // after it.
         editor.commands.focus();
-      } else {
-        editor.commands.focus('end');
-      }
+        editor.commands.setTextSelection(target);
+      };
+
+      placeCaret();
+      // Setting the content tells the parent, which sends it back down as a
+      // prop; that round trip lands after this function returns and can move
+      // the caret again. Re-asserting once the update has settled is what makes
+      // the position actually stick.
+      queueMicrotask(placeCaret);
+      setTimeout(placeCaret, 0);
       lastPushedContent = content;
       dispatch('change', content);
     } finally {
