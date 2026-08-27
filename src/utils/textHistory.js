@@ -17,10 +17,20 @@
 
 const histories = new Map();
 
-// Typing is recorded in bursts rather than per keystroke: a pause this long
-// closes the current step, so undo walks back through phrases instead of
-// letters.
-const COALESCE_MS = 600;
+// How typing is grouped into undo steps.
+//
+// A rolling pause alone is not enough: while someone keeps typing the window
+// keeps being pushed back, so an unbroken paragraph collapses into a single
+// step and one Ctrl+Z erases the lot. Editors people are used to step back by
+// roughly a word, so a step is closed by whichever of these comes first.
+const COALESCE_MS = 400;        // a pause in typing
+const MAX_STEP_CHARS = 24;      // an uninterrupted run this long
+const WORD_END = /[\s.,;:!?)\]}"'’”]$/; // finishing a word or clause
+
+// Tags carry no meaning for step size — only the words the person typed do.
+function plainLength(html) {
+  return String(html ?? '').replace(/<[^>]*>/g, '').length;
+}
 
 // Enough to step back through a long session without holding a whole
 // document's history for every block that has ever been open.
@@ -29,7 +39,16 @@ const MAX_STEPS = 200;
 function historyFor(key) {
   let entry = histories.get(key);
   if (!entry) {
-    entry = { past: [], future: [], current: null, lastRecordedAt: 0 };
+    entry = {
+      past: [],
+      future: [],
+      current: null,
+      lastRecordedAt: 0,
+      // Length at the start of the current step, so its size can be measured.
+      stepStartLength: 0,
+      // Switching between typing and deleting starts a new step.
+      lastDirection: null
+    };
     histories.set(key, entry);
   }
   return entry;
@@ -53,17 +72,36 @@ export function recordText(key, content) {
   if (content === entry.current) return;
 
   const now = Date.now();
-  const continuesBurst = now - entry.lastRecordedAt < COALESCE_MS;
+  const length = plainLength(content);
+  const previousLength = plainLength(entry.current);
+  const direction = length >= previousLength ? 'insert' : 'delete';
 
-  // Only the state *before* an edit is worth keeping, and only once per burst:
-  // pushing every intermediate value would make undo crawl letter by letter.
-  if (!continuesBurst && entry.current !== null) {
+  const startsNewStep =
+    entry.current !== null &&
+    (now - entry.lastRecordedAt >= COALESCE_MS ||
+      // Deleting after typing, or typing after deleting, is a change of intent.
+      (entry.lastDirection !== null && direction !== entry.lastDirection) ||
+      Math.abs(length - entry.stepStartLength) >= MAX_STEP_CHARS);
+
+  // Only the state *before* a step is kept: recording every intermediate value
+  // would make undo crawl back letter by letter.
+  if (startsNewStep) {
     entry.past.push(entry.current);
     if (entry.past.length > MAX_STEPS) entry.past.shift();
+    entry.stepStartLength = previousLength;
+  } else if (entry.current === null) {
+    entry.stepStartLength = length;
   }
 
   entry.current = content;
+  entry.lastDirection = direction;
   entry.lastRecordedAt = now;
+  // Reaching the end of a word closes the step, so the next character begins a
+  // new one. This is what keeps undo at roughly word granularity while typing
+  // continuously, rather than swallowing whole paragraphs.
+  if (direction === 'insert' && WORD_END.test(String(content ?? '').replace(/<[^>]*>/g, ''))) {
+    entry.lastRecordedAt = 0;
+  }
   // A fresh edit is a new branch, so anything undone past this point is gone.
   entry.future = [];
 }
@@ -75,8 +113,10 @@ export function undoText(key) {
   const previous = entry.past.pop();
   entry.future.push(entry.current);
   entry.current = previous;
-  // Closes the current burst so the next keystroke starts a new step.
+  // Closes the current step so the next keystroke starts a new one.
   entry.lastRecordedAt = 0;
+  entry.lastDirection = null;
+  entry.stepStartLength = plainLength(previous);
   return previous;
 }
 
@@ -88,6 +128,8 @@ export function redoText(key) {
   entry.past.push(entry.current);
   entry.current = next;
   entry.lastRecordedAt = 0;
+  entry.lastDirection = null;
+  entry.stepStartLength = plainLength(next);
   return next;
 }
 
@@ -116,6 +158,8 @@ export function syncTextHistory(key, content) {
   entry.current = content;
   entry.future = [];
   entry.lastRecordedAt = 0;
+  entry.lastDirection = null;
+  entry.stepStartLength = plainLength(content);
 }
 
 /** Drops a block's history once the block itself is gone. */
