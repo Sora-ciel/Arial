@@ -24,6 +24,7 @@
     loadRemoteFile,
     loadRemoteIndex,
     saveRemoteFile,
+    isSyncableFileId,
     subscribeRemoteIndex,
     checkSyncCompatibility
   } from './firebaseClient.js';
@@ -2949,12 +2950,21 @@
   // actually made it are reported back so a failed one is retried rather than
   // being marked as done.
   async function uploadFilesToCloud(names, options = {}) {
-    if (uploadInProgress) return { uploadedCount: 0, uploadedNames: [], failures: [] };
+    if (uploadInProgress) return { uploadedCount: 0, uploadedNames: [], failures: [], unsyncable: [] };
     uploadInProgress = true;
     try {
       const uploadedNames = [];
       const failures = [];
+      const unsyncable = [];
       for (const fileName of names) {
+        // A name the database cannot use is not a failure to retry — it will
+        // never succeed, and retrying it every ten seconds only replaces the
+        // screen with an error that cannot be acted on. Set aside once and
+        // reported separately.
+        if (!isSyncableFileId(fileName)) {
+          unsyncable.push(fileName);
+          continue;
+        }
         try {
           const localPayload = await loadBlocks(fileName);
           const uploadAttachments = options.shouldUploadAttachments
@@ -2967,7 +2977,7 @@
           console.error(`Could not sync "${fileName}" to the cloud:`, error);
         }
       }
-      return { uploadedCount: uploadedNames.length, uploadedNames, failures };
+      return { uploadedCount: uploadedNames.length, uploadedNames, failures, unsyncable };
     } finally {
       uploadInProgress = false;
     }
@@ -3173,7 +3183,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       return;
     }
 
-    const { uploadedNames, failures } = await uploadFilesToCloud(changedNames, {
+    const { uploadedNames, failures, unsyncable } = await uploadFilesToCloud(changedNames, {
       shouldUploadAttachments: fileName =>
         force || perFile[fileName].attachmentFingerprint !== lastAutoSyncAttachmentFingerprintByFile[fileName]
     });
@@ -3191,13 +3201,26 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       syncFailureNotice = failures.length > 1
         ? `${failures.length} folders could not sync. "${fileName}": ${detail}`
         : `"${fileName}" could not sync: ${detail}`;
+    } else if (unsyncable.length) {
+      const named = unsyncable.map(name => (name ? `"${name}"` : 'an unnamed folder')).join(', ');
+      syncFailureNotice =
+        `${named} stays on this device: a folder name cannot be empty or contain . # $ [ ] or /. ` +
+        'Everything else is syncing normally.';
     } else {
       syncFailureNotice = '';
     }
 
     // A folder left behind is still owed an upload, so the next tick tries it
-    // again instead of waiting for another edit to mark things dirty.
+    // again instead of waiting for another edit to mark things dirty. Names the
+    // database cannot use are not included: those will never succeed, and
+    // holding the flag up for them would keep the loop running forever.
     autoSyncDirty = failures.length > 0;
+
+    // Recorded as seen so an unusable folder stops being offered on every tick.
+    for (const fileName of unsyncable) {
+      lastAutoSyncFingerprintByFile[fileName] = perFile[fileName]?.fingerprint;
+      lastAutoSyncAttachmentFingerprintByFile[fileName] = perFile[fileName]?.attachmentFingerprint;
+    }
   }
 
   async function toggleAutoSync() {
@@ -4159,11 +4182,21 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: min(90vw, 620px);
+  /* Sized rather than left to shrink-to-fit. A bare text node inside a flex
+     row is an anonymous item that shrinks as far as it is allowed to, which
+     turned the longer message into a column one word wide. */
+  width: max-content;
+  max-width: min(92vw, 620px);
   /* Left alone by the dim the lock banner applies, since this one is the only
      thing on screen explaining why nothing is being saved to the account. */
   pointer-events: auto;
   border-color: #b3452f;
+}
+
+.sync-failed-text {
+  /* min-width:0 lets it wrap instead of forcing the row wider than the screen. */
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .sync-failed-dismiss {
@@ -4541,7 +4574,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       <div class="sync-lock-banner" style={overlayThemeStyle}>Syncing with the cloud… editing resumes in a moment.</div>
     {:else if syncFailureNotice}
       <div class="sync-lock-banner sync-failed" style={overlayThemeStyle} role="alert">
-        {syncFailureNotice}
+        <span class="sync-failed-text">{syncFailureNotice}</span>
         <button type="button" class="sync-failed-dismiss" on:click={() => (syncFailureNotice = '')}>Dismiss</button>
       </div>
     {/if}

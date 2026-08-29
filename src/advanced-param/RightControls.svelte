@@ -410,7 +410,11 @@
             <ul>
               {#each savedList as name}
                 <li>
-                  <button on:click={() => handleSelect(name)}>{name}</button>
+                  <!-- A folder with no name rendered as an invisible, unlabelled
+                       row: nothing to read and nothing obvious to click, so the
+                       one folder you might actually want to remove was the one
+                       you could not see. -->
+                  <button on:click={() => handleSelect(name)}>{name || '(unnamed folder)'}</button>
                   <button on:click={() => deleteSave(name)}>🗑</button>
                 </li>
               {/each}

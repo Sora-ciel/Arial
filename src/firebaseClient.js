@@ -292,6 +292,22 @@ function normalizeNamespace() {
   return firebaseSyncNamespace || 'default';
 }
 
+// Realtime Database keys cannot be empty, and cannot contain . # $ [ ] or /.
+// A folder named in breach of that cannot be written at all — but an empty name
+// is worse than a rejection. `files/${fileId}` becomes `files/`, getUserPath
+// strips the trailing slash, and the write lands on the node that holds *every*
+// folder, replacing the lot with one folder's contents. The same collapse
+// happens to the index. Only the per-child validation rule stood between a
+// blank folder name and an account being emptied, so the name is checked here
+// as well, before anything is sent.
+const FORBIDDEN_KEY_CHARACTERS = /[.#$/[\]]/;
+
+export function isSyncableFileId(fileId) {
+  return typeof fileId === 'string'
+    && fileId.length > 0
+    && !FORBIDDEN_KEY_CHARACTERS.test(fileId);
+}
+
 function getUserPath(uid, suffix = '') {
   const ns = normalizeNamespace();
   return `sync/${ns}/users/${uid}/${suffix}`.replace(/\/$/, '');
@@ -444,6 +460,14 @@ export function subscribeRemoteIndex(callback) {
 
 export async function saveRemoteFile(fileId, payload, options = {}) {
   if (!isFirebaseConfigured()) return null;
+  // Refused rather than sent and rejected: see isSyncableFileId. A blank name
+  // here would overwrite every folder in the account.
+  if (!isSyncableFileId(fileId)) {
+    throw new Error(
+      `"${fileId}" cannot be stored in the cloud: a folder name must not be empty ` +
+      'or contain . # $ [ ] or /'
+    );
+  }
   const ctx = await getFirebaseContext();
   const user = requireUser(ctx.auth.currentUser);
   // The caller skips the attachment pass when it believes nothing has changed.
