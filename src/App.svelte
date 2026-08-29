@@ -1956,7 +1956,23 @@
   }
 
   // Fields that change as the UI renders but say nothing about saved content.
-  const VOLATILE_BLOCK_KEYS = ['_version', 'editing'];
+  // Fields that live on a block but are not part of what the folder *is*.
+  //
+  // Each of these is either bookkeeping or something this device worked out for
+  // itself, and none of them is an edit. Syncing them made two instances
+  // disagree for ever: scrollTop is where you happen to have scrolled inside a
+  // text block, different per device and per window, and a round trip through
+  // the database changed it on its own — 1384.177734375 came back as 1384, and
+  // that alone was enough to restart the loop. resolvedSrc and its companion
+  // are worked out from src when a picture is fetched, so they belong to this
+  // session rather than to the note.
+  const VOLATILE_BLOCK_KEYS = [
+    '_version',
+    'editing',
+    'scrollTop',
+    'resolvedSrc',
+    'attachmentRequiresAuth'
+  ];
 
   // The folder reduced to what a save actually compares: no volatile keys, and
   // nothing the database cannot hold. The fingerprint is this, stringified.
@@ -3185,6 +3201,28 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       const localPayload = savedList.includes(fileName) ? await loadBlocks(fileName) : null;
       const localModifiedAt = Number(localPayload?.modifiedAt || localPayload?.updatedAt || 0);
       const remoteModifiedAt = Number(remoteMeta?.modifiedAt || remoteMeta?.updatedAt || 0);
+
+      // Work done here and not yet sent must not be thrown away for a cloud copy
+      // that merely carries a later stamp. That is how a block moved twice went
+      // back to where the first move put it: the other instance restamped a copy
+      // it had only received, so older content arrived looking newer, and the
+      // second move — saved locally, still queued — was overwritten.
+      //
+      // Only guarded once something has actually been sent for this folder. A
+      // device that has never uploaded has nothing owed, and blocking there
+      // would stop a fresh sign-in ever receiving anything.
+      const lastSent = lastAutoSyncFingerprintByFile[fileName];
+      const hasUnsentWork =
+        lastSent !== undefined && Number(localPayload?.updatedAt || 0) !== lastSent;
+
+      if (localPayload && hasUnsentWork && remoteModifiedAt > localModifiedAt) {
+        logSync('skip', fileName, 'cloud copy is newer, but local changes are still unsent', {
+          remoteModifiedAt,
+          localModifiedAt,
+          lastSent
+        });
+        continue;
+      }
 
       if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);

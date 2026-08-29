@@ -6,6 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   isSyncableFileId,
   findEmbeddedDataUrls,
@@ -212,5 +213,63 @@ test('a theme repaint is not an edit', async t => {
   await t.test('odd input does not throw', () => {
     assert.equal(unpaintThemeColours(null), null);
     assert.equal(unpaintThemeColours(undefined), undefined);
+  });
+});
+
+// Read straight off the sync log, after the theme fix:
+//   blocks.3.scrollTop: 1384.177734375 -> 1384
+// Where you happen to have scrolled inside a text block is not an edit. It
+// differs per device and per window, and a round trip through the database
+// changed the value on its own, which was enough to restart the loop.
+test('view state on a block is not content', async t => {
+  // Read out of App.svelte rather than copied, so this cannot quietly drift out
+  // of step with the list the app actually uses.
+  const source = readFileSync(new URL('../src/App.svelte', import.meta.url), 'utf8');
+  const VOLATILE = JSON.parse(
+    source.match(/const VOLATILE_BLOCK_KEYS = (\[[\s\S]*?\]);/)[1].replace(/'/g, '"')
+  );
+
+  await t.test('the app really does treat these as volatile', () => {
+    for (const key of ['_version', 'editing', 'scrollTop', 'resolvedSrc', 'attachmentRequiresAuth']) {
+      assert.ok(VOLATILE.includes(key), `${key} is missing from VOLATILE_BLOCK_KEYS`);
+    }
+  });
+
+  const asContent = block => {
+    const copy = { ...block };
+    for (const key of VOLATILE) delete copy[key];
+    return JSON.stringify(withoutEmptyValues(copy) ?? {});
+  };
+
+  await t.test('scrolling inside a block is not an edit', () => {
+    const base = { id: 'b1', content: '<p>same words</p>' };
+    assert.equal(
+      asContent({ ...base, scrollTop: 1384.177734375 }),
+      asContent({ ...base, scrollTop: 1384 })
+    );
+    assert.equal(asContent({ ...base, scrollTop: 0 }), asContent(base));
+  });
+
+  await t.test('a resolved picture URL belongs to the session, not the note', () => {
+    const base = { id: 'b1', src: 'https://storage/x' };
+    assert.equal(
+      asContent({ ...base, resolvedSrc: 'https://signed-one', attachmentRequiresAuth: true }),
+      asContent({ ...base, resolvedSrc: 'https://signed-two', attachmentRequiresAuth: false })
+    );
+  });
+
+  // The danger in ignoring fields is ignoring a real change sitting beside one.
+  await t.test('a real edit alongside view state still counts', () => {
+    assert.notEqual(
+      asContent({ id: 'b1', content: 'one', scrollTop: 10 }),
+      asContent({ id: 'b1', content: 'two', scrollTop: 10 })
+    );
+  });
+
+  await t.test('moving a block is still an edit', () => {
+    assert.notEqual(
+      asContent({ id: 'b1', position: { x: 476, y: 312 }, scrollTop: 99 }),
+      asContent({ id: 'b1', position: { x: 539, y: 285 }, scrollTop: 99 })
+    );
   });
 });
