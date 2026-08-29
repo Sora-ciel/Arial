@@ -48,6 +48,9 @@
   import { getCanvasViewport } from './canvasState.js';
   import { getOpeningViewportBox } from './utils/canvasFit.js';
   import { clickOutside } from './utils/clickOutside.js';
+  // Empty-versus-absent, folder-name validity and the rest of the sync rules
+  // live in one plain module so they can be tested. See utils/syncRules.js.
+  import { withoutEmptyValues } from './utils/syncRules.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -1921,35 +1924,6 @@
 
   // Fields that change as the UI renders but say nothing about saved content.
   const VOLATILE_BLOCK_KEYS = ['_version', 'editing'];
-
-  // Empty is the same as absent here, because the database cannot tell them
-  // apart. Realtime Database stores no empty list, no empty object and no null,
-  // so a folder that goes up with `tasks: []` comes back without the field at
-  // all. Loading puts it back, the copy on disk then looks different from the
-  // one in memory, and the save that follows stamps a new modifiedAt — which
-  // reads to the other instance as a genuine edit. It downloads, normalises,
-  // saves, uploads, and the two hand the folder back and forth for as long as
-  // both are open, remounting each time.
-  //
-  // Only the empty-versus-absent case is folded together. A list that had
-  // something in it and is now empty still reads as a change, so emptying one
-  // is saved as it should be.
-  function withoutEmptyValues(value) {
-    if (value === null || value === undefined) return undefined;
-    if (Array.isArray(value)) {
-      const kept = value.map(withoutEmptyValues).filter(item => item !== undefined);
-      return kept.length ? kept : undefined;
-    }
-    if (typeof value === 'object') {
-      const kept = {};
-      for (const [key, item] of Object.entries(value)) {
-        const cleaned = withoutEmptyValues(item);
-        if (cleaned !== undefined) kept[key] = cleaned;
-      }
-      return Object.keys(kept).length ? kept : undefined;
-    }
-    return value;
-  }
 
   function saveContentFingerprint(blocksValue, ordersValue, settingsValue) {
     const cleanedBlocks = (blocksValue || []).map(block => {

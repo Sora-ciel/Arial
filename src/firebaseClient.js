@@ -1,7 +1,16 @@
 import { Capacitor } from '@capacitor/core';
 import { firebaseConfig, firebaseSyncNamespace, googleWebClientId } from '../firebase.ts';
+// The rules for what may be synced live apart from the code that does the
+// syncing, so they can be tested without a browser. See utils/syncRules.js.
+import {
+  isSyncableFileId,
+  findEmbeddedDataUrls,
+  payloadCarriesDataUrl
+} from './utils/syncRules.js';
+
 
 export { firebaseConfig, firebaseSyncNamespace };
+export { isSyncableFileId, payloadCarriesDataUrl };
 
 let socialLoginPlugin = null;
 let socialLoginInitPromise;
@@ -144,20 +153,6 @@ function inferExtensionFromMime(mime = '') {
 //
 // Both shapes are matched here. A base64 payload contains no quote, bracket or
 // space, which is what bounds each match.
-const EMBEDDED_DATA_URL_PATTERNS = [
-  /(?:src|href)\s*=\s*"(data:[^"]+)"/gi, // HTML attribute, double quoted
-  /(?:src|href)\s*=\s*'(data:[^']+)'/gi, // HTML attribute, single quoted
-  /\]\((data:[^)\s]+)\)/g               // markdown image or link
-];
-
-function findEmbeddedDataUrls(text) {
-  const found = new Set();
-  for (const pattern of EMBEDDED_DATA_URL_PATTERNS) {
-    for (const match of text.matchAll(pattern)) found.add(match[1]);
-  }
-  return [...found];
-}
-
 /**
  * Replaces every data: URL embedded in a string with a Storage link. The same
  * picture used twice is uploaded once.
@@ -172,15 +167,6 @@ async function uploadEmbeddedDataUrls(text, options) {
     if (uploadedUrl) replaced = replaced.split(dataUrl).join(uploadedUrl);
   }
   return replaced;
-}
-
-/** True if anything anywhere in the payload is still inline base64. */
-export function payloadCarriesDataUrl(payload) {
-  try {
-    return JSON.stringify(payload ?? null).includes('data:');
-  } catch {
-    return false;
-  }
 }
 
 async function uploadBlockAttachments(fileId, payload, ctx, uid) {
@@ -290,22 +276,6 @@ async function uploadModeSettingAttachments(fileId, payload, ctx, uid) {
 
 function normalizeNamespace() {
   return firebaseSyncNamespace || 'default';
-}
-
-// Realtime Database keys cannot be empty, and cannot contain . # $ [ ] or /.
-// A folder named in breach of that cannot be written at all — but an empty name
-// is worse than a rejection. `files/${fileId}` becomes `files/`, getUserPath
-// strips the trailing slash, and the write lands on the node that holds *every*
-// folder, replacing the lot with one folder's contents. The same collapse
-// happens to the index. Only the per-child validation rule stood between a
-// blank folder name and an account being emptied, so the name is checked here
-// as well, before anything is sent.
-const FORBIDDEN_KEY_CHARACTERS = /[.#$/[\]]/;
-
-export function isSyncableFileId(fileId) {
-  return typeof fileId === 'string'
-    && fileId.length > 0
-    && !FORBIDDEN_KEY_CHARACTERS.test(fileId);
 }
 
 function getUserPath(uid, suffix = '') {

@@ -2,6 +2,22 @@
 
 A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebase sync.
 
+## Tests
+
+```bash
+npm test
+```
+
+Node's own test runner, no dependencies, about a second and a half. `npm run
+build` runs it first and refuses to build if anything fails, so a broken rule
+cannot reach a release.
+
+Every case in the suite is a bug that once reached a release: folder names the
+database cannot hold, pictures pasted into text going into the database as
+base64, two open instances handing a folder back and forth, and undo stepping
+back by the wrong amount. See [test/README.md](test/README.md) for what is
+covered, what is not, and how to add to it.
+
 ## Download
 
 Latest release: **v0.8.42**
