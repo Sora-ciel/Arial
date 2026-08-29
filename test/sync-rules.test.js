@@ -10,7 +10,8 @@ import {
   isSyncableFileId,
   findEmbeddedDataUrls,
   payloadCarriesDataUrl,
-  withoutEmptyValues
+  withoutEmptyValues,
+  unpaintThemeColours
 } from '../src/utils/syncRules.js';
 
 const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
@@ -151,5 +152,65 @@ test('a cloud round trip does not look like an edit', async t => {
     assert.equal(withoutEmptyValues({ n: 0 }).n, 0);
     assert.equal(withoutEmptyValues({ b: false }).b, false);
     assert.equal(withoutEmptyValues({ s: '' }).s, '');
+  });
+});
+
+// "Blocks follow theme" writes the current theme's colours into every block.
+// They are derived from whichever theme *this device* is on, so two devices on
+// different themes each rewrote what the other wrote, every rewrite read as a
+// real edit, and the two handed the folder back and forth for as long as both
+// were open. Caught by the sync log:
+//   blocks.0.bgColor: #1b2129 -> #1c0d2bc7
+//   blocks.0.textColor: #ffb454 -> #ffffff
+test('a theme repaint is not an edit', async t => {
+  const painted = deviceColours => ({
+    id: 'b1',
+    type: 'text',
+    bgColor: deviceColours.bg,
+    textColor: deviceColours.text,
+    _baseBgColor: '#202020',
+    _baseTextColor: '#e0e0e0'
+  });
+  const compare = block => JSON.stringify(unpaintThemeColours(block));
+
+  await t.test('two devices on different themes agree', () => {
+    const onThisDevice = painted({ bg: '#1c0d2bc7', text: '#ffffff' });
+    const onTheOther = painted({ bg: '#1b2129', text: '#ffb454' });
+    assert.equal(compare(onThisDevice), compare(onTheOther));
+  });
+
+  await t.test('a third theme agrees too', () => {
+    assert.equal(
+      compare(painted({ bg: '#0a0607', text: '#ff5c5c' })),
+      compare(painted({ bg: '#1c0d2bc7', text: '#ffffff' }))
+    );
+  });
+
+  await t.test('the colours compared are the ones the person chose', () => {
+    const block = unpaintThemeColours(painted({ bg: '#1c0d2bc7', text: '#ffffff' }));
+    assert.equal(block.bgColor, '#202020');
+    assert.equal(block.textColor, '#e0e0e0');
+    assert.equal('_baseBgColor' in block, false);
+  });
+
+  // The danger in ignoring painted colours is ignoring a real one too.
+  await t.test('a colour the person actually picked is still a change', () => {
+    const before = { ...painted({ bg: '#1c0d2bc7', text: '#ffffff' }), _baseBgColor: '#202020' };
+    const after = { ...painted({ bg: '#1c0d2bc7', text: '#ffffff' }), _baseBgColor: '#ff0000' };
+    assert.notEqual(compare(before), compare(after));
+  });
+
+  await t.test('an unpainted block is left exactly as it is', () => {
+    const plain = { id: 'b1', bgColor: '#123456', textColor: '#abcdef' };
+    assert.deepEqual(unpaintThemeColours(plain), plain);
+    assert.notEqual(
+      JSON.stringify(unpaintThemeColours(plain)),
+      JSON.stringify(unpaintThemeColours({ ...plain, bgColor: '#000000' }))
+    );
+  });
+
+  await t.test('odd input does not throw', () => {
+    assert.equal(unpaintThemeColours(null), null);
+    assert.equal(unpaintThemeColours(undefined), undefined);
   });
 });

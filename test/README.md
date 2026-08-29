@@ -46,6 +46,13 @@ import, and the code that acts on them stayed where it was:
   modifiedAt, and two open instances handed the folder back and forth for as
   long as both were running.
 
+- A theme repaint is not an edit. "Blocks follow theme" writes the current
+  theme's colours into every block, and those are derived from whichever theme
+  *this device* is on — so two devices on different themes each rewrote what the
+  other wrote, for ever. Blocks are compared with the paint undone. Found by
+  reading the sync log, not by reasoning: `blocks.0.bgColor: #1b2129 ->
+  #1c0d2bc7`.
+
 **`sync-log.test.js`**
 
 - The difference between two folders is named exactly: the field path, both

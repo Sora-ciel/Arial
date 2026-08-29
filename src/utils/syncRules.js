@@ -101,3 +101,31 @@ export function withoutEmptyValues(value) {
   }
   return value;
 }
+
+/**
+ * A block with any theme paint undone, so it is compared by the colours the
+ * person actually chose rather than the ones a theme derived.
+ *
+ * "Blocks follow theme" writes the current theme's colours into every block.
+ * Those colours are derived from whichever theme *this device* is on, so two
+ * devices on different themes each rewrite what the other wrote, and every
+ * rewrite reads as a genuine edit: save, upload, the other downloads, repaints,
+ * saves, uploads. Two instances handed a folder back and forth for as long as
+ * both were open, with nobody editing anything.
+ *
+ * Painting stashes the original colours first, so the underlying block is still
+ * there to compare. Undoing the paint before comparing makes the two devices
+ * agree, and a colour the person actually picked still reads as a change
+ * because that is what the stash holds.
+ */
+export function unpaintThemeColours(block) {
+  if (!block || typeof block !== 'object') return block;
+  if (block._baseBgColor === undefined && block._baseTextColor === undefined) return block;
+
+  const restored = { ...block };
+  if (block._baseBgColor !== undefined) restored.bgColor = block._baseBgColor;
+  if (block._baseTextColor !== undefined) restored.textColor = block._baseTextColor;
+  delete restored._baseBgColor;
+  delete restored._baseTextColor;
+  return restored;
+}

@@ -50,7 +50,7 @@
   import { clickOutside } from './utils/clickOutside.js';
   // Empty-versus-absent, folder-name validity and the rest of the sync rules
   // live in one plain module so they can be tested. See utils/syncRules.js.
-  import { withoutEmptyValues } from './utils/syncRules.js';
+  import { withoutEmptyValues, unpaintThemeColours } from './utils/syncRules.js';
   // Sync writes down what it decided, so a loop can be read back instead of
   // guessed at. See utils/syncLog.js.
   import { logSync, describeDifference } from './utils/syncLog.js';
@@ -1967,7 +1967,10 @@
   // a log that points at the wrong field is worse than no log.
   function comparableSave(blocksValue, ordersValue, settingsValue) {
     const cleanedBlocks = (blocksValue || []).map(block => {
-      const copy = { ...block };
+      // Theme paint is undone first: it is derived from this device's theme, so
+      // comparing it would make two devices on different themes disagree for
+      // ever, each rewriting what the other wrote.
+      const copy = { ...unpaintThemeColours(block) };
       for (const key of VOLATILE_BLOCK_KEYS) delete copy[key];
       return withoutEmptyValues(copy) ?? {};
     });
