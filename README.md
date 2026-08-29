@@ -20,11 +20,11 @@ covered, what is not, and how to add to it.
 
 ## Download
 
-Latest release: **v0.8.42**
+Latest release: **v0.8.43**
 
 - 🌐 Web: <https://arial-473c1.web.app> — nothing to install
-- 📱 Android: [Arial_0.8.42.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.42/Arial_0.8.42.apk)
-- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.42/Arial_0.8.42_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.42/Arial_0.8.42_x64_en-US.msi)
+- 📱 Android: [Arial_0.8.43.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.43/Arial_0.8.43.apk)
+- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.43/Arial_0.8.43_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.43/Arial_0.8.43_x64_en-US.msi)
 
 [![All releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest)
 
