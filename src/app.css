@@ -118,6 +118,44 @@ input[type="range"].vertical::-webkit-slider-thumb {
   margin-left: -4px;
 }
 
+/* Sliders that show how far along they are.
+ *
+ * A plain range draws one flat track, so the part already played looks exactly
+ * like the part still to come and the bar reads as decoration rather than as
+ * progress. Every player fills the travelled side instead, in the colour of the
+ * handle, which is what makes a glance at it mean anything.
+ *
+ * The percentage arrives as --range-progress, set by whoever owns the value.
+ * Custom properties reach into these pseudo-elements, which is the only way to
+ * paint a track from a live value. */
+input[type="range"].filled::-webkit-slider-runnable-track {
+  background: linear-gradient(
+    to right,
+    var(--sb-thumb, rgba(255, 255, 255, 0.4)) 0 var(--range-progress, 0%),
+    color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent))
+      var(--range-progress, 0%) 100%
+  );
+}
+input[type="range"].filled::-moz-range-track {
+  background: linear-gradient(
+    to right,
+    var(--sb-thumb, rgba(255, 255, 255, 0.4)) 0 var(--range-progress, 0%),
+    color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent))
+      var(--range-progress, 0%) 100%
+  );
+}
+
+/* Upright, the filled side is the bottom — the direction the handle rises. */
+input[type="range"].vertical.filled::-webkit-slider-runnable-track,
+input[type="range"].vertical.filled::-moz-range-track {
+  background: linear-gradient(
+    to top,
+    var(--sb-thumb, rgba(255, 255, 255, 0.4)) 0 var(--range-progress, 0%),
+    color-mix(in srgb, var(--sb-thumb, rgba(255, 255, 255, 0.4)) 28%, var(--sb-track, transparent))
+      var(--range-progress, 0%) 100%
+  );
+}
+
 
 /* Re-enable for form elements */
 textarea,

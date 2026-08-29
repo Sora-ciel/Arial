@@ -595,9 +595,29 @@
     }
   }
 
-  // Full volume is a harsh first impression, especially on headphones, so
-  // playback starts at a quarter until it's been set.
-  const DEFAULT_MUSIC_VOLUME = 0.25;
+  // The slider position and the loudness are not the same number.
+  //
+  // Setting the player's volume straight from the slider spends almost all of
+  // the travel on nothing: hearing is roughly logarithmic, so 100% and 25%
+  // sound much alike while everything you can actually distinguish is crushed
+  // into the bottom of the bar. Squaring the position spreads the audible range
+  // across the whole slider, which is what leaves the comfortable setting
+  // somewhere near the middle instead of pinned at the bottom.
+  const MUSIC_VOLUME_CURVE = 2;
+
+  function gainForVolume(position) {
+    return position ** MUSIC_VOLUME_CURVE;
+  }
+
+  // Half way. Squared, that is the same loudness the old quarter setting gave,
+  // so nothing gets louder — the number under the slider simply stops lying
+  // about where the useful range is.
+  const DEFAULT_MUSIC_VOLUME = 0.5;
+
+  // Positions used to be loudness directly. Read one of those as a position and
+  // the music would drop, having been squared a second time, so an old setting
+  // is converted once to the position that sounds the same as before.
+  const MUSIC_VOLUME_CURVE_KEY = 'musicVolumeCurved';
 
   function loadMusicVolume() {
     if (typeof localStorage === 'undefined') return DEFAULT_MUSIC_VOLUME;
@@ -606,9 +626,18 @@
     const raw = localStorage.getItem(MUSIC_VOLUME_KEY);
     if (raw === null || raw === '') return DEFAULT_MUSIC_VOLUME;
     const stored = Number(raw);
-    return Number.isFinite(stored) && stored >= 0 && stored <= 1
-      ? stored
-      : DEFAULT_MUSIC_VOLUME;
+    if (!Number.isFinite(stored) || stored < 0 || stored > 1) return DEFAULT_MUSIC_VOLUME;
+
+    let alreadyCurved = false;
+    try { alreadyCurved = localStorage.getItem(MUSIC_VOLUME_CURVE_KEY) === '1'; } catch { /* ignore */ }
+    if (alreadyCurved) return stored;
+
+    const converted = Math.sqrt(stored);
+    try {
+      localStorage.setItem(MUSIC_VOLUME_KEY, String(converted));
+      localStorage.setItem(MUSIC_VOLUME_CURVE_KEY, '1');
+    } catch { /* ignore */ }
+    return converted;
   }
 
   function persistMusicVolume(value) {
@@ -1033,11 +1062,12 @@
   $: panelArtStyle = artBackground(nowPlayingCoverUrl, '--dlg-bg', '--dlg-bg');
   // Volume is a device setting, not a per-file one, so it survives reloads
   // without riding along with the folder.
-  $: if (audioEl) audioEl.volume = musicVolume;
+  $: if (audioEl) audioEl.volume = gainForVolume(musicVolume);
 
   function setMusicVolume(value) {
     musicVolume = Math.min(1, Math.max(0, Number(value)));
     persistMusicVolume(musicVolume);
+    try { localStorage.setItem(MUSIC_VOLUME_CURVE_KEY, '1'); } catch { /* ignore */ }
   }
 
   function toggleShuffle() {
@@ -1070,7 +1100,7 @@
     await tick();
     if (audioEl) {
       audioEl.src = nowPlayingUrl;
-      audioEl.volume = musicVolume;
+      audioEl.volume = gainForVolume(musicVolume);
       try {
         await audioEl.play();
         isPlaying = true;
@@ -1263,7 +1293,7 @@
     await tick();
     if (audioEl) {
       audioEl.src = nowPlayingUrl;
-      audioEl.volume = musicVolume;
+      audioEl.volume = gainForVolume(musicVolume);
     }
     isPlaying = false;
   }
@@ -4457,13 +4487,14 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
             <div class="pp-seek">
               <span class="pp-time">{formatClock(musicPosition)}</span>
               <input
-                class="pp-seek-range"
+                class="pp-seek-range filled"
                 type="range"
                 min="0"
                 max={musicDuration || 0}
                 step="0.1"
                 value={musicPosition}
                 disabled={!musicDuration}
+                style="--range-progress: {musicDuration ? Math.min(100, Math.max(0, (musicPosition / musicDuration) * 100)) : 0}%"
                 on:input={(e) => seekMusic(e.target.value)}
                 aria-label="Position in track"
               />
@@ -4500,9 +4531,10 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
 
           <label class="pp-volume" title="Volume">
             <input
-              class="vertical pp-volume-range"
+              class="vertical filled pp-volume-range"
               type="range" min="0" max="1" step="0.01"
               value={musicVolume}
+              style="--range-progress: {Math.round(musicVolume * 100)}%"
               on:input={(e) => setMusicVolume(e.target.value)}
               aria-label="Volume"
             />
