@@ -39,6 +39,27 @@
     if (videoEl.paused) videoEl.play().catch(() => {});
     else videoEl.pause();
   }
+
+  // A browser's own <video> only answers its control bar: clicking the picture
+  // itself does nothing at all, which leaves a video sitting there looking
+  // broken. Every video site treats a click on the picture as play/pause, so
+  // this does too.
+  //
+  // The control bar is drawn inside the bottom strip of the element, so a click
+  // down there belongs to the controls and is left alone — otherwise pressing
+  // pause on the bar would toggle twice and appear to do nothing.
+  const VIDEO_CONTROL_STRIP = 56;
+  function onVideoClick(event) {
+    event.stopPropagation();
+    if (!videoEl) return;
+    const bounds = videoEl.getBoundingClientRect();
+    // Never let the strip eat the picture. A short clip can be barely taller
+    // than the control bar, and a fixed height there would leave nothing left
+    // to click; a degenerate rect would leave the whole element unclickable.
+    const strip = Math.min(VIDEO_CONTROL_STRIP, bounds.height * 0.25);
+    if (strip > 0 && event.clientY > bounds.bottom - strip) return;
+    toggleVideo();
+  }
   $: showLeft  = images.length > 1 && mouseRatio < 0.22;
   $: showRight = images.length > 1 && mouseRatio > 0.78;
 
@@ -136,9 +157,13 @@
   // timer so a swipe cancels the long-press, and a completed swipe
   // suppresses the tap-to-close click that follows it.
   const SWIPE_THRESHOLD = 40;
+  // Further than a sideways swipe: down is also how you scroll, so it has to be
+  // deliberate to count as "put this away".
+  const DISMISS_THRESHOLD = 80;
   let swipeStartX = 0;
   let swipeStartY = 0;
   let isSwipeGesture = false;
+  let isDismissGesture = false;
 
   // The media swallows clicks on desktop so panning never closes the viewer.
   // On touch there is no pan, and with the sides given over to navigation the
@@ -167,29 +192,40 @@
 
   function handleLbPointerMove(event) {
     clearTimeout(lbLongPressTimer);
-    if (event.pointerType !== 'touch' || images.length < 2) return;
+    if (event.pointerType !== 'touch') return;
     const dx = event.clientX - swipeStartX;
     const dy = event.clientY - swipeStartY;
-    if (!isSwipeGesture && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
+    if (isSwipeGesture || isDismissGesture) return;
+    // Whichever axis the finger commits to first wins, so a sideways swipe
+    // between pictures is never mistaken for putting the viewer away.
+    if (images.length > 1 && Math.abs(dx) > 10 && Math.abs(dx) > Math.abs(dy)) {
       isSwipeGesture = true;
+    } else if (dy > 10 && dy > Math.abs(dx)) {
+      isDismissGesture = true;
     }
   }
 
   function handleLbPointerUp(event) {
     clearTimeout(lbLongPressTimer);
-    if (event.pointerType === 'touch' && isSwipeGesture) {
+    if (event.pointerType === 'touch') {
       const dx = event.clientX - swipeStartX;
-      if (Math.abs(dx) >= SWIPE_THRESHOLD) {
+      const dy = event.clientY - swipeStartY;
+      if (isDismissGesture && dy >= DISMISS_THRESHOLD) {
+        suppressNextClick = true;
+        close();
+      } else if (isSwipeGesture && Math.abs(dx) >= SWIPE_THRESHOLD) {
         suppressNextClick = true;
         if (dx < 0) next(); else prev();
       }
     }
     isSwipeGesture = false;
+    isDismissGesture = false;
   }
 
   function handleLbPointerCancel() {
     clearTimeout(lbLongPressTimer);
     isSwipeGesture = false;
+    isDismissGesture = false;
   }
 
   $: ctxItems = [
@@ -252,7 +288,7 @@
       playsinline
       preload="metadata"
       style="transform: translate({panX}px, {panY}px) scale({scale})"
-      on:click|stopPropagation
+      on:click={onVideoClick}
       on:pointerdown|stopPropagation
       on:mousedown|stopPropagation
       on:contextmenu|stopPropagation
@@ -320,7 +356,8 @@
   }
   .lb-video {
     pointer-events: auto;
-    cursor: default;
+    /* Clicking the picture starts and stops it, so say so. */
+    cursor: pointer;
   }
   .lb-panning .lb-media { transition: none; }
 
@@ -334,6 +371,12 @@
     font-size: 1.3rem;
     width: 36px;
     height: 36px;
+    /* The app's own button rule sets padding, and a circle 36px across cannot
+       hold 25px of it a side: the button came out 50 wide by 36 tall, an oval
+       rather than the round one the border-radius promises. */
+    padding: 0;
+    box-sizing: border-box;
+    flex: none;
     border-radius: 50%;
     cursor: pointer;
     display: flex;
@@ -376,7 +419,10 @@
       top: 0;
       bottom: 0;
       height: auto;
-      width: 35%;
+      /* A fifth narrower than it was. Two columns at 35% left barely a third of
+         the screen that was not navigation, and every miss changed the picture
+         instead of doing what was meant. */
+      width: 28%;
       transform: none;
       border-radius: 0;
       background: transparent;
@@ -392,8 +438,12 @@
     .lb-arrow.lb-left  { left: 0; }
     .lb-arrow.lb-right { right: 0; }
 
-    /* keep the close button reachable above the right-hand column */
-    .lb-close { z-index: 2; }
+    /* Above the right-hand column so it stays reachable, and a little further
+       down: at 16px it sat too close to the top edge to hit comfortably. */
+    .lb-close {
+      z-index: 2;
+      top: 21px;
+    }
   }
   .lb-arrow.lb-arrow-visible { opacity: 0.8; pointer-events: auto; }
   .lb-arrow:hover { opacity: 1 !important; }
