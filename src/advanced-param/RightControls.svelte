@@ -16,6 +16,32 @@
   export let blocksFollowThemeAll = false;
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
+  import { subscribeSyncLog, clearSyncLog, formatSyncLog } from '../utils/syncLog.js';
+
+  // Sync writes down what it decided; this is where you read it. There is no
+  // console in the packaged app, and the questions that matter — what did it
+  // think changed, which side sent what — can only be answered by looking.
+  let syncLogEntries = [];
+  let showSyncLog = false;
+  let syncLogCopied = false;
+  let stopSyncLog = () => {};
+  onMount(() => { stopSyncLog = subscribeSyncLog(list => { syncLogEntries = list; }); });
+  onDestroy(() => stopSyncLog());
+
+  // Newest first: a loop is happening now, not at the start of the session.
+  $: recentSyncLog = [...syncLogEntries].reverse();
+
+  async function copySyncLog() {
+    try {
+      await navigator.clipboard.writeText(formatSyncLog(syncLogEntries));
+      syncLogCopied = true;
+      setTimeout(() => { syncLogCopied = false; }, 1800);
+    } catch { /* clipboard refused; the lines are on screen to read anyway */ }
+  }
+
+  function syncLogTime(at) {
+    return new Date(at).toLocaleTimeString();
+  }
   import AdvancedParameters1 from "./AdvancedParameters1.svelte";
   import StylePresetPage from "./StylePresetPage.svelte";
 
@@ -393,6 +419,68 @@
   }
 
 
+
+  /* The sync log. Dense on purpose: reading it means scanning for the one line
+     that repeats, so each entry has to stay small enough that a loop is visible
+     as a pattern rather than as a wall of text. */
+  .sync-log {
+    margin-top: 6px;
+    border: 1px solid var(--dlg-border, #444);
+    border-radius: 8px;
+    padding: 6px;
+    max-height: 260px;
+    overflow-y: auto;
+    font-size: 0.72rem;
+  }
+  .sync-log-actions {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 6px;
+  }
+  .sync-log-actions button {
+    flex: 1;
+    padding: 4px 6px;
+    font-size: 0.72rem;
+    border-radius: 6px;
+  }
+  .sync-log ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+  .sync-log-entry {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    gap: 4px 6px;
+    padding: 3px 0;
+    border-top: 1px solid color-mix(in srgb, var(--dlg-border, #444) 50%, transparent);
+    align-items: baseline;
+  }
+  .sync-log-time {
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+  }
+  .sync-log-kind {
+    text-transform: uppercase;
+    font-size: 0.62rem;
+    letter-spacing: 0.04em;
+    opacity: 0.8;
+  }
+  .sync-log-entry[data-kind='error'] .sync-log-kind { color: #e2705a; }
+  .sync-log-entry[data-kind='save'] .sync-log-kind,
+  .sync-log-entry[data-kind='upload'] .sync-log-kind { color: #7fb2ff; }
+  .sync-log-entry[data-kind='download'] .sync-log-kind,
+  .sync-log-entry[data-kind='remount'] .sync-log-kind { color: #ffcc70; }
+  .sync-log-message { word-break: break-word; }
+  /* The diff lines are the point of the whole panel, so they get the full
+     width under the entry rather than being squeezed into a column. */
+  .sync-log-diff {
+    grid-column: 1 / -1;
+    padding-left: 8px;
+    opacity: 0.75;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    word-break: break-word;
+  }
 </style>
 
 <div class="right-controls" style={rightCssVars} bind:this={rightControlsRef}>
@@ -441,6 +529,42 @@
               <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>
             {:else}
               <button class="create-theme-btn" type="button" on:click={signIn}>🔐 Sign in Google</button>
+            {/if}
+
+            <button class="create-theme-btn" type="button" on:click={() => (showSyncLog = !showSyncLog)}>
+              {showSyncLog ? '▾' : '▸'} Sync log ({syncLogEntries.length})
+            </button>
+            {#if showSyncLog}
+              <div class="sync-log">
+                <div class="sync-log-actions">
+                  <button type="button" on:click={copySyncLog}>{syncLogCopied ? 'Copied' : 'Copy'}</button>
+                  <button type="button" on:click={clearSyncLog}>Clear</button>
+                </div>
+                {#if !recentSyncLog.length}
+                  <p class="empty-state">Nothing yet. It fills as sync runs.</p>
+                {:else}
+                  <ul>
+                    {#each recentSyncLog as entry}
+                      <li class="sync-log-entry" data-kind={entry.kind}>
+                        <span class="sync-log-time">{syncLogTime(entry.at)}</span>
+                        <span class="sync-log-kind">{entry.kind}</span>
+                        <span class="sync-log-message">
+                          {entry.folder ? `[${entry.folder}] ` : ''}{entry.message}
+                        </span>
+                        {#if Array.isArray(entry.detail)}
+                          {#each entry.detail as diff}
+                            <span class="sync-log-diff">{diff.path}: {diff.before} → {diff.after}</span>
+                          {/each}
+                        {:else if entry.detail}
+                          <span class="sync-log-diff">
+                            {Object.entries(entry.detail).map(([k, v]) => `${k}: ${v}`).join(' · ')}
+                          </span>
+                        {/if}
+                      </li>
+                    {/each}
+                  </ul>
+                {/if}
+              </div>
             {/if}
           </div>
         {/if}

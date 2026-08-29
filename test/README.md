@@ -25,6 +25,7 @@ import, and the code that acts on them stayed where it was:
 | --- | --- |
 | `src/utils/syncRules.js` | what may be synced, and what counts as a change |
 | `src/utils/textHistory.js` | how typing is grouped into undo steps |
+| `src/utils/syncLog.js` | what sync decided, and what it thought had changed |
 
 ## What is covered
 
@@ -44,6 +45,17 @@ import, and the code that acts on them stayed where it was:
   putting it back made the copy on disk differ, the save stamped a new
   modifiedAt, and two open instances handed the folder back and forth for as
   long as both were running.
+
+**`sync-log.test.js`**
+
+- The difference between two folders is named exactly: the field path, both
+  values, deep inside a block. This is what answers "what did it think had
+  changed?" on a machine I cannot reach, so it is tested rather than trusted.
+- Long values are cut down (a note can hold megabytes of base64) and the list
+  stops after a few findings, so the culprit is not buried.
+- The log does not grow without limit, keeps the newest, and a listener that
+  throws cannot stop it recording. That last one was a real bug this test
+  found: the listener called at subscription was outside the guard.
 
 **`text-history.test.js`**
 

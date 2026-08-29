@@ -51,6 +51,9 @@
   // Empty-versus-absent, folder-name validity and the rest of the sync rules
   // live in one plain module so they can be tested. See utils/syncRules.js.
   import { withoutEmptyValues } from './utils/syncRules.js';
+  // Sync writes down what it decided, so a loop can be read back instead of
+  // guessed at. See utils/syncLog.js.
+  import { logSync, describeDifference } from './utils/syncLog.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -1955,17 +1958,28 @@
   // Fields that change as the UI renders but say nothing about saved content.
   const VOLATILE_BLOCK_KEYS = ['_version', 'editing'];
 
-  function saveContentFingerprint(blocksValue, ordersValue, settingsValue) {
+  // The folder reduced to what a save actually compares: no volatile keys, and
+  // nothing the database cannot hold. The fingerprint is this, stringified.
+  //
+  // The log diffs these rather than the raw folders, so it can only ever name a
+  // field that genuinely caused the write. Diffing the raw ones reported
+  // _version on every block — stripped here, so it never caused anything — and
+  // a log that points at the wrong field is worse than no log.
+  function comparableSave(blocksValue, ordersValue, settingsValue) {
     const cleanedBlocks = (blocksValue || []).map(block => {
       const copy = { ...block };
       for (const key of VOLATILE_BLOCK_KEYS) delete copy[key];
       return withoutEmptyValues(copy) ?? {};
     });
-    return stableStringify({
+    return {
       blocks: cleanedBlocks,
       modeOrders: withoutEmptyValues(ordersValue) ?? {},
       modeSettings: withoutEmptyValues(settingsValue) ?? {}
-    });
+    };
+  }
+
+  function saveContentFingerprint(blocksValue, ordersValue, settingsValue) {
+    return stableStringify(comparableSave(blocksValue, ordersValue, settingsValue));
   }
 
   async function _runSave(payload) {
@@ -1989,7 +2003,25 @@
           normalizeModeSettings(existing.modeSettings)
         );
         const after = saveContentFingerprint(payload.blocks, normalizedOrders, normalizedSettings);
-        if (before === after) return;
+        if (before === after) {
+          logSync('skip', currentSaveName, 'nothing changed, folder left alone');
+          return;
+        }
+        // The whole question, when two instances will not settle, is what one
+        // of them thinks keeps changing. Naming the field answers it outright.
+        logSync(
+          'save',
+          currentSaveName,
+          'content differs, writing and restamping modifiedAt',
+          describeDifference(
+            comparableSave(
+              existing.blocks,
+              ensureModeOrders(existing.blocks || [], existing.modeOrders),
+              normalizeModeSettings(existing.modeSettings)
+            ),
+            comparableSave(payload.blocks, normalizedOrders, normalizedSettings)
+          )
+        );
       }
 
       await saveBlocks(currentSaveName, {
@@ -3007,6 +3039,7 @@
           uploadedNames.push(fileName);
         } catch (error) {
           failures.push({ fileName, error });
+          logSync('error', fileName, error?.message || String(error));
           console.error(`Could not sync "${fileName}" to the cloud:`, error);
         }
       }
@@ -3153,6 +3186,11 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       if (!localPayload || remoteModifiedAt > localModifiedAt) {
         const remotePayload = await loadRemoteFile(fileName);
         if (!remotePayload) continue;
+        logSync('download', fileName, 'cloud copy is newer, taking it', {
+          remoteModifiedAt,
+          localModifiedAt,
+          aheadByMs: remoteModifiedAt - localModifiedAt
+        });
         await saveBlocks(fileName, remotePayload);
         rememberCloudSyncForFile(fileName, Number(remoteMeta?.lastSyncedAt || Date.now()));
         downloadedAny = true;
@@ -3165,7 +3203,10 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     if (downloadedAny) {
       savedList = await listSavedBlocks();
       // Only when the folder on screen is the one that actually changed.
-      if (openFileChanged) await remountCurrentSaveIfLoaded();
+      if (openFileChanged) {
+        logSync('remount', currentSaveName, 'open folder changed underneath, redrawing');
+        await remountCurrentSaveIfLoaded();
+      }
       if (options.showInfo) {
         await appAlert('Cloud download complete. Newer cloud updates were applied.');
       }
@@ -3214,6 +3255,17 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     if (!changedNames.length) {
       autoSyncDirty = false;
       return;
+    }
+
+    for (const fileName of changedNames) {
+      const current = perFile[fileName];
+      logSync('upload', fileName, 'queued for upload', {
+        because: current.fingerprint !== lastAutoSyncFingerprintByFile[fileName]
+          ? 'updatedAt moved'
+          : 'attachments changed',
+        updatedAt: current.fingerprint,
+        lastSent: lastAutoSyncFingerprintByFile[fileName] ?? '(never)'
+      });
     }
 
     const { uploadedNames, failures, unsyncable } = await uploadFilesToCloud(changedNames, {
