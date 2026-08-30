@@ -187,11 +187,24 @@ knowing if you ever run gradle by hand:
 
 ## Licence
 
-The source code is MIT — see [`LICENSE.txt`](LICENSE.txt).
+The source code is under the [PolyForm Noncommercial License
+1.0.0](https://polyformproject.org/licenses/noncommercial/1.0.0) — see
+[`LICENSE.txt`](LICENSE.txt).
 
-The Mr.Lee theme artwork under `public/hato/` is **not** covered by it. See
-[`ASSETS-LICENSE.md`](ASSETS-LICENSE.md) before publishing a build anywhere
-public.
+Source-available, not open source. Read it, run it, copy it, change it, share
+it — for anything that is not commercial. Personal use, study, hobby projects,
+charities, schools and public research are all covered. **Using it commercially,
+including inside a business, needs a separate licence**; open an issue to ask.
+
+Releases up to and including v0.8.44 were published under MIT, and that is not
+withdrawn — anyone who received those versions keeps what MIT gave them, in
+those versions. These terms govern everything after.
+
+The Mr.Lee theme artwork under `public/hato/` is **not** covered by the licence
+either way. See [`ASSETS-LICENSE.md`](ASSETS-LICENSE.md) before publishing a
+build anywhere public.
+
+The libraries this app depends on keep their own licences, unaffected by this.
 
 ## Sanity checks
 
