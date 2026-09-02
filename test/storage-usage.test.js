@@ -14,7 +14,7 @@ const {
   withZeroedMissing,
   isStaleScan
 } = storageUsage;
-const { storageLimitFor, isOverStorageLimit, STORAGE_BYTE_LIMITS } = limits;
+const { storageLimitFor, isOverStorageLimit, STORAGE_BYTE_LIMITS, storableLimit } = limits;
 
 describe('uidFromObjectName', () => {
   // Storage triggers fire for the whole bucket, not for a path pattern, so
@@ -86,6 +86,41 @@ describe('storage limits', () => {
     const halfwayToPro = STORAGE_BYTE_LIMITS.pro / 2;
     assert.equal(isOverStorageLimit(halfwayToPro, 'free'), true);
     assert.equal(isOverStorageLimit(halfwayToPro, 'pro'), false);
+  });
+
+  // A limit introduced after people are already using something is a limit
+  // taken away from them. Grandfathered accounts get room to spare rather than
+  // waking up over a line that did not exist when they filled it.
+  it('gives a grandfathered account more room than a new one', () => {
+    assert.ok(STORAGE_BYTE_LIMITS.legacy > STORAGE_BYTE_LIMITS.free);
+
+    const overFreeUnderLegacy = STORAGE_BYTE_LIMITS.free + 1;
+    assert.equal(isOverStorageLimit(overFreeUnderLegacy, 'free'), true);
+    assert.equal(isOverStorageLimit(overFreeUnderLegacy, 'legacy'), false);
+  });
+
+  it('never puts the owner account over', () => {
+    assert.equal(storageLimitFor('owner'), Number.POSITIVE_INFINITY);
+    assert.equal(isOverStorageLimit(STORAGE_BYTE_LIMITS.pro * 1000, 'owner'), false);
+    assert.equal(isOverStorageLimit(Number.MAX_SAFE_INTEGER, 'owner'), false);
+  });
+});
+
+describe('storableLimit', () => {
+  // Infinity is not JSON and the database will not hold it. Writing some
+  // enormous number instead would store a lie that reads as a real limit to
+  // whoever looks at it next.
+  it('turns an unlimited plan into a null the database can hold', () => {
+    assert.equal(storableLimit(storageLimitFor('owner')), null);
+  });
+
+  it('leaves a real limit alone', () => {
+    assert.equal(storableLimit(STORAGE_BYTE_LIMITS.free), STORAGE_BYTE_LIMITS.free);
+    assert.equal(storableLimit(0), 0);
+  });
+
+  it('refuses NaN as well, rather than writing it', () => {
+    assert.equal(storableLimit(Number.NaN), null);
   });
 });
 

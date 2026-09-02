@@ -38,6 +38,8 @@ let bucket;
 const ALICE = 'alice';
 const BOB = 'bob';
 
+const MB = 1024 * 1024;
+
 before(async () => {
   // The module reads getDatabase()/getStorage() off the default app, so the
   // app has to exist before it is required. emulators:exec supplies the
@@ -197,6 +199,34 @@ describe('quota enforcement through claims', () => {
 
     assert.equal((await readBalance(ALICE)).full, true);
     assert.equal((await readClaims(ALICE)).storageFull, true);
+  });
+
+  // Grandfathering, checked against a real write rather than only the
+  // arithmetic: the same bytes that put a new account over must leave an older
+  // one alone.
+  it('leaves a grandfathered account under when a new one would be over', async () => {
+    await db.ref(`sync/default/users/${ALICE}/plan`).set('legacy');
+    await putObject(ALICE, 'big.bin', 100 * MB + 1);
+
+    await accounting.reconcileStorageUsage();
+
+    assert.equal((await readBalance(ALICE)).full, false);
+    assert.equal((await readClaims(ALICE)).storageFull, undefined);
+  });
+
+  // Infinity is not JSON. This is the case that would fail on the write rather
+  // than in the maths, so it is worth doing against a real database.
+  it('records an unlimited plan as a null ceiling and never marks it full', async () => {
+    await db.ref(`sync/default/users/${ALICE}/plan`).set('owner');
+    await putObject(ALICE, 'big.bin', 100 * MB + 1);
+
+    await accounting.reconcileStorageUsage();
+
+    const balance = await readBalance(ALICE);
+    assert.equal(balance.full, false);
+    assert.equal(balance.limit ?? null, null, 'an unlimited ceiling is stored as null');
+    assert.ok(balance.bytes > 100 * MB);
+    assert.equal((await readClaims(ALICE)).storageFull, undefined);
   });
 
   it('gives the same bytes a pass on a paid plan', async () => {

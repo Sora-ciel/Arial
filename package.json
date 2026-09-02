@@ -15,7 +15,9 @@
     "deploy:rules": "npm run test:rules && firebase deploy --only database,storage",
     "deploy:rules:staging": "npm run test:rules && firebase deploy --only database,storage --project staging",
     "tauri": "tauri",
-    "test:triggers": "node scripts/emulator.mjs exec --only functions,database,storage,auth \"node --test --test-concurrency=1 test-triggers/**/*.test.js\""
+    "test:triggers": "node scripts/emulator.mjs exec --only functions,database,storage,auth \"node --test --test-concurrency=1 test-triggers/**/*.test.js\"",
+    "dev:staging": "vite dev --mode staging",
+    "build:staging": "vite build --mode staging"
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

@@ -24,9 +24,22 @@ const DAILY_BYTE_LIMIT = 250 * 1024 * 1024; // per user, per UTC day
 // image and music blocks in earnest will, within weeks — those are the two
 // groups, and only the second one costs anything to serve.
 const STORAGE_BYTE_LIMITS = {
-  free: 100 * 1024 * 1024, //  100 MB
-  pro: 10 * 1024 * 1024 * 1024 //  10 GB
+  free: 100 * 1024 * 1024, //   100 MB — the default, and what a price attaches to
+  pro: 10 * 1024 * 1024 * 1024, //   10 GB — the paid tier
+  legacy: 5 * 1024 * 1024 * 1024, //    5 GB — grandfathered
+  owner: Number.POSITIVE_INFINITY // no ceiling
 };
+
+// `legacy` exists because a limit introduced after people are already using
+// something is a limit taken away from them. Accounts that predate the free
+// tier keep room to spare rather than waking up over a line that did not exist
+// when they filled it; new accounts get `free`. It is assigned per account, as
+// data, so who is on it can be read rather than inferred.
+//
+// `owner` is the project's own account. Deliberately a plan and not a rule
+// about the shape of a uid: matching a prefix would hand unlimited storage to
+// whichever stranger's account happened to start with the same two characters,
+// and "who pays nothing" is not a question to answer with a substring.
 
 const DEFAULT_PLAN = 'free';
 
@@ -42,10 +55,19 @@ function isOverStorageLimit(bytes, plan) {
   return Number(bytes || 0) > storageLimitFor(plan);
 }
 
+// Infinity is not JSON and the database will not hold it, so an unlimited plan
+// records a null limit — which the app can read as "no ceiling". Writing some
+// enormous number instead would store a lie that looks like a real limit to
+// whoever reads it next.
+function storableLimit(limit) {
+  return Number.isFinite(limit) ? limit : null;
+}
+
 module.exports = {
   DAILY_BYTE_LIMIT,
   STORAGE_BYTE_LIMITS,
   DEFAULT_PLAN,
   storageLimitFor,
-  isOverStorageLimit
+  isOverStorageLimit,
+  storableLimit
 };

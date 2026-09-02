@@ -31,6 +31,7 @@ const { getStorage } = require('firebase-admin/storage');
 const { getAuth } = require('firebase-admin/auth');
 
 const ALICE = 'trigger-alice';
+const WARMUP = 'trigger-warmup';
 
 let app;
 let db;
@@ -69,6 +70,24 @@ before(async () => {
   bucket = getStorage().bucket();
 
   await getAuth().createUser({ uid: ALICE }).catch(() => {});
+
+  // Warm the functions emulator before anything is measured.
+  //
+  // The test process starts as soon as the emulators report ready, but the
+  // functions runtime is only spun up when the first event arrives — loading
+  // the module, starting a worker, connecting to the database. Left inside the
+  // first real assertion that cost lands on a stopwatch, and the suite passes
+  // on a warm machine and fails on a cold one. Raising the timeout only moves
+  // the coin toss; paying the cost here, on an account nothing asserts about,
+  // removes it.
+  await getAuth().createUser({ uid: WARMUP }).catch(() => {});
+  await bucket.file(`users/${WARMUP}/attachments/warm.bin`).save(Buffer.alloc(64, 1));
+  await waitFor(
+    async () => (await db.ref(`storage/${WARMUP}`).get()).val(),
+    value => value && value.bytes > 0
+  );
+  await bucket.file(`users/${WARMUP}/attachments/warm.bin`).delete().catch(() => {});
+
   await db.ref(`storage/${ALICE}`).remove();
   await bucket.deleteFiles({ prefix: `users/${ALICE}/` }).catch(() => {});
 });

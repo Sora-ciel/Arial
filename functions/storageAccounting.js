@@ -8,7 +8,7 @@ const { getDatabase } = require('firebase-admin/database');
 const { getAuth } = require('firebase-admin/auth');
 const { getStorage } = require('firebase-admin/storage');
 const { SYNC_NAMESPACE } = require('./syncNamespace');
-const { DEFAULT_PLAN, storageLimitFor, isOverStorageLimit } = require('./limits');
+const { DEFAULT_PLAN, storageLimitFor, isOverStorageLimit, storableLimit } = require('./limits');
 const {
   uidFromObjectName,
   nextClaims,
@@ -102,7 +102,7 @@ async function recordStorageDelta(objectName, deltaBytes) {
 
     return {
       bytes: totalBytes,
-      limit,
+      limit: storableLimit(limit),
       full: isOverStorageLimit(totalBytes, plan),
       updatedAt: Date.now()
     };
@@ -178,7 +178,7 @@ async function reconcileStorageUsage() {
     // write cannot be separated by an upload landing between them.
     const result = await db.ref(`storage/${uid}`).transaction(current => {
       if (isStaleScan(current, scanStartedAt)) return undefined; // abort
-      return { bytes, limit, full: isFull, updatedAt: Date.now() };
+      return { bytes, limit: storableLimit(limit), full: isFull, updatedAt: Date.now() };
     });
 
     if (!result.committed) {
