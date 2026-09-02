@@ -14,7 +14,8 @@
     "emulators": "node scripts/emulator.mjs start --only database,functions,storage,auth",
     "deploy:rules": "npm run test:rules && firebase deploy --only database,storage",
     "deploy:rules:staging": "npm run test:rules && firebase deploy --only database,storage --project staging",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test:triggers": "node scripts/emulator.mjs exec --only functions,database,storage,auth \"node --test --test-concurrency=1 test-triggers/**/*.test.js\""
   },
   "devDependencies": {
     "@firebase/rules-unit-testing": "^5.0.2",

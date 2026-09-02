@@ -81,28 +81,38 @@ async function recordStorageDelta(objectName, deltaBytes) {
 
   const db = getDatabase();
 
-  // Clamped at zero. A delete that arrives without its matching upload —
-  // objects that predate this function, or a replay — would otherwise drive
-  // the balance negative and hand the account free space.
-  const result = await db
-    .ref(`storage/${uid}/bytes`)
-    .transaction(current => Math.max(0, (current || 0) + deltaBytes));
-
-  const totalBytes = result.snapshot.val() || 0;
-
+  // Read before the transaction, so the whole record can be written in one
+  // step below. This used to bump `bytes` and then write `limit` and `full`
+  // separately, which left a window where the record was half updated — a new
+  // total against the old verdict. The app reads this to say "you have used X
+  // of Y", so that window was visible, and it made the trigger test flaky in a
+  // way that was telling the truth.
   const plan = await planFor(db, uid);
-  const isFull = isOverStorageLimit(totalBytes, plan);
+  const limit = storageLimitFor(plan);
 
-  // Mirrored into the database as well as the token so the app can show "you
-  // have used X of Y" immediately, without waiting for a token refresh.
-  await db.ref(`storage/${uid}`).update({
-    limit: storageLimitFor(plan),
-    full: isFull,
-    updatedAt: Date.now()
+  // Transacting the whole record rather than just the byte count keeps two
+  // uploads landing at once from racing, and keeps every field agreeing with
+  // every other.
+  //
+  // Clamped at zero: a delete that arrives without its matching upload —
+  // objects that predate this function, or a replayed event — would otherwise
+  // drive the balance negative and hand the account free space.
+  const result = await db.ref(`storage/${uid}`).transaction(current => {
+    const totalBytes = Math.max(0, Number((current && current.bytes) || 0) + deltaBytes);
+
+    return {
+      bytes: totalBytes,
+      limit,
+      full: isOverStorageLimit(totalBytes, plan),
+      updatedAt: Date.now()
+    };
   });
 
+  const totalBytes = (result.snapshot.val() || {}).bytes || 0;
+  const isFull = isOverStorageLimit(totalBytes, plan);
+
   if (isFull) {
-    logger.error('storage-quota-exceeded', { uid, totalBytes, plan, limit: storageLimitFor(plan) });
+    logger.error('storage-quota-exceeded', { uid, totalBytes, plan, limit });
   }
 
   await syncStorageFullClaim(uid, isFull);

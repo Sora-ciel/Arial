@@ -157,3 +157,34 @@ balance that is quietly wrong enforces a ceiling that is quietly wrong.
 That file resolves its imports as though from `functions/`, because that is
 where `firebase-admin` is installed. Duplicating it at the root would let the
 tests pass against a different version than the one that deploys.
+
+### And a third: do the triggers actually fire?
+
+```bash
+npm run test:triggers
+```
+
+The suites above stop short of one thing. `storage-accounting.test.js` calls
+`recordStorageDelta` directly, which proves the accounting is right and proves
+nothing about whether an upload ever reaches it. The wiring in `index.js` — the
+event type, which field of the event carries the object name, whether a delete
+fires anything at all — is exactly the part no other test touches, and all of
+it fails silently: uploads keep working, the balance just stays at zero for
+ever and the ceiling never fires.
+
+So [`../test-triggers/`](../test-triggers/) runs the real functions in the
+functions emulator, uploads a real object, and waits for the balance to move on
+its own. It is separate from `npm run test:rules` because a functions emulator
+would otherwise be running these triggers *during* the rules tests, writing to
+the same nodes those tests assert on. It is also slower — a cold functions
+emulator has to load the module and start a runtime before the first event.
+
+Scheduled functions do not run here; the emulator skips them without a pubsub
+emulator, and they are covered directly in `test-rules/` instead.
+
+This suite has already paid for itself once. It caught `recordStorageDelta`
+bumping the byte count in one write and the limit and verdict in another,
+leaving a window where the record held a new total against the old verdict —
+which the app reads to say "you have used X of Y". It showed up as a test that
+passed on a warm machine and failed on a cold one, which is the kind of
+flakiness worth listening to rather than retrying.
