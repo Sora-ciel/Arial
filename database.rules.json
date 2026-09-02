@@ -13,6 +13,10 @@
               ".validate": false
             },
 
+            "plan": {
+              ".validate": false
+            },
+
             "files": {
               ".write": "auth !== null && auth.uid === $uid && root.child('sync/' + $ns + '/users/' + $uid + '/blocked').val() !== true",
               "$fileId": {
@@ -28,6 +32,68 @@
             }
           }
         }
+      }
+    },
+
+    "admins": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid"
+      }
+    },
+
+    "usage": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "storage": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid"
+      }
+    },
+
+    "activity": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "alerts": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "monitoring": {
+      "config": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+        ".write": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+        "recipient": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^@ ]+@[^@ ]+[.][^@ ]+$/)"
+        },
+        "projectDailyByteAlert": {
+          ".validate": "newData.isNumber() && newData.val() >= 1048576"
+        },
+        "digestTopUsers": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50"
+        },
+        "digestOnQuietDays": {
+          ".validate": "newData.isBoolean()"
+        },
+        "alertsEnabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "alertSteps": {
+          "$index": {
+            ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000"
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "status": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+      },
+
+      "stats": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
       }
     }
   }

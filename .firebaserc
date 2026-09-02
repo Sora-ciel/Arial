@@ -1,5 +1,6 @@
 {
   "projects": {
-    "default": "arial-473c1"
+    "default": "arial-473c1",
+    "staging": "arial-staging"
   }
 }

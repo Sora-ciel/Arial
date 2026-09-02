@@ -1,0 +1,554 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Arial monitoring</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1c1e21;
+    --muted: #6b7280;
+    --line: #e3e6ea;
+    --accent: #2563eb;
+    --ok: #15803d;
+    --warn: #b45309;
+    --bad: #b91c1c;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181c; --card: #1e2126; --ink: #e8eaed; --muted: #9aa1ab;
+      --line: #30343a; --accent: #6ea8fe; --ok: #4ade80; --warn: #fbbf24; --bad: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 24px 16px 64px;
+    font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg); color: var(--ink);
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 0 0 12px; letter-spacing: .01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 20px; }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px; margin-bottom: 16px;
+  }
+  button {
+    font: inherit; padding: 8px 14px; border-radius: 7px; cursor: pointer;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  button:disabled { opacity: .55; cursor: default; }
+  input, select {
+    font: inherit; padding: 7px 9px; border-radius: 6px;
+    border: 1px solid var(--line); background: var(--bg); color: var(--ink);
+    width: 100%; max-width: 320px;
+  }
+  label { display: block; margin-bottom: 14px; }
+  label > span { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .between { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .scroll { overflow-x: auto; }
+  .bar { height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; min-width: 90px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); }
+  .bar.warn > i { background: var(--warn); }
+  .bar.bad > i { background: var(--bad); }
+  .pill { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); }
+  .pill.ok { color: var(--ok); border-color: currentColor; }
+  .pill.bad { color: var(--bad); border-color: currentColor; }
+  .pill.warn { color: var(--warn); border-color: currentColor; }
+  code {
+    font: 13px/1.4 Consolas, "SF Mono", monospace; background: var(--bg);
+    padding: 3px 6px; border-radius: 5px; border: 1px solid var(--line);
+    word-break: break-all;
+  }
+  .msg { font-size: 13px; margin-top: 10px; min-height: 18px; }
+  .msg.ok { color: var(--ok); } .msg.bad { color: var(--bad); }
+  .hint { font-size: 12px; color: var(--muted); margin-top: -8px; margin-bottom: 14px; }
+  .hidden { display: none !important; }
+  svg { display: block; width: 100%; height: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Arial monitoring</h1>
+  <p class="sub">Sync bandwidth for <code>arial-473c1</code>. Alerts mail out from Cloud Functions; this page shows what they see and lets you retune them without a redeploy.</p>
+
+  <!-- signed out -->
+  <div id="view-signin" class="card hidden">
+    <h2>Sign in</h2>
+    <p class="sub">Use the Google account that owns the Firebase project.</p>
+    <button class="primary" id="signin-button">Sign in with Google</button>
+    <div class="msg bad" id="signin-error"></div>
+  </div>
+
+  <!-- signed in, not an admin -->
+  <div id="view-notadmin" class="card hidden">
+    <h2>Not an admin yet</h2>
+    <p class="sub">Signed in as <b id="notadmin-email"></b>, but this account is not on the admin list, so the database will not show it any usage data.</p>
+    <p class="sub">Add it once, in the Firebase console: open <b>Realtime Database</b>, and create <code>admins/<span id="notadmin-uid"></span></code> with the boolean value <code>true</code>.</p>
+    <div class="row">
+      <button id="copy-uid">Copy my user ID</button>
+      <button id="open-console">Open Realtime Database</button>
+      <button id="recheck">I have added it - check again</button>
+      <button id="signout-2">Sign out</button>
+    </div>
+    <div class="msg" id="notadmin-msg"></div>
+  </div>
+
+  <!-- admin dashboard -->
+  <div id="view-dash" class="hidden">
+
+    <div class="card">
+      <div class="between">
+        <div>
+          <h2 style="margin:0">Alerting</h2>
+          <div class="sub" style="margin:4px 0 0" id="status-line">Loading...</div>
+        </div>
+        <div class="row">
+          <span class="pill" id="alerts-pill">-</span>
+          <button id="test-mail">Send test mail</button>
+          <button id="signout">Sign out</button>
+        </div>
+      </div>
+      <div class="msg" id="test-msg"></div>
+    </div>
+
+    <div class="card">
+      <div class="between">
+        <h2 style="margin:0">Today <span class="sub" id="today-date" style="display:inline"></span></h2>
+        <div class="sub" id="today-total"></div>
+      </div>
+      <div class="scroll">
+        <table id="today-table">
+          <thead><tr>
+            <th>User</th><th class="num">Written</th><th class="num">% of limit</th><th style="width:35%">&nbsp;</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="hint" style="margin-top:12px" id="limit-note"></p>
+    </div>
+
+    <div class="card">
+      <h2>Last 14 days, all users</h2>
+      <div id="chart"></div>
+    </div>
+
+    <div class="card">
+      <h2>Alerts sent</h2>
+      <div class="scroll">
+        <table id="alerts-table">
+          <thead><tr><th>When</th><th>Who</th><th>What</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Settings</h2>
+      <p class="sub">Saved straight to the database and picked up by the next alert check - no redeploy.</p>
+
+      <label><span>Send alerts to</span><input id="f-recipient" type="email" autocomplete="off"></label>
+
+      <label><span>Warn at these percentages of the per-user daily limit</span>
+        <input id="f-steps" type="text" placeholder="50, 80, 100"></label>
+      <p class="hint">Each fires at most once per user per day. 100 is where writes actually start being refused.</p>
+
+      <label><span>Project-wide daily alert threshold</span>
+        <div class="row">
+          <input id="f-project" type="number" min="1" step="1" style="max-width:140px">
+          <select id="f-project-unit" style="max-width:90px">
+            <option value="1048576">MB</option>
+            <option value="1073741824">GB</option>
+          </select>
+        </div></label>
+      <p class="hint">All users combined, per day. Catches a crowd that no single user's threshold would.</p>
+
+      <label><span>Users listed in the daily digest</span>
+        <input id="f-top" type="number" min="1" max="50" style="max-width:100px"></label>
+
+      <label class="row" style="gap:8px">
+        <input id="f-quiet" type="checkbox" style="width:auto"> <span style="margin:0">Send the digest even on days with no sync writes</span>
+      </label>
+
+      <label class="row" style="gap:8px">
+        <input id="f-enabled" type="checkbox" style="width:auto"> <span style="margin:0">Alerting switched on</span>
+      </label>
+
+      <div class="row" style="margin-top:8px">
+        <button class="primary" id="save">Save settings</button>
+        <button id="reload">Discard changes</button>
+      </div>
+      <div class="msg" id="save-msg"></div>
+    </div>
+
+    <div class="card">
+      <h2>The SMTP password</h2>
+      <p class="sub">The app password lives in Google Secret Manager as <code>ARIAL_SMTP_PASS</code>, never in the database and never in this page - a browser cannot read or write it. Set or rotate it there, then redeploy the functions so they pick up the new version.</p>
+      <div class="row">
+        <button id="open-secrets">Open Secret Manager</button>
+      </div>
+      <p class="hint" style="margin-top:12px">After changing it, run <code>firebase deploy --only functions</code>, then use “Send test mail” above to confirm it works.</p>
+    </div>
+
+    <div class="card">
+      <h2>What this page does not cover</h2>
+      <p class="sub">These numbers are <b>bytes written through sync</b>. They do not include reads, hosting, or storage — most of what actually gets billed as egress. For that, set a billing budget and a Cloud Monitoring alert on the project; both mail you directly and need no code.</p>
+      <div class="row">
+        <button id="open-budget">Billing budgets</button>
+        <button id="open-usage">Firebase usage</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-app.js';
+import {
+  getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged
+} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-auth.js';
+import {
+  getDatabase, ref, get, update, onValue
+} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-database.js';
+import {
+  getFunctions, httpsCallable
+} from 'https://www.gstatic.com/firebasejs/11.0.2/firebase-functions.js';
+
+// Mirrors firebase.ts. Firebase web config is public by design - access is
+// decided by database.rules.json and by Auth, not by hiding these values.
+const firebaseConfig = {
+  apiKey: 'AIzaSyBRrsegKXpz_7ZcKBQXhoxpOcx4HIzZ1fE',
+  authDomain: 'arial-473c1.firebaseapp.com',
+  projectId: 'arial-473c1',
+  storageBucket: 'arial-473c1.firebasestorage.app',
+  appId: '1:921907824188:web:652f54122a8d8a22742539',
+  databaseURL: 'https://arial-473c1-default-rtdb.firebaseio.com'
+};
+const PROJECT_ID = firebaseConfig.projectId;
+const FALLBACK_DAILY_LIMIT = 250 * 1024 * 1024; // until the hourly job publishes the real one
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getDatabase(app);
+const fns = getFunctions(app, 'us-central1');
+
+const $ = id => document.getElementById(id);
+const show = (id, on) => $(id).classList.toggle('hidden', !on);
+
+function formatBytes(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return n + ' B';
+  const units = ['KB', 'MB', 'GB', 'TB'];
+  let v = n / 1024, u = 0;
+  while (v >= 1024 && u < units.length - 1) { v /= 1024; u += 1; }
+  return v.toFixed(v < 10 ? 2 : 1) + ' ' + units[u];
+}
+const shortUid = uid => String(uid || '').slice(0, 8);
+const todayKey = () => new Date().toISOString().slice(0, 10);
+function daysBack(n) {
+  const out = [];
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date();
+    d.setUTCDate(d.getUTCDate() - i);
+    out.push(d.toISOString().slice(0, 10));
+  }
+  return out;
+}
+function setMsg(id, text, kind) {
+  const el = $(id);
+  el.textContent = text || '';
+  el.className = 'msg' + (kind ? ' ' + kind : '');
+}
+
+// ---------------- auth ----------------
+
+$('signin-button').onclick = async () => {
+  setMsg('signin-error', '');
+  try {
+    await signInWithPopup(auth, new GoogleAuthProvider());
+  } catch (err) {
+    setMsg('signin-error', err.message || String(err), 'bad');
+  }
+};
+$('signout').onclick = () => signOut(auth);
+$('signout-2').onclick = () => signOut(auth);
+
+let currentUser = null;
+
+onAuthStateChanged(auth, async user => {
+  currentUser = user;
+  if (!user) {
+    show('view-signin', true); show('view-notadmin', false); show('view-dash', false);
+    return;
+  }
+  await routeSignedIn(user);
+});
+
+async function routeSignedIn(user) {
+  show('view-signin', false);
+  let isAdmin = false;
+  try {
+    isAdmin = (await get(ref(db, 'admins/' + user.uid))).val() === true;
+  } catch (_) {
+    isAdmin = false; // rules denied the read, which means: not an admin
+  }
+
+  if (!isAdmin) {
+    $('notadmin-email').textContent = user.email || user.uid;
+    $('notadmin-uid').textContent = user.uid;
+    show('view-notadmin', true); show('view-dash', false);
+    return;
+  }
+  show('view-notadmin', false); show('view-dash', true);
+  startDashboard();
+}
+
+$('copy-uid').onclick = async () => {
+  try {
+    await navigator.clipboard.writeText(currentUser.uid);
+    setMsg('notadmin-msg', 'User ID copied.', 'ok');
+  } catch (_) {
+    setMsg('notadmin-msg', 'Could not copy - select the ID above by hand.', 'bad');
+  }
+};
+$('recheck').onclick = () => currentUser && routeSignedIn(currentUser);
+$('open-console').onclick = () =>
+  window.open(`https://console.firebase.google.com/project/${PROJECT_ID}/database/${PROJECT_ID}-default-rtdb/data`, '_blank');
+$('open-secrets').onclick = () =>
+  window.open(`https://console.cloud.google.com/security/secret-manager?project=${PROJECT_ID}`, '_blank');
+$('open-budget').onclick = () =>
+  window.open('https://console.cloud.google.com/billing', '_blank');
+$('open-usage').onclick = () =>
+  window.open(`https://console.firebase.google.com/project/${PROJECT_ID}/usage`, '_blank');
+
+// ---------------- dashboard ----------------
+
+let dailyLimit = FALLBACK_DAILY_LIMIT;
+let started = false;
+
+function startDashboard() {
+  if (started) return; // onAuthStateChanged can fire more than once per session
+  started = true;
+  watchStatus();
+  watchUsage();
+  watchAlerts();
+  loadSettings();
+}
+
+function watchStatus() {
+  onValue(ref(db, 'monitoring/status'), snap => {
+    const s = snap.val() || {};
+    if (Number(s.dailyByteLimit) > 0) {
+      dailyLimit = Number(s.dailyByteLimit);
+      $('limit-note').textContent =
+        `Per-user limit: ${formatBytes(dailyLimit)} of sync writes per day. At 100% the database refuses further writes until 00:05 UTC.`;
+    }
+    if (!s.at) {
+      $('status-line').textContent = 'No alert has been sent yet.';
+      return;
+    }
+    const when = new Date(s.at).toLocaleString();
+    $('status-line').innerHTML = s.ok
+      ? `Last mail sent ${when} — <span style="color:var(--ok)">delivered</span>${s.subject ? ' — ' + s.subject : ''}`
+      : `Last attempt ${when} — <span style="color:var(--bad)">failed: ${s.error || 'unknown error'}</span>`;
+  }, () => {
+    $('status-line').textContent = 'Could not read status.';
+  });
+}
+
+function watchUsage() {
+  onValue(ref(db, 'usage'), snap => {
+    const raw = snap.val() || {};
+    const today = todayKey();
+    $('today-date').textContent = '(' + today + ' UTC)';
+
+    const rows = Object.entries(raw)
+      .map(([uid, byDate]) => ({ uid, bytes: Number((byDate || {})[today]) || 0 }))
+      .filter(r => r.bytes > 0)
+      .sort((a, b) => b.bytes - a.bytes);
+
+    const total = rows.reduce((sum, r) => sum + r.bytes, 0);
+    $('today-total').textContent =
+      `${formatBytes(total)} across ${rows.length} user${rows.length === 1 ? '' : 's'}`;
+
+    const body = $('today-table').querySelector('tbody');
+    body.innerHTML = '';
+    if (!rows.length) {
+      body.innerHTML = '<tr><td colspan="4" style="color:var(--muted)">No sync writes today.</td></tr>';
+    }
+    for (const r of rows) {
+      const pct = (r.bytes / dailyLimit) * 100;
+      const tone = pct >= 100 ? 'bad' : pct >= 80 ? 'warn' : '';
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td><code>${shortUid(r.uid)}</code></td>` +
+        `<td class="num">${formatBytes(r.bytes)}</td>` +
+        `<td class="num">${pct.toFixed(1)}%</td>` +
+        `<td><div class="bar ${tone}"><i style="width:${Math.min(100, pct).toFixed(1)}%"></i></div></td>`;
+      body.appendChild(tr);
+    }
+
+    drawChart(raw);
+  }, err => {
+    $('today-total').textContent = 'Could not read usage: ' + err.message;
+  });
+}
+
+function drawChart(raw) {
+  const dates = daysBack(14);
+  const totals = dates.map(date =>
+    Object.values(raw).reduce((sum, byDate) => sum + (Number((byDate || {})[date]) || 0), 0)
+  );
+  const peak = Math.max(...totals, 1);
+
+  const W = 880, H = 190, pad = 26, gap = 6;
+  const barW = (W - pad * 2 - gap * (dates.length - 1)) / dates.length;
+  let bars = '';
+  dates.forEach((date, i) => {
+    const h = Math.max(2, ((H - pad * 2) * totals[i]) / peak);
+    const x = pad + i * (barW + gap);
+    const y = H - pad - h;
+    bars +=
+      `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" rx="3" fill="var(--accent)" opacity="${totals[i] ? 0.9 : 0.25}"><title>${date}: ${formatBytes(totals[i])}</title></rect>` +
+      `<text x="${(x + barW / 2).toFixed(1)}" y="${H - 8}" font-size="9" fill="var(--muted)" text-anchor="middle">${date.slice(8)}</text>`;
+  });
+
+  $('chart').innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Daily sync write volume, last 14 days">` +
+    `<text x="${pad}" y="16" font-size="11" fill="var(--muted)">peak ${formatBytes(peak)}</text>` +
+    bars + '</svg>';
+}
+
+function watchAlerts() {
+  onValue(ref(db, 'alerts'), snap => {
+    const raw = snap.val() || {};
+    const entries = [];
+    for (const [uid, byDate] of Object.entries(raw)) {
+      for (const [date, kinds] of Object.entries(byDate || {})) {
+        for (const [kind, value] of Object.entries(kinds || {})) {
+          if (typeof value === 'object' && value !== null) {
+            for (const [step, at] of Object.entries(value)) {
+              entries.push({ at: Number(at) || 0, uid, date, what: `${step}% of the daily limit` });
+            }
+          } else {
+            entries.push({ at: Number(value) || 0, uid, date, what: kind === 'bandwidth' ? 'project threshold' : kind });
+          }
+        }
+      }
+    }
+    entries.sort((a, b) => b.at - a.at);
+
+    const body = $('alerts-table').querySelector('tbody');
+    body.innerHTML = '';
+    if (!entries.length) {
+      body.innerHTML = '<tr><td colspan="3" style="color:var(--muted)">No alerts have fired.</td></tr>';
+      return;
+    }
+    for (const e of entries.slice(0, 30)) {
+      const tr = document.createElement('tr');
+      tr.innerHTML =
+        `<td>${e.at ? new Date(e.at).toLocaleString() : e.date}</td>` +
+        `<td><code>${e.uid === '_project' ? 'all users' : shortUid(e.uid)}</code></td>` +
+        `<td>${e.what}</td>`;
+      body.appendChild(tr);
+    }
+  }, () => {});
+}
+
+// ---------------- settings ----------------
+
+const DEFAULTS = {
+  recipient: 'toyane.tb@gmail.com',
+  alertSteps: [50, 80, 100],
+  projectDailyByteAlert: 1024 * 1024 * 1024,
+  digestTopUsers: 5,
+  digestOnQuietDays: false,
+  alertsEnabled: true
+};
+
+async function loadSettings() {
+  let stored = {};
+  try {
+    stored = (await get(ref(db, 'monitoring/config'))).val() || {};
+  } catch (_) { /* fall back to defaults */ }
+  const s = { ...DEFAULTS, ...stored };
+
+  $('f-recipient').value = s.recipient;
+  $('f-steps').value = (Array.isArray(s.alertSteps) ? s.alertSteps : DEFAULTS.alertSteps).join(', ');
+  const gb = 1024 * 1024 * 1024;
+  const useGb = s.projectDailyByteAlert >= gb && s.projectDailyByteAlert % gb === 0;
+  $('f-project-unit').value = useGb ? String(gb) : String(1024 * 1024);
+  $('f-project').value = String(s.projectDailyByteAlert / Number($('f-project-unit').value));
+  $('f-top').value = String(s.digestTopUsers);
+  $('f-quiet').checked = !!s.digestOnQuietDays;
+  $('f-enabled').checked = s.alertsEnabled !== false;
+
+  const on = s.alertsEnabled !== false;
+  const pill = $('alerts-pill');
+  pill.textContent = on ? 'alerts on' : 'alerts off';
+  pill.className = 'pill ' + (on ? 'ok' : 'bad');
+  setMsg('save-msg', '');
+}
+
+$('reload').onclick = () => loadSettings();
+
+$('save').onclick = async () => {
+  const steps = [...new Set(
+    $('f-steps').value.split(',').map(s => Number(s.trim())).filter(n => Number.isFinite(n) && n > 0 && n <= 1000)
+  )].sort((a, b) => a - b);
+  const project = Number($('f-project').value) * Number($('f-project-unit').value);
+  const top = Number($('f-top').value);
+  const recipient = $('f-recipient').value.trim();
+
+  // Validated here for a clear message, and again in the rules and in
+  // settings.js - a bad value here silently stops alerts, which is the one
+  // failure mode you would never notice.
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) return setMsg('save-msg', 'That is not a valid email address.', 'bad');
+  if (!steps.length) return setMsg('save-msg', 'Give at least one percentage, e.g. 50, 80, 100.', 'bad');
+  if (!(project >= 1024 * 1024)) return setMsg('save-msg', 'The project threshold must be at least 1 MB.', 'bad');
+  if (!(top >= 1 && top <= 50)) return setMsg('save-msg', 'Digest user count must be between 1 and 50.', 'bad');
+
+  $('save').disabled = true;
+  try {
+    await update(ref(db, 'monitoring/config'), {
+      recipient,
+      alertSteps: steps,
+      projectDailyByteAlert: project,
+      digestTopUsers: top,
+      digestOnQuietDays: $('f-quiet').checked,
+      alertsEnabled: $('f-enabled').checked
+    });
+    setMsg('save-msg', 'Saved.', 'ok');
+    loadSettings();
+  } catch (err) {
+    setMsg('save-msg', 'Not saved: ' + (err.message || err), 'bad');
+  } finally {
+    $('save').disabled = false;
+  }
+};
+
+$('test-mail').onclick = async () => {
+  $('test-mail').disabled = true;
+  setMsg('test-msg', 'Sending...');
+  try {
+    const res = await httpsCallable(fns, 'sendMonitoringTestMail')();
+    setMsg('test-msg', 'Sent to ' + res.data.recipient + '. If it does not arrive, check spam.', 'ok');
+  } catch (err) {
+    setMsg('test-msg', err.message || String(err), 'bad');
+  } finally {
+    $('test-mail').disabled = false;
+  }
+};
+</script>
+</body>
+</html>

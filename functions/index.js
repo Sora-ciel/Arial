@@ -1,15 +1,16 @@
 const { onValueWritten } = require('firebase-functions/v2/database');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { onObjectFinalized, onObjectDeleted } = require('firebase-functions/v2/storage');
 const { logger } = require('firebase-functions');
 const { initializeApp } = require('firebase-admin/app');
 const { getDatabase } = require('firebase-admin/database');
 const { LATEST_SCHEMA_VERSION, MIN_SUPPORTED_SCHEMA_VERSION, migrateFilePayload } = require('./migrations');
+const { DAILY_BYTE_LIMIT } = require('./limits');
+const { SYNC_NAMESPACE } = require('./syncNamespace');
+const { recordStorageDelta, reconcileStorageUsage } = require('./storageAccounting');
+const { recordActivity, rollUpStats } = require('./activityTracking');
 
 initializeApp();
-
-// Must match firebaseSyncNamespace in firebase.ts.
-const SYNC_NAMESPACE = 'default';
-const DAILY_BYTE_LIMIT = 250 * 1024 * 1024; // tune after watching real usage for a bit
 
 // Ceiling on concurrent instances. Without one, a burst of saves — whether a
 // genuine crowd or someone hammering the endpoint — scales this function out
@@ -50,6 +51,15 @@ exports.enforceSyncQuota = onValueWritten(
     const { ns, uid, fileId } = event.params;
     logger.info('enforceSyncQuota-start', { ns, uid, fileId, afterExists: event.data.after.exists() });
     if (!event.data.after.exists()) return; // file deleted, nothing to charge
+
+    // Stamped here rather than from its own trigger: this one already fires on
+    // every sync write, and a save is the definition of active worth having.
+    // Coarsened to once an hour inside, so typing does not multiply writes.
+    // Deliberately not awaited alongside the quota work below — a failure to
+    // record a statistic must never interfere with enforcing a limit.
+    recordActivity(uid).catch(error =>
+      logger.warn('activity-stamp-failed', { uid, message: error.message })
+    );
 
     const db = getDatabase();
     const fileSnap = await db.ref(`sync/${ns}/users/${uid}/files/${fileId}`).get();
@@ -108,6 +118,75 @@ exports.resetDailyBlocks = onSchedule(
   }
 );
 
+// --- Stored bytes ------------------------------------------------------
+//
+// enforceSyncQuota above counts what a note weighs in the database, which
+// stopped being most of the data the day attachments moved to Cloud Storage: a
+// 40 MB upload writes a few hundred bytes of ref into RTDB and the rest is
+// invisible to a database trigger. These keep a running balance per account
+// instead — up on upload, down on delete, never reset, which is why it lives
+// in its own node and resetDailyBlocks must not touch it.
+//
+// An overwrite fires both triggers: the replaced generation is deleted and the
+// new one finalized, so the arithmetic balances without special-casing.
+//
+// The work itself is in storageAccounting.js, so it can be tested without a
+// functions runtime. Everything here is wiring.
+
+exports.trackStorageUpload = onObjectFinalized(
+  { region: 'us-central1', maxInstances: MAX_INSTANCES },
+  async event => {
+    await recordStorageDelta(event.data.name, Number(event.data.size) || 0);
+  }
+);
+
+exports.trackStorageDelete = onObjectDeleted(
+  { region: 'us-central1', maxInstances: MAX_INSTANCES },
+  async event => {
+    await recordStorageDelta(event.data.name, -(Number(event.data.size) || 0));
+  }
+);
+
+// Weekly rather than nightly: a full bucket listing is the most expensive
+// thing here, drift accumulates slowly, and every upload and delete in between
+// is already keeping the balance current on its own.
+//
+// To run it now — the initial backfill, or after suspecting drift — use Force
+// run on its Cloud Scheduler job in the Google Cloud console. It is safe to
+// run at any time and safe to run twice; it computes an absolute total rather
+// than applying a change.
+exports.reconcileStorageUsage = onSchedule(
+  {
+    schedule: 'every sunday 03:00',
+    region: 'us-central1',
+    maxInstances: SCHEDULED_MAX_INSTANCES,
+    timeoutSeconds: 540,
+    memory: '512MiB'
+  },
+  async () => {
+    await reconcileStorageUsage();
+  }
+);
+
+// One row a day of how many accounts there are, how many came back, and what
+// they are keeping. Runs late enough that the day it summarises is over in
+// UTC, and after resetDailyBlocks so a swept block is not counted as a live
+// one.
+//
+// The numbers are cheap to recompute; the history is not. Nothing can
+// reconstruct what a month looked like after the fact, which is why this is
+// worth running from the day there is nothing to see.
+exports.rollUpStats = onSchedule(
+  {
+    schedule: 'every day 00:15',
+    region: 'us-central1',
+    maxInstances: SCHEDULED_MAX_INSTANCES
+  },
+  async () => {
+    await rollUpStats();
+  }
+);
+
 // DISABLED 2026-08-08: same TRIGGER_PAYLOAD_TOO_LARGE issue as enforceSyncQuota
 // above (also watched files/{fileId}). See that comment for details. If
 // revived, avoid triggering directly on files/{fileId}.
@@ -125,6 +204,16 @@ exports.resetDailyBlocks = onSchedule(
 //     await event.data.after.ref.set({ ...migrated, schemaVersion: LATEST_SCHEMA_VERSION });
 //   }
 // );
+
+// Bandwidth monitoring. Kept in its own folder with its own config, its own
+// mailer and its own thresholds: it only reads what the quota guard above
+// writes, so removing these three lines disables every alert without touching
+// enforcement.
+const monitoring = require('./monitoring');
+exports.bandwidthWatch = monitoring.bandwidthWatch;
+exports.projectBandwidthWatch = monitoring.projectBandwidthWatch;
+exports.bandwidthDigest = monitoring.bandwidthDigest;
+exports.sendMonitoringTestMail = monitoring.sendMonitoringTestMail;
 
 // Keeps sync/{ns}/meta/schemaVersion in sync with the constants above so
 // clients (checkSyncCompatibility in firebaseClient.js) always read a

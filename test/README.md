@@ -99,3 +99,61 @@ Deliberately, so nobody reads a green run as more than it is:
 - Android and the desktop shell.
 
 A green run means the rules are intact. It does not mean the app works.
+
+## The other suite: rules
+
+`npm test` stays what it always was — no framework, no dependencies, nothing
+listening, about a second and a half, and it gates every build.
+
+Security rules cannot be tested that way. They are enforced by the database,
+not by any code Node can import, so checking them needs the emulator running
+and therefore Java. That suite lives in [`../test-rules/`](../test-rules/) and
+runs separately:
+
+```bash
+npm run test:rules
+```
+
+It starts the database emulator against a `demo-arial` project id, runs the
+tests, and shuts the emulator down. Nothing touches the real Firebase project,
+and no credentials are involved — a `demo-` prefix makes the CLI refuse to
+reach any live service.
+
+Same principle as the tests above, one layer down: every case is a property
+the app depends on that nothing else would notice breaking. Account isolation,
+write being scoped to `files` and `index` rather than the whole user node, the
+`updatedAt` and `fileId` validations, and the quota block.
+
+The group that matters most is `entitlements are server-written only`. A
+signed-in client must never be able to write its own `blocked` flag, and when
+a paid `plan` field lands beside it the same has to be true of that. It is the
+one failure on this list that is completely silent: the app keeps working, the
+sync keeps syncing, and the only symptom is that nobody ever needs to pay.
+That is why it is asserted rather than assumed.
+
+`npm run deploy:rules` runs this suite before pushing rules to production, so
+a broken rule cannot reach the live database — the same bargain `npm run
+build` makes for releases.
+
+### What runs there
+
+Three files, two kinds of test.
+
+`database-rules.test.js` and `storage-rules.test.js` drive the client SDK
+through `@firebase/rules-unit-testing` and assert what a signed-in browser is
+and is not allowed to do.
+
+`storage-accounting.test.js` is different: it uses the Admin SDK to exercise
+`functions/storageAccounting.js` against emulated database, storage and auth.
+The arithmetic it relies on is already covered by `storage-usage.test.js` in
+the fast suite; what this adds is the wiring around it, which is where the rest
+of the risk lives — whether a paged bucket listing returns what the code
+expects, whether an object's size arrives as a string, whether the transaction
+guarding against a mid-scan write actually aborts, and whether stamping a quota
+flag onto a token leaves the rest of that token's claims alone. None of those
+can be reached without real services, and every one of them fails silently: a
+balance that is quietly wrong enforces a ceiling that is quietly wrong.
+
+That file resolves its imports as though from `functions/`, because that is
+where `firebase-admin` is installed. Duplicating it at the root would let the
+tests pass against a different version than the one that deploys.
