@@ -67,24 +67,60 @@ exports.enforceSyncQuota = onValueWritten(
     logger.info('enforceSyncQuota-read', { fileExists: fileSnap.exists(), writtenBytes });
     if (writtenBytes === 0) return;
 
-    const usageRef = db.ref(`usage/${uid}/${todayKey()}`);
-    const usageResult = await usageRef.transaction(current => (current || 0) + writtenBytes);
-    const totalToday = usageResult.snapshot.val() || 0;
-    logger.info('enforceSyncQuota-tallied', { totalToday, limit: DAILY_BYTE_LIMIT });
+    await chargeBandwidth(db, ns, uid, writtenBytes);
+  }
+);
 
-    if (totalToday <= DAILY_BYTE_LIMIT) return;
+// Charges bytes against today's tally and blocks the account if that puts it
+// over. Shared, because every path a client can write through has to be
+// metered by the same counter — an unmetered one is not a smaller hole than
+// no counter at all, it is the same hole with fewer people looking at it.
+async function chargeBandwidth(db, ns, uid, writtenBytes) {
+  if (!writtenBytes || writtenBytes <= 0) return;
 
-    const blockedRef = db.ref(`sync/${ns}/users/${uid}/blocked`);
-    const wasAlreadyBlocked = (await blockedRef.get()).val() === true;
-    if (wasAlreadyBlocked) return;
+  const usageResult = await db
+    .ref(`usage/${uid}/${todayKey()}`)
+    .transaction(current => (current || 0) + writtenBytes);
+  const totalToday = usageResult.snapshot.val() || 0;
+  logger.info('bandwidth-charged', { uid, writtenBytes, totalToday, limit: DAILY_BYTE_LIMIT });
 
-    await blockedRef.set(true);
-    logger.error('sync-quota-exceeded', {
-      uid,
-      ns,
-      totalBytesToday: totalToday,
-      limit: DAILY_BYTE_LIMIT
-    });
+  if (totalToday <= DAILY_BYTE_LIMIT) return;
+
+  const blockedRef = db.ref(`sync/${ns}/users/${uid}/blocked`);
+  const wasAlreadyBlocked = (await blockedRef.get()).val() === true;
+  if (wasAlreadyBlocked) return;
+
+  await blockedRef.set(true);
+  logger.error('sync-quota-exceeded', {
+    uid,
+    ns,
+    totalBytesToday: totalToday,
+    limit: DAILY_BYTE_LIMIT
+  });
+}
+
+// Themes are the second thing a client may write, so they are metered too.
+//
+// This one triggers directly on the node rather than on a small companion the
+// way enforceSyncQuota does, and that is safe here for the reason it was not
+// there: a theme is a name and a few dozen colour strings, capped field by
+// field in database.rules.json, so it cannot approach the payload ceiling that
+// a full note blew past.
+exports.meterThemeWrite = onValueWritten(
+  {
+    ref: 'sync/{ns}/users/{uid}/themes/{themeId}',
+    region: 'us-central1',
+    maxInstances: MAX_INSTANCES
+  },
+  async event => {
+    const { ns, uid } = event.params;
+    if (!event.data.after.exists()) return; // deleted, nothing to charge
+
+    recordActivity(uid).catch(error =>
+      logger.warn('activity-stamp-failed', { uid, message: error.message })
+    );
+
+    await chargeBandwidth(getDatabase(), ns, uid, byteSizeOf(event.data.after.val()));
   }
 );
 

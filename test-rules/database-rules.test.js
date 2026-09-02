@@ -134,6 +134,119 @@ describe('write is scoped to files and index', () => {
   });
 });
 
+// Themes are the second thing a client may write, and the first new write
+// path since the account was locked down to files and index. Everything here
+// is about keeping it that narrow.
+describe('themes', () => {
+  const theme = (id, extra = {}) => ({
+    id,
+    name: 'Midnight',
+    description: 'Custom theme',
+    previewBg: '#000000',
+    createdAt: 1,
+    updatedAt: 2,
+    controlColors: { left: { panelBg: '#111111' } },
+    blockTheme: { accentColor: '#ff5f5f' },
+    ...extra
+  });
+
+  it('accepts a well-formed theme', async () => {
+    await reset();
+    await assertSucceeds(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/midnight`), theme('midnight'))
+    );
+  });
+
+  it('refuses one account writing into another', async () => {
+    await reset();
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(BOB)}/themes/midnight`), theme('midnight'))
+    );
+  });
+
+  // Same guard the index carries: an id that disagrees with its key is how a
+  // theme ends up unreachable by the code that wrote it.
+  it('refuses an id that contradicts its key', async () => {
+    await reset();
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/midnight`), theme('something-else'))
+    );
+  });
+
+  it('refuses a theme with no name or no updatedAt', async () => {
+    await reset();
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/a`), { id: 'a', updatedAt: 1 })
+    );
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/a`), { id: 'a', name: 'A' })
+    );
+  });
+
+  it('refuses an empty name', async () => {
+    await reset();
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/a`), theme('a', { name: '' }))
+    );
+  });
+
+  // The caps are what stop a theme being used as free storage. Nothing else
+  // bounds the size of this node.
+  it('refuses absurdly long strings', async () => {
+    await reset();
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/a`), theme('a', { name: 'x'.repeat(101) }))
+    );
+    await assertFails(
+      set(
+        ref(db(ALICE), `${userPath(ALICE)}/themes/a`),
+        theme('a', { blockTheme: { accentColor: 'x'.repeat(201) } })
+      )
+    );
+    await assertFails(
+      set(
+        ref(db(ALICE), `${userPath(ALICE)}/themes/a`),
+        theme('a', { controlColors: { left: { panelBg: 'x'.repeat(201) } } })
+      )
+    );
+  });
+
+  it('refuses a field nobody asked for', async () => {
+    await reset();
+    await assertFails(
+      set(
+        ref(db(ALICE), `${userPath(ALICE)}/themes/a`),
+        theme('a', { payload: 'x'.repeat(150) })
+      )
+    );
+  });
+
+  it('refuses a theme write while the account is blocked', async () => {
+    await reset();
+    await seed((adminDb) => set(ref(adminDb, `${userPath(ALICE)}/blocked`), true));
+    await assertFails(
+      set(ref(db(ALICE), `${userPath(ALICE)}/themes/a`), theme('a'))
+    );
+  });
+
+  it('still allows deleting a theme', async () => {
+    await reset();
+    await seed((adminDb) =>
+      set(ref(adminDb, `${userPath(ALICE)}/themes/a`), theme('a'))
+    );
+    await assertSucceeds(remove(ref(db(ALICE), `${userPath(ALICE)}/themes/a`)));
+  });
+
+  it('lets an account read its own themes and nobody else read them', async () => {
+    await reset();
+    await seed((adminDb) =>
+      set(ref(adminDb, `${userPath(ALICE)}/themes/a`), theme('a'))
+    );
+    await assertSucceeds(get(ref(db(ALICE), `${userPath(ALICE)}/themes`)));
+    await assertFails(get(ref(db(BOB), `${userPath(ALICE)}/themes`)));
+  });
+});
+
 describe('payload validation', () => {
   it('refuses a file with no updatedAt', async () => {
     await reset();

@@ -183,6 +183,26 @@ Where:
 - `namespace` = `VITE_FIREBASE_SYNC_NAMESPACE` (default `default`)
 - `uid` = authenticated Firebase `auth.uid`
 
+Custom themes sync too, one node each:
+
+- `/sync/{namespace}/users/{uid}/themes/{themeId}`
+
+Whole-theme last-writer-wins, the same model folders use: a theme is looked at
+as a whole or not at all, so merging one field at a time would only let two
+devices each hold half of a theme nobody designed. What may be written and
+which copy wins is decided in [`src/utils/themeSync.js`](src/utils/themeSync.js);
+the fields are capped individually in `database.rules.json`, because nothing
+else bounds the size of that node.
+
+The awkward case is a theme this device has and the cloud does not, because a
+theme made offline and a theme deleted on another device look identical from
+here. `syncedAt` separates them — set once a theme has been written to the
+cloud, never synced itself, so it means exactly "this device has seen this
+theme up there". Absent from the cloud *and* previously synced is a deletion;
+absent and never synced is something to upload. Without it, either every
+deletion gets undone by whichever device missed it, or a theme made on a plane
+disappears on landing.
+
 Server-written and readable but never writable by the client:
 
 - `/sync/{namespace}/users/{uid}/blocked` — set when the daily bandwidth

@@ -7,6 +7,13 @@ import {
   findEmbeddedDataUrls,
   payloadCarriesDataUrl
 } from './utils/syncRules.js';
+// What may be written to themes/, and which of two copies of one theme wins.
+// See utils/themeSync.js.
+import {
+  isSyncableThemeId,
+  themeForSync,
+  themeFromSync
+} from './utils/themeSync.js';
 
 
 export { firebaseConfig, firebaseSyncNamespace };
@@ -512,6 +519,64 @@ export async function deleteRemoteFile(fileId) {
   }
 
   return { fileId };
+}
+
+// ── Custom themes ───────────────────────────────────────────────────────────
+//
+// One node per theme under themes/{themeId}, synced whole. A theme is looked
+// at as a whole or not at all, so there is nothing to gain from merging it a
+// field at a time and a great deal to lose — two devices could each end up
+// holding half of a theme nobody designed.
+//
+// Every id goes through isSyncableThemeId before it reaches a path. A blank
+// one would make `themes/`, whose trailing slash is stripped, and the write
+// would land on the node holding every theme and replace the lot — the same
+// way a blank folder name once threatened every folder.
+
+export async function loadRemoteThemes() {
+  if (!isFirebaseConfigured()) return [];
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  const snapshot = await ctx.dbApi.get(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, 'themes'))
+  );
+  if (!snapshot.exists()) return [];
+
+  return Object.values(snapshot.val() || {})
+    .map(themeFromSync)
+    .filter(Boolean);
+}
+
+export async function saveRemoteTheme(theme) {
+  if (!isFirebaseConfigured()) return null;
+
+  const payload = themeForSync(theme);
+  if (!payload) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `themes/${payload.id}`)),
+    payload
+  );
+
+  return payload;
+}
+
+export async function deleteRemoteTheme(themeId) {
+  if (!isFirebaseConfigured()) return null;
+  if (!isSyncableThemeId(themeId)) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  await ctx.dbApi.remove(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `themes/${themeId}`))
+  );
+
+  return { themeId };
 }
 
 export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {

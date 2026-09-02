@@ -29,6 +29,32 @@
               "$fileId": {
                 ".validate": "newData.hasChildren(['fileId', 'updatedAt']) && newData.child('fileId').val() === $fileId && newData.child('updatedAt').isNumber()"
               }
+            },
+
+            "themes": {
+              ".write": "auth !== null && auth.uid === $uid && root.child('sync/' + $ns + '/users/' + $uid + '/blocked').val() !== true",
+              "$themeId": {
+                ".validate": "newData.hasChildren(['id', 'name', 'updatedAt'])",
+
+                "id": { ".validate": "newData.isString() && newData.val() === $themeId" },
+                "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+                "description": { ".validate": "newData.isString() && newData.val().length <= 300" },
+                "previewBg": { ".validate": "newData.isString() && newData.val().length <= 200" },
+                "createdAt": { ".validate": "newData.isNumber()" },
+                "updatedAt": { ".validate": "newData.isNumber()" },
+
+                "controlColors": {
+                  "$group": {
+                    "$field": { ".validate": "newData.isString() && newData.val().length <= 200" }
+                  }
+                },
+
+                "blockTheme": {
+                  "$field": { ".validate": "newData.isString() && newData.val().length <= 200" }
+                },
+
+                "$other": { ".validate": false }
+              }
             }
           }
         }

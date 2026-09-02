@@ -26,8 +26,12 @@
     saveRemoteFile,
     isSyncableFileId,
     subscribeRemoteIndex,
-    checkSyncCompatibility
+    checkSyncCompatibility,
+    loadRemoteThemes,
+    saveRemoteTheme,
+    deleteRemoteTheme
   } from './firebaseClient.js';
+  import { reconcileThemes } from './utils/themeSync.js';
   import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
@@ -859,6 +863,11 @@
   function persistCustomThemes(themes) {
     if (typeof localStorage === 'undefined') return;
     try {
+      // updatedAt and syncedAt are kept because both survive a restart or they
+      // are worthless. updatedAt is what settles which of two devices' copies
+      // is newer; syncedAt is what tells this device it has seen a theme in
+      // the cloud, which is the only thing separating a theme deleted on
+      // another device from one made here and never uploaded.
       const serializable = themes.map(({
         id,
         name,
@@ -866,7 +875,9 @@
         controlColors,
         blockTheme,
         previewBg,
-        createdAt
+        createdAt,
+        updatedAt,
+        syncedAt
       }) => ({
         id,
         name,
@@ -874,7 +885,9 @@
         controlColors,
         blockTheme,
         previewBg,
-        createdAt
+        createdAt,
+        updatedAt,
+        syncedAt
       }));
       localStorage.setItem(
         CUSTOM_THEMES_STORAGE_KEY,
@@ -947,6 +960,7 @@
       blockTheme: payload.blockTheme,
       previewBg: payload.previewBg,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       isCustom: true
     };
   }
@@ -1452,6 +1466,83 @@
     selectedThemeId = CUSTOM_THEME_ID;
   }
 
+  // ── Theme sync ──────────────────────────────────────────────────────────
+  //
+  // Local always comes first and never waits on the network: a theme is saved
+  // to this device, and the cloud is told afterwards. If that fails, or there
+  // is no signed-in account, nothing is lost and nothing is blocked — the
+  // theme is still there, and the next sign-in will push it, because a theme
+  // with no syncedAt is one the cloud has never seen.
+
+  function markThemeSynced(themeId, updatedAt) {
+    const index = customThemes.findIndex(theme => theme.id === themeId);
+    if (index === -1) return;
+
+    const updated = { ...customThemes[index], updatedAt, syncedAt: Date.now() };
+    customThemes = [
+      ...customThemes.slice(0, index),
+      updated,
+      ...customThemes.slice(index + 1)
+    ];
+    persistCustomThemes(customThemes);
+  }
+
+  async function pushThemeToCloud(theme) {
+    if (!firebaseReady || !authUser || !theme) return;
+
+    try {
+      const saved = await saveRemoteTheme(theme);
+      if (saved) markThemeSynced(theme.id, saved.updatedAt);
+    } catch (error) {
+      console.warn('Could not sync this theme to the cloud:', error);
+    }
+  }
+
+  async function removeThemeFromCloud(themeId) {
+    if (!firebaseReady || !authUser || !themeId) return;
+
+    try {
+      await deleteRemoteTheme(themeId);
+    } catch (error) {
+      console.warn('Could not remove this theme from the cloud:', error);
+    }
+  }
+
+  // Runs on every sign-in rather than once, because it is a reconcile and not
+  // a migration: what it does with a theme depends on whether this device has
+  // ever seen that theme in the cloud, so running it again is safe and running
+  // it again is how a second device catches up.
+  async function syncThemesWithCloud() {
+    if (!firebaseReady || !authUser) return;
+
+    try {
+      const remote = await loadRemoteThemes();
+      const { themes, toUpload } = reconcileThemes(customThemes, remote);
+
+      const now = Date.now();
+      const remoteIds = new Set(remote.map(theme => theme.id));
+      customThemes = themes.map(theme =>
+        remoteIds.has(theme.id) ? { ...theme, syncedAt: now } : theme
+      );
+      persistCustomThemes(customThemes);
+
+      for (const theme of toUpload) {
+        await pushThemeToCloud(theme);
+      }
+
+      // A theme the reconcile dropped may have been the one on screen.
+      if (
+        selectedThemeId !== CUSTOM_THEME_ID
+        && !availableThemes.some(theme => theme.id === selectedThemeId)
+        && STYLE_PRESETS.length
+      ) {
+        applyThemePreset(STYLE_PRESETS[0]);
+      }
+    } catch (error) {
+      console.warn('Could not sync themes with the cloud:', error);
+    }
+  }
+
   function handleAdvancedThemeSave(event) {
     const payload = normalizeThemePayload(event.detail || {});
     if (!payload) return;
@@ -1461,6 +1552,7 @@
 
     customThemes = [...customThemes, newTheme];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(newTheme);
 
     applyThemePreset(newTheme);
 
@@ -1481,7 +1573,8 @@
     const existing = customThemes[index];
     const updatedTheme = {
       ...existing,
-      ...payload
+      ...payload,
+      updatedAt: Date.now()
     };
 
     customThemes = [
@@ -1490,6 +1583,7 @@
       ...customThemes.slice(index + 1)
     ];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(updatedTheme);
 
     applyThemePreset(updatedTheme);
     showAdvancedCssPage = false;
@@ -1504,6 +1598,7 @@
 
     customThemes = customThemes.filter(theme => theme.id !== id);
     persistCustomThemes(customThemes);
+    removeThemeFromCloud(id);
 
     if (selectedThemeId === id) {
       const fallback = customThemes[customThemes.length - 1] || STYLE_PRESETS[0] || null;
@@ -1531,6 +1626,7 @@
 
     customThemes = [...customThemes, newTheme];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(newTheme);
 
     applyThemePreset(newTheme);
     showAdvancedCssPage = false;
@@ -3776,6 +3872,10 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     if (firebaseReady) {
       stopAuthListener = onAuthStateChange(user => {
         authUser = user;
+        // Signing in is the moment this device's themes and the account's
+        // themes need to agree. Not awaited: sync is a background nicety and
+        // must never hold up the app starting.
+        if (user) syncThemesWithCloud();
       });
       checkSyncCompatibility()
         .then(result => {
