@@ -1,6 +1,7 @@
 <script>
   import { onMount, onDestroy, createEventDispatcher } from 'svelte';
   import BlockContextMenu from './BlockContextMenu.svelte';
+  import { fileNameForMedia } from '../utils/downloadNaming.js';
 
   // Array of image/video URLs to display
   export let images = [];
@@ -233,14 +234,46 @@
     { id: 'copyMedia', label: isVideo ? 'Copy URL' : 'Copy to clipboard' }
   ];
 
-  async function handleCtxAction(actionId) {
-    if (actionId === 'saveMedia') {
+  // Saving used to point an <a download> straight at the attachment's URL. The
+  // download attribute is ignored for cross-origin links, and attachments live
+  // on Firebase Storage — so the browser navigated to the picture instead of
+  // saving it, which is why saving meant leaving the app and saving again from
+  // wherever it opened. Fetching it first makes it a blob: URL, which is
+  // same-origin, and the attribute is honoured.
+  async function saveMediaToDevice() {
+    try {
+      const response = await fetch(src);
+      if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
+
+      const blob = await response.blob();
+      const objectUrl = URL.createObjectURL(blob);
+
       const a = document.createElement('a');
-      a.href = src;
-      a.download = isVideo ? 'video' : 'image';
+      a.href = objectUrl;
+      a.download = fileNameForMedia({
+        url: src,
+        contentType: blob.type,
+        fallbackBase: isVideo ? 'arial-video' : 'arial-image',
+        isVideo
+      });
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+
+      // Revoked on a delay rather than immediately: the click starts the save
+      // asynchronously and revoking too early cancels it.
+      setTimeout(() => URL.revokeObjectURL(objectUrl), 10_000);
+    } catch (error) {
+      console.warn('Could not save this attachment, opening it instead:', error);
+      // Better to land somewhere the picture can be saved by hand than to do
+      // nothing at all and look broken.
+      window.open(src, '_blank', 'noopener');
+    }
+  }
+
+  async function handleCtxAction(actionId) {
+    if (actionId === 'saveMedia') {
+      await saveMediaToDevice();
     } else if (actionId === 'copyMedia') {
       try {
         const res = await fetch(src);

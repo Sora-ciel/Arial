@@ -4419,7 +4419,12 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   justify-content: center;
   gap: 8px;
   flex: 0 0 auto;
-  width: 26px;
+  /* Wide enough for the readout at its widest, which is "100". It used to be
+     26px, which fits "7" and not "100" — and a flex item's min-width is auto,
+     so the label quietly grew to fit its content instead of clipping it. The
+     slider is a fixed 14px and never moved; what widened as the volume went up
+     was the number underneath it. */
+  width: 36px;
   color: var(--dlg-btn-text, var(--dlg-text, #fff));
   cursor: pointer;
 }
@@ -4437,6 +4442,14 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
   color: var(--dlg-btn-text, var(--dlg-text, #fff));
+}
+
+/* Reserves three digits whatever the number is, so the readout keeps the same
+   footprint from 0 to 100 and the icon beside it stops shuffling sideways.
+   tabular-nums above keeps the digits themselves from changing width. */
+.pp-vol-number {
+  min-width: 3ch;
+  text-align: right;
 }
 
 @media (max-width: 1024px) {
@@ -4854,7 +4867,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
               aria-label="Volume"
             />
             <span class="pp-vol-readout">
-              {Math.round(musicVolume * 100)}
+              <span class="pp-vol-number">{Math.round(musicVolume * 100)}</span>
               <PlayerIcon name={musicVolume === 0 ? 'mute' : 'volume'} size={13} />
             </span>
           </label>
