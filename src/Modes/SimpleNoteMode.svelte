@@ -113,6 +113,16 @@
 
   function startTouchHold(event, blockId) {
     if (event.touches?.length !== 1) return;
+
+    // A drag still open when a new touch begins is one whose ending never
+    // arrived: the card being carried was rebuilt underneath the finger, and
+    // both touchend and touchcancel went to a node that no longer exists. Left
+    // alone the state stays stuck — every later tap is treated as part of a
+    // drag that finished long ago, which is why the mode could stop responding
+    // until it was reopened. Finish it here, committing the swap it had
+    // already chosen so the move is not lost as well.
+    if (dragCardId) endDrag(Boolean(dragOverCardId));
+
     touchHoldTriggered = false;
     clearTimeout(touchHoldTimer);
     const touch = event.touches[0];
@@ -173,7 +183,15 @@
       const card = el.closest?.('[data-simple-block]');
       if (card) { id = card.dataset.simpleBlock; break; }
     }
-    dragOverCardId = id && id !== dragCardId ? id : null;
+
+    const found = id && id !== dragCardId ? id : null;
+
+    // A target once found is kept until another one replaces it. Recomputing
+    // it on every move meant the very last move decided the drop, so lifting a
+    // finger in the gap between two cards — or over the dragged card itself —
+    // threw the target away and the drop did nothing. Holding the last one
+    // makes releasing forgiving, which is what a finger needs.
+    if (found) dragOverCardId = found;
   }
 
   function endDrag(commit) {
@@ -239,9 +257,24 @@
     updateDragTarget(touch.clientX, touch.clientY);
   }
 
+  // A cancelled touch is usually not somebody changing their mind.
+  //
+  // The list is keyed by `${block.id}-${block._version}`, so anything that
+  // bumps a version mid-gesture — a save, or a sync arriving — gives that card
+  // a new key, and Svelte answers a new key by destroying the node and
+  // building another. Touch events belong to the node the gesture started on,
+  // so the browser cancels the touch, and this used to throw the drop away
+  // with it. That is the whole of "sometimes it does nothing when I let go":
+  // it depended on whether a save landed while the finger was down. The
+  // pointer path never had the problem because its listeners are on window
+  // rather than on the card.
+  //
+  // So a cancel that arrives with a target already chosen is treated as the
+  // drop it was about to be. A cancel with no target still discards, which is
+  // the case where somebody really did back out.
   function handleBlockTouchCancel() {
     cancelTouchHold();
-    endDrag(false);
+    endDrag(Boolean(dragCardId && dragOverCardId));
   }
 
   function deleteFromMenu(blockId) {

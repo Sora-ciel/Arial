@@ -246,16 +246,41 @@
       if (!response.ok) throw new Error(`fetch failed: ${response.status}`);
 
       const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = fileNameForMedia({
+      const name = fileNameForMedia({
         url: src,
         contentType: blob.type,
         fallbackBase: isVideo ? 'arial-video' : 'arial-image',
         isVideo
       });
+
+      // On a phone, a download lands in a Downloads folder the gallery does not
+      // index, so the picture is saved and still not in Photos. Handing the file
+      // to the system sheet instead offers "Save to Photos" — and on iOS it is
+      // the only route a web page has to the camera roll at all.
+      //
+      // canShare is asked about this exact file: support for sharing text is
+      // near-universal and support for sharing files is not, and a share that
+      // is accepted and then silently drops the attachment looks like the save
+      // simply did nothing.
+      const file = new File([blob], name, { type: blob.type || 'application/octet-stream' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (error) {
+          // Dismissing the sheet throws AbortError, and that is a decision
+          // rather than a failure — falling through to a download would save
+          // the file somebody just declined to save.
+          if (error?.name === 'AbortError') return;
+          console.warn('Sharing failed, falling back to a download:', error);
+        }
+      }
+
+      const objectUrl = URL.createObjectURL(blob);
+
+      const a = document.createElement('a');
+      a.href = objectUrl;
+      a.download = name;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

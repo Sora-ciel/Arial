@@ -2653,11 +2653,27 @@
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('The image came back empty.');
 
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const name = `${currentSaveName || 'arial'}-${mode}-${stamp}.png`;
+
+      // Same reasoning as saving a picture from the lightbox: on a phone a
+      // download lands somewhere the gallery does not index, so the screenshot
+      // exists and is nowhere to be found. The system sheet offers Photos.
+      const file = new File([blob], name, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (error) {
+          if (error?.name === 'AbortError') return; // dismissed on purpose
+          console.warn('Sharing the screenshot failed, saving it instead:', error);
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       link.href = url;
-      link.download = `${currentSaveName || 'arial'}-${mode}-${stamp}.png`;
+      link.download = name;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
