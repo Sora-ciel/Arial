@@ -16,7 +16,7 @@
     "deploy:rules:staging": "npm run test:rules && firebase deploy --only database,storage --project staging",
     "tauri": "tauri",
     "test:triggers": "node scripts/emulator.mjs exec --only functions,database,storage,auth \"node --test --test-concurrency=1 test-triggers/**/*.test.js\"",
-    "dev:staging": "vite dev --mode staging",
+    "dev:staging": "vite dev --mode staging --port 5174 --strictPort",
     "build:staging": "vite build --mode staging"
   },
   "devDependencies": {
