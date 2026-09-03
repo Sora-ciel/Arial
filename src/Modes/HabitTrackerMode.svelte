@@ -157,7 +157,7 @@
     gap: 18px;
     padding: 30px;
     width: 100%;
-    height: calc(100vh - var(--controls-height, 56px));
+    height: calc(100dvh - var(--controls-height, 56px));
     overflow-y: auto;
     background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);

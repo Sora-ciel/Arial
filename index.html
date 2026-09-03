@@ -3,8 +3,20 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>Vite + Svelte</title>
+    <!-- interactive-widget=resizes-content is what keeps the controls on screen
+         while the on-screen keyboard is open. The default, resizes-visual,
+         shrinks only the visual viewport: the layout stays full-screen height,
+         so 100dvh keeps reporting the whole display, the page ends up taller
+         than the part you can see, and the browser pans to follow the caret —
+         carrying the toolbar off the top. Writing a long note in Simple Note
+         mode lost the controls for exactly that reason. This makes the
+         keyboard shrink the layout instead, so the app re-lays out to the room
+         it actually has. -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
+    />
+    <title>Arial</title>
   </head>
   <body>
     <div id="app"></div>
