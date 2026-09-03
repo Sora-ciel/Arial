@@ -60,6 +60,9 @@
   // Sync writes down what it decided, so a loop can be read back instead of
   // guessed at. See utils/syncLog.js.
   import { logSync, describeDifference } from './utils/syncLog.js';
+  // How long a typing save waits, and the ceiling that stops it waiting for
+  // ever. See utils/saveScheduling.js.
+  import { nextSaveDelay } from './utils/saveScheduling.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -2030,6 +2033,20 @@
   let _saveInFlight = false;
   let _pendingSave = null;       // latest payload waiting to run
   let _debounceTimer = null;     // for non-critical (typing) saves
+  // When the current run of unsaved changes began. The deadline in
+  // nextSaveDelay is measured from this and never moves, so no amount of
+  // continued typing can hold a write off indefinitely.
+  let _firstQueuedAt = 0;
+
+  function flushPendingSave() {
+    _debounceTimer = null;
+    _firstQueuedAt = 0;
+
+    if (!_pendingSave) return;
+    const payload = _pendingSave;
+    _pendingSave = null;
+    _runSave(payload);
+  }
 
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings, { immediate = false } = {}) {
     // No folder open — a fresh install, or the last one was just deleted.
@@ -2045,23 +2062,28 @@
     };
 
     if (!immediate) {
-      // Debounce: replace any queued save, schedule flush
+      // Replace whatever was queued — only the newest state is worth writing —
+      // and restart the quiet window. Restarting is the point: the previous
+      // version armed a timer on the first keystroke and then returned early on
+      // every one after it, which is a 300ms throttle rather than a debounce,
+      // and wrote the whole folder that often for as long as typing continued.
       _pendingSave = payload;
-      if (_debounceTimer) return;
-      _debounceTimer = setTimeout(() => {
-        _debounceTimer = null;
-        if (_pendingSave) {
-          const p = _pendingSave;
-          _pendingSave = null;
-          _runSave(p);
-        }
-      }, 300);
+
+      const now = Date.now();
+      if (!_firstQueuedAt) _firstQueuedAt = now;
+
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(
+        flushPendingSave,
+        nextSaveDelay({ now, firstQueuedAt: _firstQueuedAt })
+      );
       return;
     }
 
     // Immediate: flush debounce timer, run (or queue behind in-flight save)
     clearTimeout(_debounceTimer);
     _debounceTimer = null;
+    _firstQueuedAt = 0;
     _pendingSave = null;
     await _runSave(payload);
   }
@@ -3426,7 +3448,15 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   // the note they wrote on the other device. Re-attach the listener and ask
   // once, rather than waiting up to another thirty seconds.
   function handleVisibilityForSync() {
-    if (document.visibilityState !== 'visible') return;
+    // Leaving is the last safe moment to write. A typing save can now sit for
+    // up to SAVE_MAX_WAIT_MS, and on a phone "hidden" is very often the last
+    // thing that happens before the app is killed outright, so the queued
+    // change has to go to disk here rather than wait out a timer that may never
+    // fire.
+    if (document.visibilityState !== 'visible') {
+      flushPendingSave();
+      return;
+    }
 
     refreshRemoteIndexWatch();
     pullRemoteUpdatesIfNeeded().catch(error => {
@@ -4061,6 +4091,8 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
 
     startAutoSyncDownloadBackstop();
     document.addEventListener('visibilitychange', handleVisibilityForSync);
+    // Closing the tab or window is the other last-safe-moment.
+    window.addEventListener('pagehide', flushPendingSave);
 
     autoSyncUploadTick().catch(error => {
       console.error('Initial auto sync upload tick failed:', error);
@@ -4080,6 +4112,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     stopStorageUsageListener?.();
     stopRemoteIndexWatch();
     document.removeEventListener('visibilitychange', handleVisibilityForSync);
+    window.removeEventListener('pagehide', flushPendingSave);
     if (autoSyncUploadIntervalId !== null) {
       window.clearInterval(autoSyncUploadIntervalId);
       autoSyncUploadIntervalId = null;
