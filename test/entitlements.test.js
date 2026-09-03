@@ -10,7 +10,8 @@ const {
   resolvePlan,
   graceEndsAt,
   isAlreadyProcessed,
-  planChanged
+  planChanged,
+  expiredPlanFor
 } = entitlements;
 
 const NOW = Date.UTC(2026, 8, 1, 12, 0, 0);
@@ -150,6 +151,75 @@ describe('isAlreadyProcessed', () => {
   // silently drop every one of them.
   it('does not treat a missing id as already seen', () => {
     assert.equal(isAlreadyProcessed({ evt_1: true }, undefined), false);
+  });
+});
+
+// The webhook path is the fast one, and like every event-driven path it is
+// only as right as the last event it heard. A cancelled subscription is moved
+// off the paid plan by exactly one `subscription.revoked` delivery — so one
+// missed webhook leaves somebody paid-up for ever, silently, because nothing
+// else ever looks again. This is what looks again.
+describe('expiredPlanFor', () => {
+  const cancelled = (periodEndsAt, plan = 'pro') => ({
+    plan,
+    status: STATUS.CANCELED,
+    basePlan: 'free',
+    periodEndsAt
+  });
+
+  it('leaves a subscription alone while its period is still running', () => {
+    assert.equal(expiredPlanFor(cancelled(NOW + DAY), NOW), null);
+  });
+
+  // The whole point: the revocation webhook never arrived, and without this
+  // the account stays on the paid plan for good.
+  it('expires a cancelled plan whose period has quietly passed', () => {
+    assert.equal(expiredPlanFor(cancelled(NOW - DAY), NOW), 'free');
+  });
+
+  it('expires a grace period that ran out unnoticed', () => {
+    const record = {
+      plan: 'pro',
+      status: STATUS.PAST_DUE,
+      basePlan: 'free',
+      gracePeriodEndsAt: NOW - 1
+    };
+    assert.equal(expiredPlanFor(record, NOW), 'free');
+  });
+
+  it('gives a grandfathered account its own plan back, not free', () => {
+    const record = {
+      plan: 'pro',
+      status: STATUS.CANCELED,
+      basePlan: 'legacy',
+      periodEndsAt: NOW - DAY
+    };
+    assert.equal(expiredPlanFor(record, NOW), 'legacy');
+  });
+
+  it('has nothing to say about an account that is paying', () => {
+    assert.equal(expiredPlanFor({ plan: 'pro', status: STATUS.ACTIVE }, NOW), null);
+  });
+
+  it('has nothing to say about an account that never subscribed', () => {
+    assert.equal(expiredPlanFor({ plan: 'free', status: STATUS.NONE }, NOW), null);
+  });
+
+  // A record it cannot read must not be "corrected" into a downgrade — that
+  // would cut off someone who is paying, on the strength of a field this build
+  // does not recognise.
+  it('refuses to touch a record it cannot make sense of', () => {
+    assert.equal(expiredPlanFor({ plan: 'pro', status: 'hibernating' }, NOW), null);
+    assert.equal(expiredPlanFor({}, NOW), null);
+  });
+
+  // Safe to run twice, like every reconcile: it computes an absolute answer
+  // rather than applying a change.
+  it('is a no-op the second time it runs', () => {
+    const record = cancelled(NOW - DAY);
+    const next = expiredPlanFor(record, NOW);
+    assert.equal(next, 'free');
+    assert.equal(expiredPlanFor({ ...record, plan: next }, NOW), null);
   });
 });
 

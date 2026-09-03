@@ -112,6 +112,42 @@ function planChanged(current, next) {
   return (current || DEFAULT_PLAN) !== next;
 }
 
+/**
+ * What an account's plan should be, judged from its stored record alone.
+ *
+ * The webhook path is the fast one, and like every event-driven path it is
+ * only ever as right as the last event it heard. A cancelled subscription is
+ * kept on the paid plan until its period ends, and the only thing that moves
+ * it off is one `subscription.revoked` delivery — so a single missed webhook
+ * leaves somebody on the paid plan for ever, silently, because nothing else
+ * ever looks again.
+ *
+ * This is what looks again. Same shape as reconcileStorageUsage: an absolute
+ * answer computed from what is recorded, safe to run at any time and safe to
+ * run twice.
+ */
+function planFromRecord(record = {}, now = Date.now()) {
+  return resolvePlan({
+    status: record.status,
+    basePlan: record.basePlan,
+    periodEndsAt: record.periodEndsAt,
+    gracePeriodEndsAt: record.gracePeriodEndsAt,
+    now
+  });
+}
+
+/**
+ * Whether a record has drifted from what it should say.
+ *
+ * Returns the plan to write, or null when there is nothing to do — which is
+ * the overwhelmingly common case, and the reason a sweep over every account is
+ * cheap.
+ */
+function expiredPlanFor(record = {}, now = Date.now()) {
+  const next = planFromRecord(record, now);
+  return planChanged(record.plan, next) ? next : null;
+}
+
 module.exports = {
   STATUS,
   PAID_PLAN,
@@ -119,5 +155,7 @@ module.exports = {
   resolvePlan,
   graceEndsAt,
   isAlreadyProcessed,
-  planChanged
+  planChanged,
+  planFromRecord,
+  expiredPlanFor
 };
