@@ -1,6 +1,6 @@
 {
   "appId": "com.sora.arial",
-  "appName": "Ostava",
+  "appName": "Ostavia",
   "webDir": "dist",
   "plugins": {
     "SocialLogin": {

@@ -2654,7 +2654,7 @@
       if (!blob) throw new Error('The image came back empty.');
 
       const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
-      const name = `${currentSaveName || 'ostava'}-${mode}-${stamp}.png`;
+      const name = `${currentSaveName || 'ostavia'}-${mode}-${stamp}.png`;
 
       // Same reasoning as saving a picture from the lightbox: on a phone a
       // download lands somewhere the gallery does not index, so the screenshot

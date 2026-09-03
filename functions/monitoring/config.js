@@ -1,8 +1,8 @@
-// Ostava bandwidth monitoring - tunables.
+// Ostavia bandwidth monitoring - tunables.
 //
-// This is Ostava's own monitoring and is deliberately unrelated to any other
+// This is Ostavia's own monitoring and is deliberately unrelated to any other
 // project's: it is threshold-driven and continuous, because a sync backend has
-// no "finished" moment to report on. Nothing here is shared outside Ostava.
+// no "finished" moment to report on. Nothing here is shared outside Ostavia.
 
 const { DAILY_BYTE_LIMIT } = require('../limits');
 

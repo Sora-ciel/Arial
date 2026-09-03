@@ -1,5 +1,5 @@
 @echo off
-REM Ostava monitoring dashboard.
+REM Ostavia monitoring dashboard.
 REM
 REM Served over http://localhost rather than opened as a file:// page, because
 REM Firebase Auth only allows sign-in from an authorised domain and localhost
@@ -20,7 +20,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Serving the Ostava monitoring dashboard on http://localhost:%PORT%/dashboard.html
+echo Serving the Ostavia monitoring dashboard on http://localhost:%PORT%/dashboard.html
 echo Close this window to stop it.
 start "" "http://localhost:%PORT%/dashboard.html"
 python -m http.server %PORT% --bind 127.0.0.1

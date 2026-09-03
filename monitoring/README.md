@@ -1,4 +1,4 @@
-# Ostava monitoring dashboard
+# Ostavia monitoring dashboard
 
 A single static page for watching sync bandwidth and retuning the alerts. The
 alerting logic itself lives in [`../functions/monitoring/`](../functions/monitoring/);

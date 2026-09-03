@@ -1,4 +1,4 @@
-# Ostava bandwidth monitoring
+# Ostavia bandwidth monitoring
 
 Mails `toyane.tb@gmail.com` when sync traffic gets heavy — per user as it
 happens, project-wide hourly, and a summary at the end of each day.

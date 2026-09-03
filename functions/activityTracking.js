@@ -1,4 +1,4 @@
-// The database side of knowing how many people use Ostava and how much they
+// The database side of knowing how many people use Ostavia and how much they
 // keep in it. The arithmetic is in activity.js; this is what reads and writes.
 //
 // Everything here lives in top-level nodes rather than under
