@@ -1950,6 +1950,8 @@
   let cloudSyncMemoryByFile = loadCloudSyncMemory();
   let autoSyncEnabled = loadAutoSyncEnabled();
   let autoSyncUploadIntervalId = null;
+  // Downloads used to have no equivalent. See startAutoSyncDownloadBackstop.
+  let autoSyncDownloadIntervalId = null;
   let stopRemoteIndexWatch = () => {};
   let autoSyncDirty = false;
   // Per file, not a single joined string - lets the upload tick re-sync only
@@ -3396,6 +3398,42 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
 
   $: autoSyncEnabled, firebaseReady, authUser, refreshRemoteIndexWatch();
 
+  // Downloads were driven by that subscription and by nothing else, while
+  // uploads had a ten-second timer behind them. One listener that is not
+  // connected — a phone with the app in the background, a socket dropped, wifi
+  // handed over to mobile data — and this device never hears that anything
+  // changed. Not late: never, until something else happens to wake it. The
+  // other device meanwhile uploads perfectly and its log says so, which is what
+  // makes it look like the cloud has the changes and is refusing to hand them
+  // over.
+  //
+  // Thirty seconds rather than ten, because the subscription is still the fast
+  // path and this only has to catch what it misses. A tick that finds nothing
+  // reads the index and stops there — pullRemoteUpdatesIfNeeded compares a
+  // fingerprint before it touches a single folder.
+  function startAutoSyncDownloadBackstop() {
+    if (autoSyncDownloadIntervalId !== null) return;
+
+    autoSyncDownloadIntervalId = window.setInterval(() => {
+      pullRemoteUpdatesIfNeeded().catch(error => {
+        console.error('Auto sync download backstop failed:', error);
+      });
+    }, 30_000);
+  }
+
+  // Coming back to the app is the moment a phone is most likely to be holding a
+  // dead subscription, and the moment someone is most likely to be looking for
+  // the note they wrote on the other device. Re-attach the listener and ask
+  // once, rather than waiting up to another thirty seconds.
+  function handleVisibilityForSync() {
+    if (document.visibilityState !== 'visible') return;
+
+    refreshRemoteIndexWatch();
+    pullRemoteUpdatesIfNeeded().catch(error => {
+      console.error('Auto sync download on resume failed:', error);
+    });
+  }
+
   async function autoSyncUploadTick(options = {}) {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
     const force = options.force === true;
@@ -4021,6 +4059,9 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       });
     }, 10_000);
 
+    startAutoSyncDownloadBackstop();
+    document.addEventListener('visibilitychange', handleVisibilityForSync);
+
     autoSyncUploadTick().catch(error => {
       console.error('Initial auto sync upload tick failed:', error);
     });
@@ -4038,9 +4079,14 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     stopAuthListener?.();
     stopStorageUsageListener?.();
     stopRemoteIndexWatch();
+    document.removeEventListener('visibilitychange', handleVisibilityForSync);
     if (autoSyncUploadIntervalId !== null) {
       window.clearInterval(autoSyncUploadIntervalId);
       autoSyncUploadIntervalId = null;
+    }
+    if (autoSyncDownloadIntervalId !== null) {
+      window.clearInterval(autoSyncDownloadIntervalId);
+      autoSyncDownloadIntervalId = null;
     }
     if (deferredLastSaveTimer !== null) {
       window.clearTimeout(deferredLastSaveTimer);
