@@ -14,6 +14,9 @@ import {
   themeForSync,
   themeFromSync
 } from './utils/themeSync.js';
+// Which stored attachments no longer belong to a block. See
+// utils/attachmentCleanup.js.
+import { orphanedAttachmentIds } from './utils/attachmentCleanup.js';
 
 
 export { firebaseConfig, firebaseSyncNamespace };
@@ -519,6 +522,76 @@ export async function deleteRemoteFile(fileId) {
   }
 
   return { fileId };
+}
+
+// Watches this account's stored-byte record.
+//
+// Push rather than poll, like the remote index: the server rewrites the whole
+// record on every upload and delete, so the app sees a new total the moment
+// one lands instead of on a timer. The node is readable by its owner and by
+// nobody else — database.rules.json grants storage/{uid} to that uid alone.
+export function subscribeStorageUsage(callback) {
+  let detach = () => {};
+  let cancelled = false;
+
+  getFirebaseContext()
+    .then(ctx => {
+      if (cancelled || !ctx) return;
+      const user = ctx.auth.currentUser;
+      if (!user) return;
+
+      const usageRef = ctx.dbApi.ref(ctx.db, `storage/${user.uid}`);
+      const unsubscribe = ctx.dbApi.onValue(
+        usageRef,
+        snapshot => callback(snapshot.exists() ? snapshot.val() : null),
+        error => console.warn('Storage usage subscription failed:', error)
+      );
+      detach = unsubscribe;
+    })
+    .catch(error => console.warn('Storage usage subscription failed:', error));
+
+  return () => {
+    cancelled = true;
+    detach();
+  };
+}
+
+// Removes the uploads left behind by blocks that no longer exist.
+//
+// Deleting an image block never removed its upload: attachments were only
+// cleaned up when a whole folder was deleted, so a picture taken out of a note
+// stayed in the bucket for good, invisible and charged for. Harmless while
+// storage was free; not harmless when storage is what is being sold, and
+// actively broken once a ceiling exists — deleting is the only way out of a
+// full account, and it did not give the space back.
+//
+// Compares against what storage actually holds rather than against deletions
+// remembered as they happened, because remembering is wrong in both
+// directions: an undo restores a block while the memory still says to delete
+// it, and a redo removes one again without the memory noticing.
+export async function sweepOrphanBlockAttachments(fileId, keepBlockIds = []) {
+  if (!isFirebaseConfigured()) return null;
+
+  // A blank fileId would make `attachments/`, whose trailing slash is
+  // stripped, and this function deletes what it is pointed at.
+  if (!isSyncableFileId(fileId)) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  const root = getStorageUserPath(user.uid, `attachments/${fileId}`);
+  const listing = await ctx.storageApi.listAll(ctx.storageApi.ref(ctx.storage, root));
+
+  const orphans = orphanedAttachmentIds(
+    listing.prefixes.map(prefix => prefix.name),
+    keepBlockIds
+  );
+
+  for (const blockId of orphans) {
+    await deleteStorageFolder(ctx, `${root}/${blockId}`);
+  }
+
+  return { removed: orphans };
 }
 
 // ── Custom themes ───────────────────────────────────────────────────────────

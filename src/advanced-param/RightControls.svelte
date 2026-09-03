@@ -1,6 +1,9 @@
 <script>
   import ControlIcon from '../components/ControlIcon.svelte';
   export let savedList = [];
+  // The server's stored-byte record for this account: { bytes, limit, full }.
+  // Null when signed out, or before the first snapshot arrives.
+  export let storageUsage = null;
   export let load;
   export let deleteSave;
   export let createNewFile;
@@ -17,6 +20,7 @@
 
   import { createEventDispatcher, onMount, onDestroy } from "svelte";
   import { subscribeSyncLog, clearSyncLog, formatSyncLog } from '../utils/syncLog.js';
+  import { describeStorageUsage, storageMessageFor } from '../utils/storageUsage.js';
 
   // Sync writes down what it decided; this is where you read it. There is no
   // console in the packaged app, and the questions that matter — what did it
@@ -423,6 +427,62 @@
   /* The sync log. Dense on purpose: reading it means scanning for the one line
      that repeats, so each entry has to stay small enough that a loop is visible
      as a pattern rather than as a wall of text. */
+  /* Colours come from the panel's own theme variables rather than fixed
+     values, because every one of these is user-controlled: a hardcoded grey
+     bar vanishes on half the themes people build. */
+  .storage-usage {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin-top: 0.5rem;
+    padding: 0.55rem 0.65rem;
+    border: 1px solid var(--panel-border, #444);
+    border-radius: 8px;
+  }
+
+  .storage-usage-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.5rem;
+    font-size: 0.78rem;
+    opacity: 0.85;
+  }
+
+  .storage-usage-figure {
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .storage-usage-bar {
+    height: 6px;
+    border-radius: 999px;
+    overflow: hidden;
+    background: color-mix(in srgb, currentColor 18%, transparent);
+  }
+
+  .storage-usage-bar > span {
+    display: block;
+    height: 100%;
+    background: currentColor;
+    transition: width 0.25s ease;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .storage-usage-bar > span { transition: none; }
+  }
+
+  /* Severity is carried by colour *and* by the message below it, never by
+     colour alone. */
+  .storage-usage[data-state='nearly'] { color: #e0a341; }
+  .storage-usage[data-state='full'] { color: #ff6b6b; }
+
+  .storage-usage-message {
+    margin: 0;
+    font-size: 0.74rem;
+    line-height: 1.35;
+  }
+
   .sync-log {
     margin-top: 6px;
     border: 1px solid var(--dlg-border, #444);
@@ -527,6 +587,34 @@
               </button>
               <button class="create-theme-btn" type="button" on:click={signOut}>🚪 Sign Out</button>
               <p class="empty-state">Signed in as {authUser.displayName || authUser.email || authUser.uid}</p>
+
+              {#if storageUsage}
+                {@const usage = describeStorageUsage(storageUsage)}
+                {@const message = storageMessageFor(storageUsage)}
+                <div class="storage-usage" data-state={usage.state}>
+                  <div class="storage-usage-head">
+                    <span>Cloud storage</span>
+                    <span class="storage-usage-figure">{usage.label}</span>
+                  </div>
+
+                  {#if usage.state !== 'unlimited'}
+                    <div
+                      class="storage-usage-bar"
+                      role="progressbar"
+                      aria-valuenow={usage.percent}
+                      aria-valuemin="0"
+                      aria-valuemax="100"
+                      aria-label="Cloud storage used"
+                    >
+                      <span style="width: {usage.percent}%"></span>
+                    </div>
+                  {/if}
+
+                  {#if message}
+                    <p class="storage-usage-message">{message}</p>
+                  {/if}
+                </div>
+              {/if}
             {:else}
               <button class="create-theme-btn" type="button" on:click={signIn}>🔐 Sign in Google</button>
             {/if}

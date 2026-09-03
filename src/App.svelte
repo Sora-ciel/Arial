@@ -29,7 +29,9 @@
     checkSyncCompatibility,
     loadRemoteThemes,
     saveRemoteTheme,
-    deleteRemoteTheme
+    deleteRemoteTheme,
+    sweepOrphanBlockAttachments,
+    subscribeStorageUsage
   } from './firebaseClient.js';
   import { reconcileThemes } from './utils/themeSync.js';
   import {
@@ -1837,6 +1839,9 @@
   let savedList = [];
   let firebaseReady = isFirebaseConfigured();
   let authUser = null;
+  // The account's stored-byte record, streamed from storage/{uid}. Null until
+  // someone signs in and the first snapshot arrives.
+  let storageUsage = null;
   let uploadInProgress = false;
   let downloadInProgress = false;
   let fileInputRef;
@@ -1962,10 +1967,30 @@
     persistCloudSyncMemory(cloudSyncMemoryByFile);
   }
 
+  // Set when a block is deleted, so the sweep below only runs on a save that
+  // could have orphaned something. Sweeping every save would mean listing
+  // storage every few seconds while someone types, for an answer that is
+  // almost always "nothing to do".
+  let blocksWereDeleted = false;
+
+  // Runs after the save, never before it, and never allowed to fail it: a
+  // leftover upload is a smaller problem than a note that would not save.
+  async function sweepDeletedBlockAttachments(fileName) {
+    if (!blocksWereDeleted || !firebaseReady || !authUser) return;
+    blocksWereDeleted = false;
+
+    try {
+      await sweepOrphanBlockAttachments(fileName, blocks.map(block => block.id));
+    } catch (error) {
+      console.warn('Could not remove attachments for deleted blocks:', error);
+    }
+  }
+
   async function saveRemoteFileWithMemory(fileName, payload, options = {}) {
     const result = await saveRemoteFile(fileName, payload, options);
     const syncedAt = Date.now();
     rememberCloudSyncForFile(fileName, syncedAt);
+    await sweepDeletedBlockAttachments(fileName);
     return result;
   }
 
@@ -2647,6 +2672,10 @@
     if (deletingBlock?.type === 'image') {
       markCloudAttachmentDirty();
     }
+    // Any block can carry an upload, not just an image one — a picture pasted
+    // into written text is stored the same way — so every deletion arms the
+    // sweep rather than only the obvious ones.
+    blocksWereDeleted = true;
     pushHistory(blocks, modeOrders);
   }
 
@@ -3847,6 +3876,9 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   }
 
   let stopAuthListener = () => {};
+  // Torn down and re-attached on every auth change, so one account's figures
+  // can never be left on screen for the next person to sign in.
+  let stopStorageUsageListener = null;
 
   onMount(async () => {
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
@@ -3876,6 +3908,16 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
         // themes need to agree. Not awaited: sync is a background nicety and
         // must never hold up the app starting.
         if (user) syncThemesWithCloud();
+
+        stopStorageUsageListener?.();
+        stopStorageUsageListener = null;
+        storageUsage = null;
+
+        if (user) {
+          stopStorageUsageListener = subscribeStorageUsage(usage => {
+            storageUsage = usage;
+          });
+        }
       });
       checkSyncCompatibility()
         .then(result => {
@@ -3994,6 +4036,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
+    stopStorageUsageListener?.();
     stopRemoteIndexWatch();
     if (autoSyncUploadIntervalId !== null) {
       window.clearInterval(autoSyncUploadIntervalId);
@@ -4752,6 +4795,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     <div class="right-controls">
       <RightControls
         {savedList}
+        {storageUsage}
         {load}
         {deleteSave}
         {createNewFile}
