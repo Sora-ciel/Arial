@@ -99,6 +99,15 @@ describe('storage limits', () => {
     assert.equal(isOverStorageLimit(overFreeUnderLegacy, 'legacy'), false);
   });
 
+  // The ceiling and everything past it can only be exercised by crossing it,
+  // and crossing 100 MB for a test means uploading 100 MB. `tiny` is how one
+  // photo gets there instead.
+  it('gives a tiny plan a ceiling a single photo clears', () => {
+    assert.ok(STORAGE_BYTE_LIMITS.tiny < STORAGE_BYTE_LIMITS.free);
+    assert.equal(isOverStorageLimit(2 * 1024 * 1024, 'tiny'), true);
+    assert.equal(isOverStorageLimit(2 * 1024 * 1024, 'free'), false);
+  });
+
   it('never puts the owner account over', () => {
     assert.equal(storageLimitFor('owner'), Number.POSITIVE_INFINITY);
     assert.equal(isOverStorageLimit(STORAGE_BYTE_LIMITS.pro * 1000, 'owner'), false);

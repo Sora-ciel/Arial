@@ -27,7 +27,8 @@ const STORAGE_BYTE_LIMITS = {
   free: 100 * 1024 * 1024, //   100 MB — the default, and what a price attaches to
   pro: 10 * 1024 * 1024 * 1024, //   10 GB — the paid tier
   legacy: 5 * 1024 * 1024 * 1024, //    5 GB — grandfathered
-  owner: Number.POSITIVE_INFINITY // no ceiling
+  owner: Number.POSITIVE_INFINITY, // no ceiling
+  tiny: 1 * 1024 * 1024 //     1 MB — for testing the ceiling
 };
 
 // `legacy` exists because a limit introduced after people are already using
@@ -40,6 +41,17 @@ const STORAGE_BYTE_LIMITS = {
 // about the shape of a uid: matching a prefix would hand unlimited storage to
 // whichever stranger's account happened to start with the same two characters,
 // and "who pays nothing" is not a question to answer with a substring.
+//
+// `tiny` exists so the far side of the ceiling can be reached on purpose. The
+// interesting behaviour — the account flipping to full, the claim landing on
+// the token, uploads being refused, and all of it unwinding again when
+// something is deleted — only happens past the limit, and proving it at 100 MB
+// means uploading 100 MB every time anyone wants to check. Put a staging
+// account on `tiny` and one photo is enough.
+//
+// It is safe in production for the same reason every other plan is: nothing
+// assigns it. A plan is written by the server, per account, and only ever the
+// one somebody chose.
 
 const DEFAULT_PLAN = 'free';
 
