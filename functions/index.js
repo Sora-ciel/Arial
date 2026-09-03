@@ -243,13 +243,29 @@ exports.rollUpStats = onSchedule(
 
 // Bandwidth monitoring. Kept in its own folder with its own config, its own
 // mailer and its own thresholds: it only reads what the quota guard above
-// writes, so removing these three lines disables every alert without touching
-// enforcement.
-const monitoring = require('./monitoring');
-exports.bandwidthWatch = monitoring.bandwidthWatch;
-exports.projectBandwidthWatch = monitoring.projectBandwidthWatch;
-exports.bandwidthDigest = monitoring.bandwidthDigest;
-exports.sendMonitoringTestMail = monitoring.sendMonitoringTestMail;
+// writes, so leaving it out disables every alert without touching enforcement.
+//
+// Production only. These exist to mail a real person about real traffic, and
+// they declare the SMTP secret to do it — which means a project without that
+// secret cannot deploy *anything* while they are declared, because the CLI
+// resolves every secret in the codebase before working out which functions you
+// actually asked for. Staging has no reason to want alerts and no business
+// holding the credential.
+//
+// Keyed on the project rather than on a variable, because a variable does not
+// survive the trip. The CLI analyses this file in a subprocess it gives a
+// curated environment: anything exported in the shell is dropped, and the
+// project's own .env file is loaded *after* the analysis has already run. Both
+// were tried. GCLOUD_PROJECT is the one thing reliably set by then.
+const PRODUCTION_PROJECT_ID = 'arial-473c1';
+
+if (process.env.GCLOUD_PROJECT === PRODUCTION_PROJECT_ID) {
+  const monitoring = require('./monitoring');
+  exports.bandwidthWatch = monitoring.bandwidthWatch;
+  exports.projectBandwidthWatch = monitoring.projectBandwidthWatch;
+  exports.bandwidthDigest = monitoring.bandwidthDigest;
+  exports.sendMonitoringTestMail = monitoring.sendMonitoringTestMail;
+}
 
 // Keeps sync/{ns}/meta/schemaVersion in sync with the constants above so
 // clients (checkSyncCompatibility in firebaseClient.js) always read a
