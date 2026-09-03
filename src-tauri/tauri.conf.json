@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "Arial",
+  "productName": "Ostava",
   "version": "0.8.44",
   "identifier": "com.sora.codex",
   "build": {
@@ -12,7 +12,7 @@
   "app": {
     "windows": [
       {
-        "title": "Arial",
+        "title": "Ostava",
         "maximized": true,
         "width": 800,
         "height": 600,

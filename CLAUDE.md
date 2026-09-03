@@ -1,4 +1,4 @@
-# Working on Arial
+# Working on Ostava
 
 Two rules that were each learned the same way — by shipping the opposite and
 finding out later.
@@ -47,7 +47,7 @@ Two things follow from this, and both have already bitten:
 `App.svelte` needs a component runtime and `firebaseClient.js` imports
 Capacitor, so neither can be loaded outside a browser. Any rule buried in them
 can only be exercised by running the app, signing in, and trying it by hand —
-which is why the bugs in them were found by the person using Arial rather than
+which is why the bugs in them were found by the person using Ostava rather than
 the person changing it.
 
 So the part that *decides* lives in a plain module and the part that *acts*

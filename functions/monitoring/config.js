@@ -1,8 +1,8 @@
-// Arial bandwidth monitoring - tunables.
+// Ostava bandwidth monitoring - tunables.
 //
-// This is Arial's own monitoring and is deliberately unrelated to any other
+// This is Ostava's own monitoring and is deliberately unrelated to any other
 // project's: it is threshold-driven and continuous, because a sync backend has
-// no "finished" moment to report on. Nothing here is shared outside Arial.
+// no "finished" moment to report on. Nothing here is shared outside Ostava.
 
 const { DAILY_BYTE_LIMIT } = require('../limits');
 
