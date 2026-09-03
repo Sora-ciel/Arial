@@ -662,7 +662,7 @@
       const url = URL.createObjectURL(archive);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'arial-music.zip';
+      a.download = 'ostava-music.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

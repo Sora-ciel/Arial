@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for Arial: RTDB usage quota guard + schema version migration",
+  "description": "Cloud Functions for Ostava: RTDB usage quota guard + schema version migration",
   "private": true,
   "main": "index.js",
   "engines": {
