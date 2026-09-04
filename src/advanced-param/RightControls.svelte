@@ -304,7 +304,6 @@
       letter-spacing: 0.04em;
     }
 
-    .collapsible-section > .section-summary { padding: 2px 0; }
 }
 
   .controls-scroll ul {
@@ -394,24 +393,6 @@
     opacity: 0.85;
   }
 
-  /* Folded-away section: the summary row is the only thing showing when shut. */
-  .collapsible-section > .section-summary {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    list-style: none;
-    padding: 4px 0;
-  }
-  .collapsible-section > .section-summary::-webkit-details-marker { display: none; }
-  .collapsible-section > .section-summary::after {
-    content: '▾';
-    margin-left: auto;
-    font-size: 0.7rem;
-    opacity: 0.7;
-    transition: transform 0.15s ease;
-  }
-  .collapsible-section[open] > .section-summary::after { transform: rotate(180deg); }
 
   .empty-state {
     font-size: 0.8rem;

@@ -1,8 +1,11 @@
 <script>
-  import { createEventDispatcher } from 'svelte';
-  import { isPrimaryPointer } from '../utils/pointer.js';
+  /**
+   * A block of writing. Everything that makes it a *block* — where it sits, how
+   * big it is, its colours, its header, dragging, resizing — is BlockShell's;
+   * what is left here is what makes it text.
+   */
+  import BlockShell from './BlockShell.svelte';
   import TipTapEditor from './TipTapEditor.svelte';
-  import ColorField from './ColorField.svelte';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
@@ -14,317 +17,33 @@
   export let focused = false;
   export let canvasScale = 1;
 
-  const dispatch = createEventDispatcher();
-
-  let position = { ...initialPosition };
-  let size = { ...initialSize };
-  let bgColor = initialBgColor;
-  let textColor = initialTextColor;
   let content = initialContent;
   let scrollTop = initialScrollTop;
-
-  let dragging = false, resizing = false;
-  let offset = { x: 0, y: 0 }, resizeStart = {};
-
-  function getCanvasPoint(event) {
-    const source = event.touches ? event.touches[0] : event;
-    const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
-    return {
-      x: source.clientX / safeScale,
-      y: source.clientY / safeScale
-    };
-  }
-  let suppressClick = false;
-  let hasDragged = false;
-  let hasResized = false;
-
-  function sendUpdate(changedKeys, { pushToHistory } = {}) {
-    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = { id, position, size, bgColor, textColor, content, scrollTop };
-
-    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
-    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
-
-    dispatch('update', detail);
-  }
-
-  // Drag start
-  function onDragStart(e) {
-    // Right-click is canvas pan, not block drag.
-    if (!isPrimaryPointer(e)) return;
-    if (dragging) return;
-    ensureFocus();
-    dragging = true;
-    hasDragged = false;
-
-    const point = getCanvasPoint(e);
-
-    offset = { x: point.x - position.x, y: point.y - position.y };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchmove', onMouseMove, { passive: false });
-    window.addEventListener('touchend', onMouseUp);
-    window.addEventListener('pointermove', onMouseMove);
-    window.addEventListener('pointerup', onMouseUp);
-
-    if (typeof e.pointerId === 'number' && e.currentTarget?.setPointerCapture) {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-  }
-
-  // Drag move
-  function onMouseMove(e) {
-    if (!dragging) return;
-
-    const point = getCanvasPoint(e);
-
-    position = {
-      x: Math.max(0, point.x - offset.x),
-      y: Math.max(0, point.y - offset.y)
-    };
-    hasDragged = true;
-
-    if (e.cancelable) e.preventDefault(); // stop scrolling on mobile
-  }
-
-  // Drag end
-  function onMouseUp() {
-    dragging = false;
-    resizing = false;
-    document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-    window.removeEventListener('touchmove', onMouseMove);
-    window.removeEventListener('touchend', onMouseUp);
-    window.removeEventListener('pointermove', onMouseMove);
-    window.removeEventListener('pointerup', onMouseUp);
-    sendUpdate(['position']);
-    if (hasDragged) {
-      suppressClick = true;
-      hasDragged = false;
-      requestAnimationFrame(() => (suppressClick = false));
-    }
-  }
-
-  // Resize start
-  function onResizeStart(e) {
-    e.stopPropagation();
-    ensureFocus();
-    resizing = true;
-    hasResized = false;
-    document.body.style.userSelect = 'none';
-
-    const point = getCanvasPoint(e);
-
-    resizeStart = { x: point.x, y: point.y, ...size };
-
-    window.addEventListener('mousemove', onResizing);
-    window.addEventListener('mouseup', onResizeEnd);
-    window.addEventListener('touchmove', onResizing, { passive: false });
-    window.addEventListener('touchend', onResizeEnd);
-  }
-
-  // Resizing
-  function onResizing(e) {
-    if (!resizing) return;
-
-    const point = getCanvasPoint(e);
-
-    size.width = Math.max(100, resizeStart.width + (point.x - resizeStart.x));
-    size.height = Math.max(50, resizeStart.height + (point.y - resizeStart.y));
-    hasResized = true;
-
-    if (e.cancelable) e.preventDefault();
-  }
-
-  // Resize end
-  function onResizeEnd() {
-    resizing = false;
-    document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', onResizing);
-    window.removeEventListener('mouseup', onResizeEnd);
-    window.removeEventListener('touchmove', onResizing);
-    window.removeEventListener('touchend', onResizeEnd);
-    sendUpdate(['size']);
-    if (hasResized) {
-      suppressClick = true;
-      hasResized = false;
-      requestAnimationFrame(() => (suppressClick = false));
-    }
-  }
-
-  // Delete
-  function deleteBlock() {
-    dispatch('delete', { id });
-  }
-
-  function ensureFocus() {
-    if (!focused) {
-      dispatch('focusToggle', { id });
-    }
-  }
-
-  function handleWrapperClick(event) {
-    if (suppressClick) return;
-    if (event.defaultPrevented) return;
-    if (event.target.closest('[data-focus-guard]')) {
-      ensureFocus();
-      return;
-    }
-    ensureFocus();
-  }
-
-  function handleWrapperKeydown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
-
-    if (event.target !== event.currentTarget) {
-      return;
-    }
-
-    event.preventDefault();
-    handleWrapperClick(event);
-  }
-
-  function handleEditableScroll(e) {
-    scrollTop = e.detail;
-    sendUpdate(['scrollTop'], { pushToHistory: false });
-  }
 </script>
 
-<style>
-  .note {
-    /* scrollbars inside the block follow the block's own colors */
-    --sb-track: var(--bg);
-    --sb-thumb: var(--text);
-    position: absolute;
-    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
-    border-radius: var(--block-border-radius, 12px);
-    box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background-color: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
-    color: var(--text);
-    outline: 2px solid transparent;
-    transition: box-shadow 0.15s ease, outline 0.15s ease;
-    font-family: var(--block-body-font, inherit);
-  }
-  .note.focused {
-    outline: 2px solid var(--block-focus-outline, rgba(110, 168, 255, 0.85));
-    box-shadow: var(--block-focus-shadow, 0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5));
-  }
-  .header {
-    padding: 6px 10px;
-    background: color-mix(in srgb, var(--block-header-bg, var(--bg)) var(--block-header-opacity, 100%), transparent);
-    color: var(--block-header-text, var(--text));
-    font-size: 0.85rem;
-    cursor: move;
-    touch-action: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-family: var(--block-header-font, var(--block-body-font, inherit));
-    letter-spacing: var(--block-header-letter-spacing, 0.08em);
-    text-transform: var(--block-header-transform, uppercase);
-  }
-  .header-controls {
-    display: flex;
-    gap: 4px;
-  }
-  :global(.note .tiptap-wrap) {
-    background: transparent;
-    color: var(--text);
-    font-size: 1.1rem;
-    font-weight: 500;
-    font-family: var(--block-body-font, inherit);
-  }
-  :global(.note .tiptap-inner) {
-    color: var(--text);
-    padding: 8px;
-  }
-  .resize-handle {
-    position: absolute;
-    bottom: 0px;
-    right: 0px;
-    width: 30px;
-    height: 30px;
-    cursor: se-resize;
-    touch-action: none;
-    z-index: 10;
-  }
-  .delete-btn {
-    background: var(--block-accent-color, var(--text));
-    border-color: transparent;
-    font-size: 1.1rem;
-    color: var(--block-accent-text, var(--bg));
-    cursor: pointer;
-    padding: 0px 8px;
-    border-radius: var(--block-control-radius, 6px);
-    transition: transform 0.15s ease, filter 0.2s ease;
-  }
-
-  .delete-btn:hover {
-    transform: scale(1.05);
-    filter: brightness(1.08);
-  }
-</style>
-
-<div
-  class="note"
-  class:focused={focused}
-  data-block-id={id}
-  style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
-  role="button"
-  tabindex="0"
-  aria-pressed={focused}
-  on:click={handleWrapperClick}
-  on:keydown={handleWrapperKeydown}
+<BlockShell
+  {id}
+  {initialPosition}
+  {initialSize}
+  {initialBgColor}
+  {initialTextColor}
+  {focused}
+  {canvasScale}
+  label="Text"
+  fields={{ content, scrollTop }}
+  on:update
+  on:delete
+  on:focusToggle
+  let:commit
+  let:ensureFocus
 >
-  <div
-    class="header"
-    on:mousedown={onDragStart}
-    on:pointerdown={onDragStart}
-    on:touchstart={onDragStart}
-    role="presentation"
-  >
-    <span>Text</span>
-    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
-      <ColorField
-        value={bgColor}
-        title="Background"
-        placement="side"
-        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
-        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
-      />
-      <ColorField
-        value={textColor}
-        title="Text"
-        placement="side"
-        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
-        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
-      />
-      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
-    </div>
-  </div>
-
   <TipTapEditor
     {content}
     {initialScrollTop}
     historyKey={id}
     placeholder=""
-    on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
-    on:scroll={handleEditableScroll}
+    on:change={(e) => { content = e.detail; commit(['content'], { pushToHistory: false }); }}
+    on:scroll={(e) => { scrollTop = e.detail; commit(['scrollTop'], { pushToHistory: false }); }}
     on:focus={ensureFocus}
   />
-
-  <div
-    class="resize-handle"
-    role="presentation"
-    on:mousedown={onResizeStart}
-    on:touchstart={onResizeStart}
-  ></div>
-
-</div>
+</BlockShell>
