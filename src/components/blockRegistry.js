@@ -1,6 +1,5 @@
 export const BLOCK_DEFINITIONS = {
   text: { type: 'text', label: 'Text', icon: '+' },
-  cleantext: { type: 'cleantext', label: 'Clean Text', icon: '+' },
   image: { type: 'image', label: 'Image', icon: '+' },
   music: { type: 'music', label: 'Music', icon: '+' },
   embed: { type: 'embed', label: 'Embed', icon: '+' },

@@ -7,8 +7,8 @@
   export let id;
   export let initialPosition = { x: 100, y: 100 };
   export let initialSize = { width: 300, height: 200 };
-  export let initialBgColor = '#000000';
-  export let initialTextColor = '#ffffff';
+  export let initialBgColor = '#ffffff';
+  export let initialTextColor = '#000000';
   export let initialContent = '';
   export let initialScrollTop = 0;
   export let focused = false;
@@ -23,13 +23,8 @@
   let content = initialContent;
   let scrollTop = initialScrollTop;
 
-  let dragging = false;
-  let resizing = false;
-  let suppressClick = false;
-  let hasDragged = false;
-  let hasResized = false;
-  let offset = { x: 0, y: 0 };
-  let resizeStart = { x: 0, y: 0, width: 0, height: 0 };
+  let dragging = false, resizing = false;
+  let offset = { x: 0, y: 0 }, resizeStart = {};
 
   function getCanvasPoint(event) {
     const source = event.touches ? event.touches[0] : event;
@@ -39,6 +34,9 @@
       y: source.clientY / safeScale
     };
   }
+  let suppressClick = false;
+  let hasDragged = false;
+  let hasResized = false;
 
   function sendUpdate(changedKeys, { pushToHistory } = {}) {
     const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
@@ -81,16 +79,20 @@
 
     const point = getCanvasPoint(e);
 
-    position.x = Math.max(0, point.x - offset.x);
-    position.y = Math.max(0, point.y - offset.y);
+    position = {
+      x: Math.max(0, point.x - offset.x),
+      y: Math.max(0, point.y - offset.y)
+    };
     hasDragged = true;
 
-    if (e.cancelable) e.preventDefault();
+    if (e.cancelable) e.preventDefault(); // stop scrolling on mobile
   }
 
   // Drag end
   function onMouseUp() {
     dragging = false;
+    resizing = false;
+    document.body.style.userSelect = '';
     window.removeEventListener('mousemove', onMouseMove);
     window.removeEventListener('mouseup', onMouseUp);
     window.removeEventListener('touchmove', onMouseMove);
@@ -115,12 +117,7 @@
 
     const point = getCanvasPoint(e);
 
-    resizeStart = {
-      x: point.x,
-      y: point.y,
-      width: size.width,
-      height: size.height
-    };
+    resizeStart = { x: point.x, y: point.y, ...size };
 
     window.addEventListener('mousemove', onResizing);
     window.addEventListener('mouseup', onResizeEnd);
@@ -134,11 +131,8 @@
 
     const point = getCanvasPoint(e);
 
-    const deltaX = point.x - resizeStart.x;
-    const deltaY = point.y - resizeStart.y;
-
-    size.width = Math.max(50, resizeStart.width + deltaX);
-    size.height = Math.max(50, resizeStart.height + deltaY);
+    size.width = Math.max(100, resizeStart.width + (point.x - resizeStart.x));
+    size.height = Math.max(50, resizeStart.height + (point.y - resizeStart.y));
     hasResized = true;
 
     if (e.cancelable) e.preventDefault();
@@ -160,7 +154,7 @@
     }
   }
 
-  // Delete block
+  // Delete
   function deleteBlock() {
     dispatch('delete', { id });
   }
@@ -194,105 +188,95 @@
     handleWrapperClick(event);
   }
 
-  function handleTextScroll(e) {
+  function handleEditableScroll(e) {
     scrollTop = e.detail;
     sendUpdate(['scrollTop'], { pushToHistory: false });
   }
 </script>
 
 <style>
-  .wrapper {
+  .note {
     /* scrollbars inside the block follow the block's own colors */
     --sb-track: var(--bg);
     --sb-thumb: var(--text);
     position: absolute;
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
     border-radius: var(--block-border-radius, 12px);
-    background: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
     box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
-    outline: 2px solid transparent;
-    transition: box-shadow 0.15s ease, outline 0.15s ease, transform 0.2s ease;
-    overflow: hidden;
     display: flex;
     flex-direction: column;
+    overflow: hidden;
+    background-color: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
+    color: var(--text);
+    outline: 2px solid transparent;
+    transition: box-shadow 0.15s ease, outline 0.15s ease;
     font-family: var(--block-body-font, inherit);
   }
-  .wrapper.focused {
+  .note.focused {
     outline: 2px solid var(--block-focus-outline, rgba(110, 168, 255, 0.85));
     box-shadow: var(--block-focus-shadow, 0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5));
   }
   .header {
+    padding: 6px 10px;
     background: color-mix(in srgb, var(--block-header-bg, var(--bg)) var(--block-header-opacity, 100%), transparent);
-    padding: 4px 8px;
+    color: var(--block-header-text, var(--text));
+    font-size: 0.85rem;
     cursor: move;
     touch-action: none;
-    user-select: none;
-    font-size: 0.8rem;
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 10px;
-    color: var(--block-header-text, var(--text));
     font-family: var(--block-header-font, var(--block-body-font, inherit));
-    letter-spacing: var(--block-header-letter-spacing, 0.04em);
+    letter-spacing: var(--block-header-letter-spacing, 0.08em);
     text-transform: var(--block-header-transform, uppercase);
   }
   .header-controls {
     display: flex;
-    gap: 8px;
-    align-items: center;
+    gap: 4px;
   }
-  button.delete-btn {
-    background: var(--block-accent-color, #ff5f5f);
-    color: var(--block-accent-text, #ffffff);
-    border: none;
-    cursor: pointer;
-    padding: 2px 8px;
-    font-weight: 600;
-    border-radius: var(--block-control-radius, 6px);
-    transition: transform 0.15s ease, filter 0.2s ease;
-  }
-  button.delete-btn:hover {
-    transform: scale(1.05);
-    filter: brightness(1.1);
-  }
-  .text-container {
-    flex: 1;
-    background-color: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
-    box-sizing: border-box;
-    display: flex;
-    flex-direction: column;
-  }
-  /* TipTapEditor fills the block body and inherits block colors */
-  :global(.text-container .tiptap-wrap) {
-    height: 100%;
+  :global(.note .tiptap-wrap) {
     background: transparent;
     color: var(--text);
-    font-size: 1.08rem;
-    font-weight: 300;
+    font-size: 1.1rem;
+    font-weight: 500;
     font-family: var(--block-body-font, inherit);
   }
-  :global(.text-container .tiptap-inner) {
+  :global(.note .tiptap-inner) {
     color: var(--text);
     padding: 8px;
   }
   .resize-handle {
     position: absolute;
+    bottom: 0px;
+    right: 0px;
     width: 30px;
     height: 30px;
-    background: rgba(253, 253, 253, 0);
-    right: 0;
-    bottom: 0;
     cursor: se-resize;
     touch-action: none;
+    z-index: 10;
+  }
+  .delete-btn {
+    background: var(--block-accent-color, var(--text));
+    border-color: transparent;
+    font-size: 1.1rem;
+    color: var(--block-accent-text, var(--bg));
+    cursor: pointer;
+    padding: 0px 8px;
+    border-radius: var(--block-control-radius, 6px);
+    transition: transform 0.15s ease, filter 0.2s ease;
+  }
+
+  .delete-btn:hover {
+    transform: scale(1.05);
+    filter: brightness(1.08);
   }
 </style>
 
 <div
-  class="wrapper"
+  class="note"
   class:focused={focused}
   data-block-id={id}
-  style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
+  style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
   role="button"
   tabindex="0"
   aria-pressed={focused}
@@ -306,18 +290,18 @@
     on:touchstart={onDragStart}
     role="presentation"
   >
-    <div>text</div>
+    <span>Text</span>
     <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
       <ColorField
         value={bgColor}
-        title="Background Color"
+        title="Background"
         placement="side"
         on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
         on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
       />
       <ColorField
         value={textColor}
-        title="Text Color"
+        title="Text"
         placement="side"
         on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
         on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
@@ -326,17 +310,15 @@
     </div>
   </div>
 
-  <div class="text-container">
-    <TipTapEditor
-      {content}
-      {initialScrollTop}
-      historyKey={id}
-      placeholder=""
-      on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
-      on:scroll={handleTextScroll}
-      on:focus={ensureFocus}
-    />
-  </div>
+  <TipTapEditor
+    {content}
+    {initialScrollTop}
+    historyKey={id}
+    placeholder=""
+    on:change={(e) => { content = e.detail; sendUpdate(['content'], { pushToHistory: false }); }}
+    on:scroll={handleEditableScroll}
+    on:focus={ensureFocus}
+  />
 
   <div
     class="resize-handle"
@@ -344,4 +326,5 @@
     on:mousedown={onResizeStart}
     on:touchstart={onResizeStart}
   ></div>
+
 </div>

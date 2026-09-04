@@ -2,20 +2,20 @@ export const MODE_DEFINITIONS = {
   default: {
     id: 'default',
     label: 'Canvas Mode',
-    addBlockTypes: ['text', 'cleantext', 'image', 'music', 'embed'],
+    addBlockTypes: ['text', 'image', 'music', 'embed'],
     showRightControls: true
   },
   simple: {
     id: 'simple',
     label: 'Simple Note Mode',
-    addBlockTypes: ['text', 'cleantext', 'image', 'music', 'embed'],
+    addBlockTypes: ['text', 'image', 'music', 'embed'],
     showRightControls: true,
     settings: { simpleColumns: true }
   },
   single: {
     id: 'single',
     label: 'Single Note Mode',
-    addBlockTypes: ['text', 'cleantext'],
+    addBlockTypes: ['text'],
     showRightControls: true,
     settings: { singleBackground: true }
   },
@@ -32,7 +32,7 @@ export const MODE_DEFINITIONS = {
   task: {
     id: 'task',
     label: 'Task Mode',
-    addBlockTypes: ['text', 'cleantext', 'image', 'music', 'embed', 'task'],
+    addBlockTypes: ['text', 'image', 'music', 'embed', 'task'],
     showRightControls: true
   },
   playlist: {

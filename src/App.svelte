@@ -2546,7 +2546,7 @@
       if (blocks.some(block => block.type === "text" || block.type === "cleantext")) {
         return;
       }
-      type = "cleantext";
+      type = "text";
     }
     const blockW = 300, blockH = 200;
     // Added deliberately from the menu, so put it where the user is looking —
@@ -2957,7 +2957,7 @@
     const txtW = 300, txtH = 200;
     const newBlock = applyHistoryTriggers({
       id: crypto.randomUUID(),
-      type: 'cleantext',
+      type: 'text',
       content,
       src: '',
       position: mode === 'default' ? findFreePosition(blocks, txtW, txtH) : { x: 100, y: 100 },
@@ -4004,7 +4004,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       mode === "single" &&
       !blocks.some(block => block.type === "text" || block.type === "cleantext")
     ) {
-      addBlock("cleantext");
+      addBlock("text");
     }
   }
 

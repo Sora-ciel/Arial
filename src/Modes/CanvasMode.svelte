@@ -4,9 +4,8 @@
   import ModeBackground from '../components/ModeBackground.svelte';
   import { MIN_CANVAS_WIDTH, MIN_ZOOM, MAX_ZOOM, getInitialCanvasScale } from '../utils/canvasFit.js';
   import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
-  import TexteBlock from '../components/TexteBlock.svelte';
+  import TextBlock from '../components/TextBlock.svelte';
   import ImgBlock from '../components/ImgBlock.svelte';
-  import Texteclean from '../components/TexteClean.svelte';
   import Music from '../components/MusicBlock.svelte';
   import Embed from '../components/EmbedBlock.svelte';
   import TaskBlock from '../components/TaskBlock.svelte';
@@ -646,8 +645,8 @@
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
       {#each blocks as block (`${block.id}-${block._version || 0}`)}
-        {#if block.type === 'text'}
-          <TexteBlock
+        {#if block.type === 'text' || block.type === 'cleantext'}
+          <TextBlock
             id={block.id}
             initialPosition={block.position}
             initialSize={block.size}
@@ -678,22 +677,6 @@
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
             on:lightbox={openCanvasLightbox}
-          />
-        {:else if block.type === 'cleantext'}
-          <Texteclean
-            id={block.id}
-            initialPosition={block.position}
-            initialSize={block.size}
-            initialBgColor={block.bgColor}
-            initialTextColor={block.textColor}
-            initialContent={block.content}
-            initialScrollTop={block.scrollTop}
-            focused={block.id === focusedBlockId}
-            canvasScale={scale}
-            on:delete={deleteBlockHandler}
-            on:update={updateBlockHandler}
-            on:focusToggle={focusToggleHandler}
-
           />
         {:else if block.type === 'music'}
           <Music
