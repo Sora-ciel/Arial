@@ -72,6 +72,9 @@
     backgroundSettings={canvasBackgroundSettings}
     {blocks}
     {focusedBlockId}
+    library={musicLibrary}
+    {nowPlayingId}
+    {isPlaying}
     bind:canvasRef
     {canvasColors}
     on:touchstart={onTouchStart}
@@ -80,6 +83,8 @@
     on:update={updateBlockHandler}
     on:delete={deleteBlockHandler}
     on:focusToggle={focusToggleHandler}
+    on:play
+    on:toggle
   />
 {:else if mode === 'simple'}
     <SimpleNoteMode

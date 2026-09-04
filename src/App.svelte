@@ -1746,7 +1746,7 @@
     text: ['position', 'size', 'bgColor', 'textColor'],
     cleantext: ['position', 'size', 'bgColor', 'textColor'],
     image: ['position', 'size', 'bgColor', 'textColor', 'src'],
-    music: ['position', 'size', 'bgColor', 'textColor', 'trackUrl', 'title', 'content'],
+    music: ['position', 'size', 'bgColor', 'textColor', 'playlistId', 'trackUrl', 'title', 'content'],
     embed: ['position', 'size', 'bgColor', 'textColor', 'content'],
     task: ['tasks', 'title'],
     __default: ['position', 'size', 'bgColor', 'textColor', 'content', 'src', 'trackUrl', 'title']

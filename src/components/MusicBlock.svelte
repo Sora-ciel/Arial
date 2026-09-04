@@ -1,385 +1,315 @@
 <script>
-  import { createEventDispatcher, onMount } from 'svelte';
-  import { isPrimaryPointer } from '../utils/pointer.js';
-  import ColorField from './ColorField.svelte';
+  /**
+   * A playlist, playable from the canvas.
+   *
+   * This block used to hold a single `trackUrl` and a bare `<audio controls>`.
+   * Two things were wrong with that. The small one is that it knew nothing
+   * about the music library, so a block could not play anything you had
+   * actually imported. The larger one is that its "choose a file" button stored
+   * `URL.createObjectURL(file)` — a blob: address that is only valid for the
+   * page that made it — so a track added that way was gone on the next reload,
+   * and the block had been quietly forgetting music the whole time.
+   *
+   * It is a view onto the library now: it stores a playlist id and nothing
+   * else, so a track renamed or deleted in Playlist mode changes here too. And
+   * it drives the app's one audio element rather than opening a second — two
+   * players would fight over the same speakers, and pausing one would leave the
+   * other playing.
+   *
+   * `trackUrl` is left in the saved data, untouched. It is dead here, but it is
+   * the user's, and an older build still knows what to do with it.
+   */
+  import { createEventDispatcher } from 'svelte';
+  import BlockShell from './BlockShell.svelte';
+  import {
+    ALL_MUSIC,
+    resolveQueue,
+    playlistLabel,
+    stepTrack,
+    isQueuePlaying
+  } from '../utils/playlistPlayback.js';
 
   export let id;
   export let initialPosition = { x: 100, y: 100 };
-  export let initialSize = { width: 320, height: 180 };
+  export let initialSize = { width: 320, height: 240 };
   export let initialBgColor = '#ffffff';
   export let initialTextColor = '#000000';
-  export let initialTrackUrl = '';
-  export let initialTitle = 'Music Player';
   export let focused = false;
   export let canvasScale = 1;
 
+  /** Which playlist this block plays. Empty means the whole library. */
+  export let initialPlaylistId = ALL_MUSIC;
+  /** Kept so it survives a save; see the note above. */
+  export let initialTrackUrl = '';
+
+  /** The library, and what the app's player is doing with it. */
+  export let library = { tracks: [], playlists: [] };
+  export let nowPlayingId = null;
+  export let isPlaying = false;
+
   const dispatch = createEventDispatcher();
 
-  let position = { ...initialPosition };
-  let size = { ...initialSize };
-  let bgColor = initialBgColor;
-  let textColor = initialTextColor;
-  let trackUrl = initialTrackUrl;
-  let title = initialTitle;
+  let playlistId = initialPlaylistId;
+  const trackUrl = initialTrackUrl;
+  let picking = false;
 
-  let dragging = false, resizing = false;
-  let offset = { x: 0, y: 0 }, resizeStart = {};
+  $: resolved = resolveQueue(library, playlistId);
+  $: queue = resolved.tracks;
+  $: label = playlistLabel(library, playlistId);
+  $: playingHere = isQueuePlaying(queue, nowPlayingId, isPlaying);
+  $: currentIndex = queue.findIndex((t) => t.id === nowPlayingId);
+  $: playlists = Array.isArray(library?.playlists) ? library.playlists : [];
 
-  function getCanvasPoint(event) {
-    const source = event.touches ? event.touches[0] : event;
-    const safeScale = Number(canvasScale) > 0 ? Number(canvasScale) : 1;
-    return {
-      x: source.clientX / safeScale,
-      y: source.clientY / safeScale
-    };
-  }
-  let suppressClick = false;
-  let hasDragged = false;
-  let hasResized = false;
-  let showSettings = false;
-
-  function sendUpdate(changedKeys, { pushToHistory } = {}) {
-    const effectiveKeys = Array.isArray(changedKeys) && changedKeys.length ? changedKeys : [];
-    const detail = {
-      id,
-      position,
-      size,
-      bgColor,
-      textColor,
-      trackUrl,
-      title
-    };
-
-    if (effectiveKeys.length) detail.changedKeys = effectiveKeys;
-    if (pushToHistory !== undefined) detail.pushToHistory = pushToHistory;
-
-    dispatch('update', detail);
+  function play(track) {
+    if (!track) return;
+    dispatch('play', { trackId: track.id, queue: queue.map((t) => t.id) });
   }
 
-  // Handle local audio file upload
-  function handleFileChange(event) {
-    ensureFocus();
-    const file = event.target.files?.[0];
-    if (file) {
-      trackUrl = URL.createObjectURL(file);
-      sendUpdate(['trackUrl']);
-    }
-  }
-
-  // Drag start
-  function onDragStart(e) {
-    // Right-click is canvas pan, not block drag.
-    if (!isPrimaryPointer(e)) return;
-    if (dragging) return;
-    ensureFocus();
-    dragging = true;
-    hasDragged = false;
-    const point = getCanvasPoint(e);
-    offset = { x: point.x - position.x, y: point.y - position.y };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    window.addEventListener('touchmove', onMouseMove, { passive: false });
-    window.addEventListener('touchend', onMouseUp);
-    window.addEventListener('pointermove', onMouseMove);
-    window.addEventListener('pointerup', onMouseUp);
-
-    if (typeof e.pointerId === 'number' && e.currentTarget?.setPointerCapture) {
-      e.currentTarget.setPointerCapture(e.pointerId);
-    }
-  }
-
-  function onMouseMove(e) {
-    if (!dragging) return;
-    const point = getCanvasPoint(e);
-    position = {
-      x: Math.max(0, point.x - offset.x),
-      y: Math.max(0, point.y - offset.y)
-    };
-    hasDragged = true;
-    if (e.cancelable) e.preventDefault();
-  }
-
-  function onMouseUp() {
-    dragging = false;
-    resizing = false;
-    document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', onMouseMove);
-    window.removeEventListener('mouseup', onMouseUp);
-    window.removeEventListener('touchmove', onMouseMove);
-    window.removeEventListener('touchend', onMouseUp);
-    window.removeEventListener('pointermove', onMouseMove);
-    window.removeEventListener('pointerup', onMouseUp);
-    sendUpdate(['position']);
-    if (hasDragged) {
-      suppressClick = true;
-      hasDragged = false;
-      requestAnimationFrame(() => (suppressClick = false));
-    }
-  }
-
-  // Resize start
-  function onResizeStart(e) {
-    e.stopPropagation();
-    ensureFocus();
-    resizing = true;
-    hasResized = false;
-    document.body.style.userSelect = 'none';
-    const point = getCanvasPoint(e);
-    resizeStart = { x: point.x, y: point.y, ...size };
-
-    window.addEventListener('mousemove', onResizing);
-    window.addEventListener('mouseup', onResizeEnd);
-    window.addEventListener('touchmove', onResizing, { passive: false });
-    window.addEventListener('touchend', onResizeEnd);
-  }
-
-  function onResizing(e) {
-    if (!resizing) return;
-    const point = getCanvasPoint(e);
-    size.width = Math.max(200, resizeStart.width + (point.x - resizeStart.x));
-    size.height = Math.max(100, resizeStart.height + (point.y - resizeStart.y));
-    hasResized = true;
-    if (e.cancelable) e.preventDefault();
-  }
-
-  function onResizeEnd() {
-    resizing = false;
-    document.body.style.userSelect = '';
-    window.removeEventListener('mousemove', onResizing);
-    window.removeEventListener('mouseup', onResizeEnd);
-    window.removeEventListener('touchmove', onResizing);
-    window.removeEventListener('touchend', onResizeEnd);
-    sendUpdate(['size']);
-    if (hasResized) {
-      suppressClick = true;
-      hasResized = false;
-      requestAnimationFrame(() => (suppressClick = false));
-    }
-  }
-
-  function deleteBlock() {
-    dispatch('delete', { id });
-  }
-
-  function ensureFocus() {
-    if (!focused) {
-      dispatch('focusToggle', { id });
-    }
-  }
-
-  function handleWrapperClick(event) {
-    if (suppressClick) return;
-    if (event.defaultPrevented) return;
-    if (event.target.closest('[data-focus-guard]')) {
-      ensureFocus();
+  // The transport button does the thing that makes sense from where the block
+  // is: pause what is playing here, resume it, or — if this block's music is
+  // not what is playing at all — start this block from its first track.
+  function onPlayPause() {
+    if (currentIndex !== -1) {
+      dispatch('toggle');
       return;
     }
-    ensureFocus();
+    play(queue[0]);
   }
 
-  function handleWrapperKeydown(event) {
-    if (event.key !== 'Enter' && event.key !== ' ') {
-      return;
-    }
+  function step(delta) {
+    play(stepTrack(queue, nowPlayingId, delta));
+  }
 
-    if (event.target !== event.currentTarget) {
-      return;
-    }
-
-    event.preventDefault();
-    handleWrapperClick(event);
+  function choose(nextId, commit) {
+    playlistId = nextId;
+    picking = false;
+    commit(['playlistId']);
   }
 </script>
 
+<BlockShell
+  {id}
+  {initialPosition}
+  {initialSize}
+  {initialBgColor}
+  {initialTextColor}
+  {focused}
+  {canvasScale}
+  {label}
+  fields={{ playlistId, trackUrl }}
+  minHeight={140}
+  on:update
+  on:delete
+  on:focusToggle
+  let:commit
+  let:ensureFocus
+>
+  <button
+    slot="header-controls"
+    let:ensureFocus={focusBlock}
+    class="pick-btn"
+    title="Choose a playlist"
+    aria-label="Choose a playlist"
+    data-focus-guard
+    on:click={() => { focusBlock(); picking = !picking; }}
+  >☰</button>
+
+  <div class="player">
+    {#if picking}
+      <div class="picker">
+        <button
+          class="picker-row"
+          class:chosen={playlistId === ALL_MUSIC}
+          on:click={() => choose(ALL_MUSIC, commit)}
+        >All music</button>
+        {#each playlists as playlist (playlist.id)}
+          <button
+            class="picker-row"
+            class:chosen={playlist.id === playlistId}
+            on:click={() => choose(playlist.id, commit)}
+          >{playlist.name}</button>
+        {/each}
+        {#if !playlists.length}
+          <p class="empty">No playlists yet. Make one in Playlist mode.</p>
+        {/if}
+      </div>
+    {:else if resolved.missing}
+      <p class="empty">
+        That playlist is gone. Pick another with ☰.
+      </p>
+    {:else if !queue.length}
+      <p class="empty">
+        Nothing here yet. Import music in Playlist mode.
+      </p>
+    {:else}
+      <div class="transport">
+        <button on:click={() => step(-1)} aria-label="Previous track" data-focus-guard>⏮</button>
+        <button class="play" on:click={onPlayPause} aria-label={playingHere ? 'Pause' : 'Play'} data-focus-guard>
+          {playingHere ? '⏸' : '▶'}
+        </button>
+        <button on:click={() => step(1)} aria-label="Next track" data-focus-guard>⏭</button>
+        <span class="count">{queue.length} track{queue.length === 1 ? '' : 's'}</span>
+      </div>
+
+      <ul class="tracks">
+        {#each queue as track (track.id)}
+          <li>
+            <button
+              class="track"
+              class:current={track.id === nowPlayingId}
+              on:click={() => play(track)}
+              data-focus-guard
+            >
+              <span class="mark">{track.id === nowPlayingId ? (playingHere ? '▶' : '❚❚') : ''}</span>
+              <span class="title">{track.title || 'Untitled'}</span>
+              {#if track.artist}<span class="artist">{track.artist}</span>{/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+    {/if}
+  </div>
+</BlockShell>
+
 <style>
   .player {
-    position: absolute;
-    /* scrollbars inside the block follow the block's own colors */
-    --sb-track: var(--bg);
-    --sb-thumb: var(--text);
-    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--text));
-    border-radius: var(--block-border-radius, 12px);
-    box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    background-color: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
-    color: var(--text);
-    outline: 2px solid transparent;
-    transition: box-shadow 0.15s ease, outline 0.15s ease;
-    font-family: var(--block-body-font, inherit);
-  }
-  .player.focused {
-    outline: 2px solid var(--block-focus-outline, rgba(110, 168, 255, 0.85));
-    box-shadow: var(--block-focus-shadow, 0 0 0 2px rgba(110, 168, 255, 0.35), 0 0 12px rgba(110, 168, 255, 0.5));
-  }
-  .header {
-    padding: 6px 10px;
-    background: color-mix(in srgb, var(--block-header-bg, var(--bg)) var(--block-header-opacity, 100%), transparent);
-    color: var(--block-header-text, var(--text));
-    font-size: 0.85rem;
-    cursor: move;
-    touch-action: none;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-family: var(--block-header-font, var(--block-body-font, inherit));
-    letter-spacing: var(--block-header-letter-spacing, 0.08em);
-    text-transform: var(--block-header-transform, uppercase);
-  }
-  .header-controls {
-    display: flex;
-    gap: 4px;
-  }
-  .content {
     flex: 1;
+    min-height: 0;
     display: flex;
     flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    padding: 8px;
+    padding: 6px 8px 8px;
     box-sizing: border-box;
+    gap: 6px;
   }
-  audio {
-    width: 100%;
-    outline: none;
+
+  .empty {
+    margin: 0;
+    padding: 8px 2px;
+    opacity: 0.65;
+    font-size: 0.85rem;
+    line-height: 1.4;
   }
-  .resize-handle {
-    position: absolute;
-    bottom: 0px;
-    right: 0px;
-    width: 30px;
-    height: 30px;
-    cursor: se-resize;
-    touch-action: none;
-    z-index: 10;
+
+  .transport {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex: 0 0 auto;
   }
-  .delete-btn {
-    background: var(--block-accent-color, var(--text));
-    border-color: transparent;
-    font-size: 1.1rem;
-    color: var(--block-accent-text, var(--bg));
+
+  .transport button {
+    background: var(--block-media-button-bg, color-mix(in srgb, var(--text) 10%, transparent));
+    color: var(--block-media-button-text, var(--text));
+    border: none;
+    border-radius: var(--block-control-radius, 8px);
+    padding: 4px 10px;
+    font-size: 0.9rem;
+    line-height: 1.2;
     cursor: pointer;
-    padding: 0px 8px;
+  }
+
+  .transport .play {
+    background: var(--block-accent-color, color-mix(in srgb, var(--text) 22%, transparent));
+    color: var(--block-accent-text, var(--bg));
+  }
+
+  .count {
+    margin-left: auto;
+    font-size: 0.7rem;
+    opacity: 0.6;
+  }
+
+  .tracks {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .track {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 3px 4px;
     border-radius: var(--block-control-radius, 6px);
-    transition: transform 0.15s ease, filter 0.2s ease;
+    cursor: pointer;
+    font-size: 0.8rem;
   }
 
-  .delete-btn:hover {
-    transform: scale(1.05);
-    filter: brightness(1.08);
+  .track:hover {
+    background: color-mix(in srgb, var(--text) 10%, transparent);
   }
 
-  .gear-btn {
+  .track.current {
+    background: color-mix(in srgb, var(--text) 16%, transparent);
+  }
+
+  /* Fixed width so the titles line up whether or not a row is playing. */
+  .mark {
+    flex: 0 0 auto;
+    width: 1.1em;
+    font-size: 0.7rem;
+    opacity: 0.8;
+  }
+
+  .title {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .artist {
+    flex: 0 1 auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    opacity: 0.6;
+    font-size: 0.72rem;
+  }
+
+  .picker {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .picker-row {
+    display: block;
+    width: 100%;
+    text-align: left;
+    background: transparent;
+    border: none;
+    color: inherit;
+    padding: 5px 4px;
+    border-radius: var(--block-control-radius, 6px);
+    cursor: pointer;
+    font-size: 0.82rem;
+  }
+
+  .picker-row:hover {
+    background: color-mix(in srgb, var(--text) 10%, transparent);
+  }
+
+  .picker-row.chosen {
+    background: color-mix(in srgb, var(--text) 18%, transparent);
+  }
+
+  .pick-btn {
     background: transparent;
     border: none;
     cursor: pointer;
     padding: 2px 6px;
-    font-size: 1.4rem;
+    font-size: 1rem;
     line-height: 1;
-    color: var(--block-header-text, var(--text));
-  }
-
-  .settings-area {
-    padding: 0.75em;
-    border-top: 1px solid var(--block-border-color, var(--text));
-    font-size: 0.9em;
-    background: rgba(0, 0, 0, 0.25);
+    outline: none;
     color: var(--block-header-text, var(--text));
   }
 </style>
-
-<div
-  class="player"
-  class:focused={focused}
-  data-block-id={id}
-  style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
-  role="button"
-  tabindex="0"
-  aria-pressed={focused}
-  on:click={handleWrapperClick}
-  on:keydown={handleWrapperKeydown}
->
-  <div
-    class="header"
-    on:mousedown={onDragStart}
-    on:pointerdown={onDragStart}
-    on:touchstart={onDragStart}
-    role="presentation"
-  >
-    <span>{title}</span>
-    <div class="header-controls" on:mousedown|stopPropagation on:pointerdown|stopPropagation on:touchstart|stopPropagation role="presentation">
-      <button
-        on:click={() => { ensureFocus(); showSettings = !showSettings; }}
-        class="gear-btn"
-        data-focus-guard
-      >⚙︎</button>
-      <ColorField
-        value={bgColor}
-        title="Background Color"
-        placement="side"
-        on:input={(e) => { bgColor = e.detail; sendUpdate(['bgColor'], { pushToHistory: false }); }}
-        on:change={(e) => { bgColor = e.detail; sendUpdate(['bgColor']); }}
-      />
-      <ColorField
-        value={textColor}
-        title="Text Color"
-        placement="side"
-        on:input={(e) => { textColor = e.detail; sendUpdate(['textColor'], { pushToHistory: false }); }}
-        on:change={(e) => { textColor = e.detail; sendUpdate(['textColor']); }}
-      />
-      <button class="delete-btn" on:click|stopPropagation={deleteBlock}>×</button>
-    </div>
-  </div>
-
-  <div class="content">
-      {#if trackUrl}
-        <div></div>
-      {:else}
-            <p style="opacity: 0.6;">No track loaded</p>
-      {/if}
-      <audio controls src={trackUrl} data-focus-guard></audio>
-      <label>
-        Title:
-        <input
-          type="text"
-          bind:value={title}
-          on:input={() => sendUpdate(['title'])}
-          on:focus={ensureFocus}
-          data-focus-guard
-        />
-      </label>
-      <br />
-      <label>
-        Track URL:
-        <input
-          type="text"
-          bind:value={trackUrl}
-          on:input={() => sendUpdate(['trackUrl'])}
-          on:focus={ensureFocus}
-          placeholder="https://example.com/song.mp3"
-          data-focus-guard
-        />
-      </label>
-      <br />
-      <label>
-        Or upload file:
-        <input type="file" accept="audio/*" on:change={handleFileChange} data-focus-guard />
-      </label>
-
-  </div>
-
-  <div
-    class="resize-handle"
-    role="presentation"
-    on:mousedown={onResizeStart}
-    on:touchstart={onResizeStart}
-  ></div>
-
-  {#if showSettings}
-    <div class="settings-area">
-        <p>Settings area (put options here)</p>
-    </div>
-  {/if}
-</div>

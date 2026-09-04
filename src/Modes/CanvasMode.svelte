@@ -17,6 +17,12 @@
   // The folder currently open. Only used to notice when it changes, so the
   // zoom can go back to where a folder is meant to open at.
   export let openFolder = '';
+
+  // The music library, and what the app's one player is doing with it. A
+  // music block is a view onto these rather than a player of its own.
+  export let library = { tracks: [], playlists: [] };
+  export let nowPlayingId = null;
+  export let isPlaying = false;
   // The folder's wallpaper, the same settings Single Note uses. Normalising is
   // in utils/modeBackground.js and the drawing is ModeBackground.svelte, so the
   // two modes cannot drift apart.
@@ -685,12 +691,18 @@
             initialSize={block.size}
             initialBgColor={block.bgColor}
             initialTextColor={block.textColor}
-            initialContent={block.content}
+            initialPlaylistId={block.playlistId}
+            initialTrackUrl={block.trackUrl}
+            {library}
+            {nowPlayingId}
+            {isPlaying}
             focused={block.id === focusedBlockId}
             canvasScale={scale}
             on:delete={deleteBlockHandler}
             on:update={updateBlockHandler}
             on:focusToggle={focusToggleHandler}
+            on:play
+            on:toggle
           />
         {:else if block.type === 'embed'}
           <Embed
