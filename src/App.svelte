@@ -1983,12 +1983,25 @@
 
   // Runs after the save, never before it, and never allowed to fail it: a
   // leftover upload is a smaller problem than a note that would not save.
-  async function sweepDeletedBlockAttachments(fileName) {
+  // The block ids come from the folder that was actually saved, never from
+  // whatever is on screen now. Reading the live `blocks` looked equivalent and
+  // is not: delete a block, then switch folders before the save flushes, and
+  // the sweep would run with one folder's name and another folder's ids. None
+  // would match, and it would delete every attachment the first folder owned.
+  // This function removes things permanently, so it is told exactly what was
+  // written rather than asked to assume.
+  async function sweepDeletedBlockAttachments(fileName, savedPayload) {
     if (!blocksWereDeleted || !firebaseReady || !authUser) return;
     blocksWereDeleted = false;
 
+    const savedBlocks = savedPayload?.blocks;
+    // No blocks in the payload is not the same as a folder with no blocks: it
+    // is a payload this code did not understand, and the safe reading of that
+    // is to remove nothing.
+    if (!Array.isArray(savedBlocks)) return;
+
     try {
-      await sweepOrphanBlockAttachments(fileName, blocks.map(block => block.id));
+      await sweepOrphanBlockAttachments(fileName, savedBlocks.map(block => block?.id));
     } catch (error) {
       console.warn('Could not remove attachments for deleted blocks:', error);
     }
@@ -1998,7 +2011,7 @@
     const result = await saveRemoteFile(fileName, payload, options);
     const syncedAt = Date.now();
     rememberCloudSyncForFile(fileName, syncedAt);
-    await sweepDeletedBlockAttachments(fileName);
+    await sweepDeletedBlockAttachments(fileName, payload);
     return result;
   }
 
