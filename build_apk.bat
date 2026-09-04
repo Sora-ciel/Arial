@@ -62,6 +62,6 @@ popd
 
 echo.
 echo [OK] APK at android\app\build\outputs\apk\release\app-release.apk
-echo      Copy it to release\ as Arial_^<version^>.apk before publishing.
+echo      Copy it to release\ as Austavia_^<version^>.apk before publishing.
 echo.
 pause
