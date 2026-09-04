@@ -35,6 +35,12 @@
   } from './firebaseClient.js';
   import { reconcileThemes } from './utils/themeSync.js';
   import {
+    themeKey,
+    needsFullRepaint,
+    paintAll,
+    paintUnpainted
+  } from './utils/themePainting.js';
+  import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
     CUSTOM_THEME_ID,
@@ -1315,31 +1321,42 @@
   // Per-folder switch travels with the file through sync; the app-wide one is
   // a device preference that forces it on regardless of the folder.
   $: blocksFollowTheme = blocksFollowThemeAll || modeSettings.blocksFollowTheme === true;
-  // Repaint whenever the switch is on and the theme's colours move. It's a
-  // no-op once everything already matches, so re-running costs nothing.
-  $: if (blocksFollowTheme && blocks.length) paintBlocksWithTheme(newBlockColors);
+  // Two passes, because the switch has two moments and only one is a repaint.
+  // The reasoning, and the bug that came of running one pass for both, is in
+  // utils/themePainting.js. The short version: a single statement naming
+  // `blocks` re-ran on the user's own colour change and put the theme's colour
+  // straight back, so the colour picker did nothing for as long as the switch
+  // was on.
+  let lastPaintedTheme = null;
+  $: repaintForTheme(blocksFollowTheme, newBlockColors);
+  $: if (blocksFollowTheme && blocks.length) paintNewBlocksWithTheme(newBlockColors);
+
+  // The theme moved, or the switch has just come on: everything follows.
+  function repaintForTheme(on, colors) {
+    if (!on) {
+      lastPaintedTheme = null;
+      return;
+    }
+    if (!needsFullRepaint(lastPaintedTheme, colors)) return;
+    lastPaintedTheme = themeKey(colors);
+    paintBlocksWithTheme(colors);
+  }
+
+  // Blocks changed: catch only ones the theme has never had, so a block just
+  // added joins in and a colour the user picked by hand survives.
+  function paintNewBlocksWithTheme(colors) {
+    const next = paintUnpainted(blocks, colors);
+    if (next === blocks) return;
+    blocks = next;
+    pushHistory(blocks, modeOrders);
+  }
 
   // Applies theme colours across every block in every mode, stashing each
   // block's own colours the first time so turning the switch off restores
   // exactly what the user had picked.
   function paintBlocksWithTheme(colors) {
-    let touched = false;
-    const next = blocks.map(block => {
-      const alreadyStashed = block._baseBgColor !== undefined;
-      if (alreadyStashed && block.bgColor === colors.bgColor && block.textColor === colors.textColor) {
-        return block;
-      }
-      touched = true;
-      return {
-        ...block,
-        _baseBgColor: alreadyStashed ? block._baseBgColor : block.bgColor,
-        _baseTextColor: alreadyStashed ? block._baseTextColor : block.textColor,
-        bgColor: colors.bgColor,
-        textColor: colors.textColor,
-        _version: (block._version || 0) + 1
-      };
-    });
-    if (!touched) return;
+    const next = paintAll(blocks, colors);
+    if (next === blocks) return;
     blocks = next;
     pushHistory(blocks, modeOrders);
   }
