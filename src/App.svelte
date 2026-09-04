@@ -38,7 +38,7 @@
     themeKey,
     needsFullRepaint,
     paintAll,
-    paintUnpainted
+    paintStale
   } from './utils/themePainting.js';
   import {
     CONTROL_COLOR_DEFAULTS,
@@ -1329,7 +1329,7 @@
   // was on.
   let lastPaintedTheme = null;
   $: repaintForTheme(blocksFollowTheme, newBlockColors);
-  $: if (blocksFollowTheme && blocks.length) paintNewBlocksWithTheme(newBlockColors);
+  $: if (blocksFollowTheme && blocks.length) paintStaleBlocksWithTheme(newBlockColors);
 
   // The theme moved, or the switch has just come on: everything follows.
   function repaintForTheme(on, colors) {
@@ -1342,10 +1342,11 @@
     paintBlocksWithTheme(colors);
   }
 
-  // Blocks changed: catch only ones the theme has never had, so a block just
-  // added joins in and a colour the user picked by hand survives.
-  function paintNewBlocksWithTheme(colors) {
-    const next = paintUnpainted(blocks, colors);
+  // Blocks changed — a folder opened, a block added. Paint whatever is not
+  // already wearing this theme, which includes a folder whose blocks were last
+  // painted under a different one; a colour the user picked is left alone.
+  function paintStaleBlocksWithTheme(colors) {
+    const next = paintStale(blocks, colors);
     if (next === blocks) return;
     blocks = next;
     pushHistory(blocks, modeOrders);

@@ -4,8 +4,9 @@ import assert from 'node:assert/strict';
 import {
   themeKey,
   needsFullRepaint,
+  needsPaint,
   paintAll,
-  paintUnpainted
+  paintStale
 } from '../src/utils/themePainting.js';
 
 const THEME = { bgColor: '#101014', textColor: '#ffffff' };
@@ -35,45 +36,68 @@ test('a theme whose colours moved repaints', () => {
   assert.equal(needsFullRepaint(themeKey(THEME), OTHER), true);
 });
 
-test('painting stashes what the block had, so the switch can be turned off', () => {
+test('painting records both what was there before and what was put on', () => {
   const [out] = paintAll([block()], THEME);
   assert.equal(out.bgColor, THEME.bgColor);
   assert.equal(out.textColor, THEME.textColor);
-  assert.equal(out._baseBgColor, '#000000');
+  assert.equal(out._baseBgColor, '#000000', 'so the switch can be turned off');
   assert.equal(out._baseTextColor, '#ffffff');
+  assert.equal(out._themedBgColor, THEME.bgColor, 'so paint can be told from a choice');
+  assert.equal(out._themedTextColor, THEME.textColor);
 });
 
 test('painting an already-painted block again changes nothing at all', () => {
   const once = paintAll([block()], THEME);
-  const twice = paintAll(once, THEME);
-  // the same array back is the signal not to write history for a no-op
-  assert.equal(twice, once);
+  assert.equal(paintAll(once, THEME), once, 'the same array back: no history entry');
 });
 
-test('a stash is never overwritten, so the original colour survives a theme change', () => {
+test('the original colour is never overwritten by a second theme', () => {
   const once = paintAll([block()], THEME);
   const [out] = paintAll(once, OTHER);
   assert.equal(out.bgColor, OTHER.bgColor);
   assert.equal(out._baseBgColor, '#000000');
+  assert.equal(out._themedBgColor, OTHER.bgColor, 'the stamp follows the new theme');
 });
 
-// The bug this file exists for.
-test('a colour the user picked is left alone when blocks change', () => {
+test('painting bumps the version, so a block that caches its colours redraws', () => {
+  const [out] = paintAll([block({ _version: 3 })], THEME);
+  assert.equal(out._version, 4);
+});
+
+// ── the pass that runs when the blocks change ─────────────────────
+
+// The colour picker bug: a hand-picked colour must survive a block change.
+test('a colour the user picked is left alone', () => {
   const [afterPaint] = paintAll([block()], THEME);
-  // the user opens the picker and chooses red on a block the theme has had
   const hand = { ...afterPaint, bgColor: '#cc2929' };
   const blocks = [hand];
 
-  const next = paintUnpainted(blocks, THEME);
+  const next = paintStale(blocks, THEME);
 
-  // the very same array back: nothing was rewritten, so no history entry
   assert.equal(next, blocks, 'nothing should have been rewritten');
   assert.equal(next[0].bgColor, '#cc2929', 'the picked colour must survive');
 });
 
+// The folder bug: opening a folder painted under another theme must repaint.
+test('a folder painted under another theme is brought to this one', () => {
+  const [fromOtherFolder] = paintAll([block()], OTHER);
+  assert.equal(fromOtherFolder.bgColor, OTHER.bgColor);
+
+  const [out] = paintStale([fromOtherFolder], THEME);
+
+  assert.equal(out.bgColor, THEME.bgColor, 'it must follow the theme now in force');
+  assert.equal(out._themedBgColor, THEME.bgColor);
+  assert.equal(out._baseBgColor, '#000000', 'and still remember its own colour');
+});
+
+test('a block already wearing this theme is not touched when blocks change', () => {
+  const painted = paintAll([block()], THEME);
+  assert.equal(paintStale(painted, THEME), painted);
+});
+
 test('a block that has never been painted joins the theme', () => {
   const fresh = block({ id: 'new', bgColor: '#123456' });
-  const [out] = paintUnpainted([fresh], THEME);
+  const [out] = paintStale([fresh], THEME);
   assert.equal(out.bgColor, THEME.bgColor);
   assert.equal(out._baseBgColor, '#123456');
 });
@@ -83,13 +107,37 @@ test('a new block is caught without disturbing the ones beside it', () => {
   const hand = { ...old, bgColor: '#cc2929' };
   const fresh = block({ id: 'new', bgColor: '#123456' });
 
-  const next = paintUnpainted([hand, fresh], THEME);
+  const next = paintStale([hand, fresh], THEME);
 
   assert.equal(next[0].bgColor, '#cc2929');
   assert.equal(next[1].bgColor, THEME.bgColor);
 });
 
-test('painting bumps the version, so a block that caches its colours redraws', () => {
-  const [out] = paintAll([block({ _version: 3 })], THEME);
-  assert.equal(out._version, 4);
+test('a block from a build with no paint record is painted once, then exact', () => {
+  // painted by an older build: it stashed the original but recorded no paint
+  const legacy = { ...block(), _baseBgColor: '#222222', bgColor: OTHER.bgColor, textColor: OTHER.textColor };
+  assert.equal(needsPaint(legacy, THEME), true);
+
+  const [out] = paintStale([legacy], THEME);
+  assert.equal(out.bgColor, THEME.bgColor);
+  assert.equal(out._baseBgColor, '#222222', 'the older stash is kept, not overwritten');
+
+  // now it carries a record, so a hand change on it is respected
+  const hand = { ...out, bgColor: '#cc2929' };
+  assert.equal(needsPaint(hand, THEME), false);
+});
+
+test('the pass settles: running it twice is the same as running it once', () => {
+  const blocks = [block({ id: 'a' }), block({ id: 'b', bgColor: '#123456' })];
+  const once = paintStale(blocks, THEME);
+  assert.equal(paintStale(once, THEME), once, 'no second rewrite, so no loop');
+});
+
+test('nothing throws on an empty or missing block list', () => {
+  assert.deepEqual(paintStale([], THEME), []);
+  assert.deepEqual(paintAll([], THEME), []);
+  // untouched means the caller gets back exactly what it passed, so the
+  // `next === blocks` check at the call site still skips the write
+  assert.equal(paintStale(null, THEME), null);
+  assert.equal(paintAll(undefined, THEME), undefined);
 });
