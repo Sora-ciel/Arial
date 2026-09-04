@@ -187,6 +187,16 @@
       ]
     },
     {
+      title: 'Opacity',
+      description:
+        'How much of what is behind a block shows through it. The writing has its own dial so a see-through block can still be read.',
+      fields: [
+        { key: 'bgOpacity', label: 'Block background', type: 'range' },
+        { key: 'headerOpacity', label: 'Block header', type: 'range' },
+        { key: 'textOpacity', label: 'Text', type: 'range' }
+      ]
+    },
+    {
       title: 'Focus state',
       description: 'Highlighting when a block is focused.',
       fields: [
@@ -224,6 +234,22 @@
       ]
     }
   ];
+
+  // Themes saved before these dials existed have no opacity at all, and a
+  // theme file can be hand-edited into anything. Either way the answer is fully
+  // opaque rather than a blank slider or an invisible block — an absent setting
+  // means the block looked solid when it was saved, so that is what it should
+  // still look like.
+  // `theme` is passed in rather than read off the component, so that the
+  // readout beside each slider re-renders when the value changes: a template
+  // expression is only re-evaluated when something it *names* changes, and a
+  // dependency reached inside a helper is invisible to that. Without it the
+  // slider moved, the blocks faded, and the number kept saying 100%.
+  function blockOpacityValue(theme, key) {
+    const raw = Number(theme?.[key] ?? BLOCK_THEME_DEFAULTS[key]);
+    if (!Number.isFinite(raw)) return 100;
+    return Math.min(100, Math.max(0, Math.round(raw)));
+  }
 
   function toCssVarName(key) {
     return key
@@ -611,6 +637,25 @@
     opacity: 0.7;
   }
 
+  /* The slider and its number sit on one line, with the readout at a fixed
+     width so the row does not jitter between 9% and 100% while dragging. */
+  .range-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .range-row input[type="range"] {
+    flex: 1;
+    min-width: 0;
+  }
+  .range-readout {
+    flex: 0 0 auto;
+    min-width: 42px;
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.75;
+  }
+
   .field-list {
     display: flex;
     flex-direction: column;
@@ -925,7 +970,20 @@
             {#each group.fields as field}
               <label>
                 <span>{field.label}</span>
-                {#if field.type === 'textarea'}
+                {#if field.type === 'range'}
+                  <div class="range-row">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="1"
+                      value={blockOpacityValue(workingBlockTheme, field.key)}
+                      on:input={(event) =>
+                        updateBlockField(field.key, Number(event.target.value))}
+                    />
+                    <span class="range-readout">{blockOpacityValue(workingBlockTheme, field.key)}%</span>
+                  </div>
+                {:else if field.type === 'textarea'}
                   <textarea
                     on:input={(event) => updateBlockField(field.key, event.target.value)}
                   >{workingBlockTheme[field.key] ?? BLOCK_THEME_DEFAULTS[field.key] ?? ''}</textarea>

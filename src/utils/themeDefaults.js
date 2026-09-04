@@ -38,6 +38,14 @@ export const BLOCK_THEME_DEFAULTS = {
   accentColor: '#ff5f5f',
   accentText: '#ffffff',
   controlRadius: '8px',
+  // 0–100, each on its own. A block's body, its header strip and its writing
+  // are faded separately because fading them together is what `opacity` on the
+  // element already does, and that is rarely what anyone wants — a translucent
+  // card with solid text is the useful arrangement, and it needs the surface
+  // and the writing to move independently.
+  bgOpacity: 100,
+  headerOpacity: 100,
+  textOpacity: 100,
   mediaButtonBg: 'rgba(255, 255, 255, 0.08)',
   mediaButtonText: '#ffffff'
 };

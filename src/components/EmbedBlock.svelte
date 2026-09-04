@@ -195,7 +195,7 @@
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    background-color: var(--block-surface, var(--bg));
+    background-color: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
     color: var(--text);
     outline: 2px solid transparent;
     transition: box-shadow 0.15s ease, outline 0.15s ease;
@@ -207,7 +207,7 @@
   }
   .header {
     padding: 6px 10px;
-    background: var(--block-header-bg, var(--bg));
+    background: color-mix(in srgb, var(--block-header-bg, var(--bg)) var(--block-header-opacity, 100%), transparent);
     color: var(--block-header-text, var(--text));
     font-size: 0.85rem;
     cursor: move;
@@ -280,7 +280,7 @@
   class="player"
   class:focused={focused}
   data-block-id={id}
-  style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: {textColor};"
+  style="left:{position.x}px; top:{position.y}px; width:{size.width}px; height:{size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
   role="button"
   tabindex="0"
   aria-pressed={focused}

@@ -1667,9 +1667,18 @@
     ? 'var(--bg-color)'
     : 'var(--text-color)';
 
+  // The opacities are stored as plain numbers, because that is what a slider
+  // reads and writes and what a saved theme should hold — a bare 80 survives a
+  // round trip through JSON and a future editor in a way that '80%' does not.
+  // CSS wants the unit, and both places these land — color-mix()'s percentage
+  // and `opacity` — accept one, so a single suffix here serves the surface, the
+  // header and the writing alike.
   $: blockThemeCssVars = [
     ...Object.entries(blockTheme || {})
-      .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`),
+      .map(([key, value]) => {
+        const css = key.endsWith('Opacity') ? `${value}%` : value;
+        return `--block-${toCssVarName(key)}: ${css}`;
+      }),
     `--simple-note-block-shadow: ${simpleNoteBlockShadow}`,
     `--simple-note-border-color: ${simpleNoteBorderColor}`
   ].join('; ');

@@ -333,7 +333,7 @@
     position: absolute;
     border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
     border-radius: var(--block-border-radius, 12px);
-    background: var(--block-surface, var(--bg));
+    background: color-mix(in srgb, var(--block-surface, var(--bg)) var(--block-bg-opacity, 100%), transparent);
     box-shadow: var(--block-shadow, 0 0 2px 1px var(--text), 0 0 6px 2px var(--text));
     color: var(--text);
     outline: 2px solid transparent;
@@ -350,7 +350,7 @@
   }
 
   .header {
-    background: var(--block-header-bg, var(--bg));
+    background: color-mix(in srgb, var(--block-header-bg, var(--bg)) var(--block-header-opacity, 100%), transparent);
     height: 30px;
     padding: 4px 8px;
     cursor: move;
@@ -543,7 +543,7 @@
   class="wrapper"
   class:focused={focused}
   data-block-id={id}
-  style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: {textColor};"
+  style="left: {position.x}px; top: {position.y}px; width: {size.width}px; height: {size.height}px; --bg: {bgColor}; --text: color-mix(in srgb, {textColor} var(--block-text-opacity, 100%), transparent);"
   role="button"
   tabindex="0"
   aria-pressed={focused}
