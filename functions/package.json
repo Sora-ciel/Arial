@@ -1,6 +1,6 @@
 {
   "name": "functions",
-  "description": "Cloud Functions for Ostavia: RTDB usage quota guard + schema version migration",
+  "description": "Cloud Functions for Austavia: RTDB usage quota guard + schema version migration",
   "private": true,
   "main": "index.js",
   "engines": {

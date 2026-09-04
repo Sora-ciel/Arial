@@ -1,4 +1,4 @@
-// SMTP transport for Ostavia's bandwidth alerts.
+// SMTP transport for Austavia's bandwidth alerts.
 //
 // The password is a Gmail app password held in Secret Manager as
 // ARIAL_SMTP_PASS, never in source and never in the deployed config:
@@ -63,7 +63,7 @@ async function sendAlert(subject, textBody, recipient) {
 
   try {
     await transport.sendMail({
-      from: `Ostavia monitoring <${SMTP_USER}>`,
+      from: `Austavia monitoring <${SMTP_USER}>`,
       to,
       subject,
       text: textBody

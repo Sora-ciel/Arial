@@ -1,4 +1,4 @@
-// Ostavia bandwidth monitoring.
+// Austavia bandwidth monitoring.
 //
 // The quota guard in ../index.js already tallies bytes per user per day at
 // usage/{uid}/{date} and flips `blocked` at the ceiling. That tally is silent:
@@ -92,8 +92,8 @@ exports.bandwidthWatch = onValueWritten(
     const step = Math.max(...claimed);
     const atLimit = step >= 100;
     const subject = atLimit
-      ? `Ostavia - user ${shortUid(uid)} hit the daily sync limit`
-      : `Ostavia - user ${shortUid(uid)} at ${step}% of the daily sync limit`;
+      ? `Austavia - user ${shortUid(uid)} hit the daily sync limit`
+      : `Austavia - user ${shortUid(uid)} at ${step}% of the daily sync limit`;
 
     const lines = [
       `User ${shortUid(uid)} has written ${formatBytes(totalBytes)} today (${date}, UTC).`,
@@ -163,7 +163,7 @@ exports.projectBandwidthWatch = onSchedule(
       .map(row => `  ${shortUid(row.uid)}   ${formatBytes(row.bytes)}`);
 
     await sendAlert(
-      `Ostavia - project sync traffic over ${formatBytes(settings.PROJECT_DAILY_BYTE_ALERT)} today`,
+      `Austavia - project sync traffic over ${formatBytes(settings.PROJECT_DAILY_BYTE_ALERT)} today`,
       [
         `All users combined have written ${formatBytes(total)} on ${date} (UTC),`,
         `past the ${formatBytes(settings.PROJECT_DAILY_BYTE_ALERT)} project threshold.`,
@@ -215,7 +215,7 @@ exports.bandwidthDigest = onSchedule(
     });
 
     await sendAlert(
-      `Ostavia - daily sync usage ${formatBytes(total)} (${date})`,
+      `Austavia - daily sync usage ${formatBytes(total)} (${date})`,
       [
         `Sync write volume for ${date} (UTC).`,
         '',
@@ -256,9 +256,9 @@ exports.sendMonitoringTestMail = onCall(
 
     const settings = await loadSettings();
     const sent = await sendAlert(
-      'Ostavia - monitoring test',
+      'Austavia - monitoring test',
       [
-        'This is a test mail from the Ostavia monitoring dashboard.',
+        'This is a test mail from the Austavia monitoring dashboard.',
         '',
         `  sent at   ${new Date().toISOString()}`,
         `  recipient ${settings.RECIPIENT}`,
