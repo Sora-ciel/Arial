@@ -15,6 +15,8 @@
   export let uploadInProgress = false;
   export let downloadInProgress = false;
   export let autoSyncEnabled = false;
+  // Supplied by App, which is the only place that knows the whole picture.
+  export let collectDiagnostics = () => 'diagnostics unavailable';
   export let blocksFollowTheme = false;
   export let blocksFollowThemeAll = false;
 
@@ -35,6 +37,22 @@
   // Newest first: a loop is happening now, not at the start of the session.
   $: recentSyncLog = [...syncLogEntries].reverse();
 
+  // The whole state in one paste. The app knows all of this about itself;
+  // before this button the only way to get it was to ask, one fact at a time,
+  // and the fact that mattered was usually the one nobody thought to mention.
+  let diagnosticsCopied = false;
+  async function copyDiagnostics() {
+    const text = collectDiagnostics();
+    try {
+      await navigator.clipboard.writeText(text);
+      diagnosticsCopied = true;
+      setTimeout(() => { diagnosticsCopied = false; }, 1800);
+    } catch {
+      // Clipboard refused (an insecure origin, or a webview that says no).
+      // Better to hand it over some other way than to fail silently.
+      dispatch('showDiagnostics', text);
+    }
+  }
   async function copySyncLog() {
     try {
       await navigator.clipboard.writeText(formatSyncLog(syncLogEntries));
@@ -596,6 +614,9 @@
               <button class="create-theme-btn" type="button" on:click={signIn}>🔐 Sign in Google</button>
             {/if}
 
+            <button class="create-theme-btn" type="button" on:click={copyDiagnostics}>
+              {diagnosticsCopied ? "Copied — paste it in a message" : "🩺 Copy diagnostics"}
+            </button>
             <button class="create-theme-btn" type="button" on:click={() => (showSyncLog = !showSyncLog)}>
               {showSyncLog ? '▾' : '▸'} Sync log ({syncLogEntries.length})
             </button>

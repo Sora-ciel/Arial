@@ -65,7 +65,8 @@
   import { withoutEmptyValues, unpaintThemeColours } from './utils/syncRules.js';
   // Sync writes down what it decided, so a loop can be read back instead of
   // guessed at. See utils/syncLog.js.
-  import { logSync, describeDifference } from './utils/syncLog.js';
+  import { logSync, describeDifference, getSyncLog } from './utils/syncLog.js';
+  import { buildDiagnostics, formatDiagnostics } from './utils/diagnostics.js';
   // How long a typing save waits, and the ceiling that stops it waiting for
   // ever. See utils/saveScheduling.js.
   import { nextSaveDelay } from './utils/saveScheduling.js';
@@ -1327,6 +1328,72 @@
   // `blocks` re-ran on the user's own colour change and put the theme's colour
   // straight back, so the colour picker did nothing for as long as the switch
   // was on.
+  // Everything the app knows about itself, in one paste.
+  //
+  // The deciding fact in the last two bugs was a setting, not a stack trace:
+  // a switch that was on, and a theme that pinned a colour. Neither threw, so
+  // nothing would have been reported. This is the answer to "what is switched
+  // on, and what colour is that block" without having to ask for it one field
+  // at a time.
+  //
+  // The measuring is here because it needs a DOM: what a block *computes* to on
+  // screen is the fact that settles a colour question, and it cannot be worked
+  // out from the saved values alone — that was exactly the gap when a header
+  // stopped matching its body.
+  function sampleDrawnBlocks(limit = 3) {
+    if (typeof document === 'undefined') return [];
+    return [...document.querySelectorAll('.note')].slice(0, limit).map((el, i) => {
+      const header = el.querySelector('.header');
+      return {
+        id: el.getAttribute('data-block-id') || `#${i + 1}`,
+        label: header?.querySelector('span')?.textContent?.trim() || 'block',
+        bodyBg: getComputedStyle(el).backgroundColor,
+        headerBg: header ? getComputedStyle(header).backgroundColor : '(no header)'
+      };
+    });
+  }
+
+  function collectDiagnostics() {
+    const platform = typeof window === 'undefined'
+      ? 'unknown'
+      : window.__TAURI_INTERNALS__ || window.__TAURI__
+        ? 'desktop'
+        : window.Capacitor?.isNativePlatform?.()
+          ? 'android'
+          : 'web';
+
+    return formatDiagnostics(buildDiagnostics({
+      version: typeof __APP_VERSION__ === 'string' ? __APP_VERSION__ : 'dev',
+      platform,
+      mode,
+      folder: currentSaveName,
+      theme: {
+        id: selectedThemeId,
+        name: activeTheme?.name,
+        custom: Boolean(activeTheme?.isCustom),
+        customCount: customThemes.length
+      },
+      blockTheme,
+      activeColors: newBlockColors,
+      canvas: controlColors?.canvas,
+      followTheme: {
+        folder: modeSettings?.blocksFollowTheme === true,
+        allFolders: blocksFollowThemeAll
+      },
+      blocks,
+      samples: sampleDrawnBlocks(),
+      sync: {
+        signedIn: Boolean(authUser),
+        autoSync: autoSyncEnabled,
+        lastError: syncFailureNotice || null,
+        log: getSyncLog().slice(-8).map(e => `${new Date(e.at).toLocaleTimeString()} ${e.kind} ${e.folder} ${e.message}`)
+      },
+      library: {
+        tracks: musicLibrary?.tracks?.length ?? 0,
+        playlists: musicLibrary?.playlists?.length ?? 0
+      }
+    }));
+  }
   let lastPaintedTheme = null;
   $: repaintForTheme(blocksFollowTheme, newBlockColors);
   $: if (blocksFollowTheme && blocks.length) paintStaleBlocksWithTheme(newBlockColors);
@@ -4960,6 +5027,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     {#if showRightControls}
     <div class="right-controls">
       <RightControls
+        {collectDiagnostics}
         {savedList}
         {storageUsage}
         {load}
