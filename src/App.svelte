@@ -63,6 +63,9 @@
   // How long a typing save waits, and the ceiling that stops it waiting for
   // ever. See utils/saveScheduling.js.
   import { nextSaveDelay } from './utils/saveScheduling.js';
+  // Turns an SDK failure into something a person can act on. See
+  // utils/syncErrors.js.
+  import { explainSyncFailure } from './utils/syncErrors.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -3532,7 +3535,10 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     }
     if (failures.length) {
       const [{ fileName, error }] = failures;
-      const detail = error?.message || String(error || 'unknown error');
+      // The account's own record is passed in because the error cannot tell
+      // "you are out of space" from "something else refused this" — both
+      // arrive as an identical storage/unauthorized.
+      const detail = explainSyncFailure(error, { storageUsage });
       syncFailureNotice = failures.length > 1
         ? `${failures.length} folders could not sync. "${fileName}": ${detail}`
         : `"${fileName}" could not sync: ${detail}`;

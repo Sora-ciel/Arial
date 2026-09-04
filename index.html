@@ -16,6 +16,12 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content"
     />
+    <!-- The app answers on austavia.com, austavia.app and the Firebase
+         default domain, all serving the same project. Without this a search
+         engine sees three identical sites and picks one itself, splitting
+         whatever ranking the name earns. Naming the canonical one settles it
+         without redirects, so every address keeps working. -->
+    <link rel="canonical" href="https://austavia.com/" />
     <title>Austavia</title>
   </head>
   <body>
