@@ -114,14 +114,25 @@
     birthdayPassword = '';
   }
 
-  function moveUp() {
+  // "moveUp" moves a block earlier in the mode's order and "moveDown" later.
+  // What that looks like on screen depends on the mode, which is why these are
+  // named for the direction the arrow points rather than for the event.
+  //
+  // Simple Note lays blocks out in reading order, so earlier is higher up and
+  // the arrows mean exactly what they show. Everywhere else the order runs the
+  // other way against the layout, and the buttons were wired accordingly —
+  // which left Simple Note with two arrows that each did the opposite of their
+  // icon.
+  $: arrowsFollowReadingOrder = mode === 'simple';
+
+  function moveTowardsTop() {
     if (!focusedBlockId) return;
-    dispatch("moveUp");
+    dispatch(arrowsFollowReadingOrder ? 'moveUp' : 'moveDown');
   }
 
-  function moveDown() {
+  function moveTowardsBottom() {
     if (!focusedBlockId) return;
-    dispatch("moveDown");
+    dispatch(arrowsFollowReadingOrder ? 'moveDown' : 'moveUp');
   }
 
   function handleSimpleColumnInput(event) {
@@ -885,7 +896,7 @@ onMount(() => {
     <div class="thin-button-row">
       <button
         class="thin-action-btn"
-        on:click={moveUp}
+        on:click={moveTowardsBottom}
         disabled={!focusedBlockId}
         aria-label="Move block down"
         title="Move block down"
@@ -894,7 +905,7 @@ onMount(() => {
       </button>
       <button
         class="thin-action-btn"
-        on:click={moveDown}
+        on:click={moveTowardsTop}
         disabled={!focusedBlockId}
         aria-label="Move block up"
         title="Move block up"

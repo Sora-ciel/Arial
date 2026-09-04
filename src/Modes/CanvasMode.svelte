@@ -14,6 +14,9 @@
 
 
   export let mode;
+  // The folder currently open. Only used to notice when it changes, so the
+  // zoom can go back to where a folder is meant to open at.
+  export let openFolder = '';
   export let blocks;
 
   export let canvasRef;
@@ -468,6 +471,20 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
+
+  // Opening another folder used to keep whatever zoom the last one was left
+  // at. The component is not rebuilt when the folder changes — only its blocks
+  // are replaced — so the one refit on mount had already happened, and a folder
+  // opened at 3x stayed at 3x while showing entirely different work.
+  //
+  // Guarded on the name having actually changed rather than on the blocks,
+  // which change constantly while typing and would snap the zoom back
+  // mid-edit.
+  let fittedForFolder = null;
+  $: if (canvasRef && openFolder !== fittedForFolder) {
+    fittedForFolder = openFolder;
+    refitCanvas();
+  }
 
   onMount(() => {
     refitCanvas();

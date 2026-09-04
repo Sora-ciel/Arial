@@ -4979,6 +4979,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     {/if}
     <ModeArea
       {mode}
+      openFolder={currentSaveName}
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
       {singleNoteSettings}

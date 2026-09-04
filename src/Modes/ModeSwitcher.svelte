@@ -9,6 +9,9 @@
   import BirthdayMode from './BirthdayMode.svelte';
 
   export let mode; // 'default' or 'simple'
+  // Which folder is open. Canvas mode uses it to know when to go back to the
+  // home zoom; nothing else needs it.
+  export let openFolder = '';
   export let blocks;
   export let canvasRef;
   export let onTouchStart;
@@ -62,6 +65,7 @@
 {#if mode === 'default'}
   <DefaultCanvasMode
     {mode}
+    {openFolder}
     {blocks}
     {focusedBlockId}
     bind:canvasRef
