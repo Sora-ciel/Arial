@@ -18,11 +18,25 @@
   user-select: none;
 }
 
+/* ── Placeholders follow the theme ────────────────────────────────
+   A placeholder does not inherit `color`: left alone, every browser draws its
+   own grey, which is right on roughly no theme and was visibly wrong on the
+   light ones. --app-text is set on .app from the active theme, so an input
+   added anywhere gets a placeholder that matches without its author doing
+   anything. A component that wants a different one still overrides this, being
+   more specific. */
+input::placeholder,
+textarea::placeholder {
+  color: var(--app-text, inherit);
+  opacity: 0.45;
+}
+
 /* ── Scrollbars follow block/mode colors ──────────────────────────
    Containers set --sb-track (their background) and --sb-thumb (their text
    color); everything inherits those, so a scrollbar inside a block matches
-   the block while one on a mode surface matches the theme. Falls back to a
-   subtle neutral wherever nothing has been declared. */
+   the block while one on a mode surface matches the theme. .app seeds both
+   from the theme, so anything that declares neither is themed rather than
+   falling to the neutral below. */
 * {
   scrollbar-width: thin;
   scrollbar-color: var(--sb-thumb, rgba(255, 255, 255, 0.4)) var(--sb-track, transparent);

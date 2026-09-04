@@ -66,6 +66,7 @@
   // Turns an SDK failure into something a person can act on. See
   // utils/syncErrors.js.
   import { explainSyncFailure } from './utils/syncErrors.js';
+  import { getReadableTextColor } from './utils/readableColor.js';
   // The wallpaper settings shared by Single Note and Canvas mode.
   import { BACKGROUND_DEFAULTS, normalizeBackgroundSettings } from './utils/modeBackground.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
@@ -1671,6 +1672,33 @@
       .map(([key, value]) => `--block-${toCssVarName(key)}: ${value}`),
     `--simple-note-block-shadow: ${simpleNoteBlockShadow}`,
     `--simple-note-border-color: ${simpleNoteBorderColor}`
+  ].join('; ');
+
+  // The theme, stated once at the top of the app so everything below inherits
+  // it.
+  //
+  // Every other set of colours here is scoped to something — --block-* to a
+  // block, --left-* to the left panel, --canvas-* to a mode — which meant a new
+  // input or scroller had nothing general to reach for and each one invented
+  // its own hardcoded fallback. That is why the habit tracker's placeholder was
+  // browser grey and its surfaces were navy: not a decision, just the absence
+  // of one.
+  //
+  // These are the app's colours. Anything added from here on should read them,
+  // and then it follows the theme without its author having to remember to make
+  // it. --sb-track and --sb-thumb are seeded here too, so scrollbars are themed
+  // by default rather than in the handful of containers that thought to.
+  $: appTextColor = canvasTheme.textColor || getReadableTextColor(canvasTheme.outerBg);
+  $: appThemeCssVars = [
+    `--app-bg: ${canvasTheme.outerBg}`,
+    `--app-text: ${appTextColor}`,
+    // Tints of the text colour over the background, so they hold up on a light
+    // theme and a dark one without either being named.
+    `--app-surface: color-mix(in srgb, ${appTextColor} 8%, transparent)`,
+    `--app-border: color-mix(in srgb, ${appTextColor} 22%, transparent)`,
+    `--app-muted: color-mix(in srgb, ${appTextColor} 60%, transparent)`,
+    `--sb-track: transparent`,
+    `--sb-thumb: color-mix(in srgb, ${appTextColor} 40%, transparent)`
   ].join('; ');
 
   function handleThemeSelect(event) {
@@ -4726,7 +4754,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
 
 
 
-<div class="app" style={blockThemeCssVars}>
+<div class="app" style="{appThemeCssVars}; {blockThemeCssVars}">
   <div class="controls" bind:this={controlsRef} style={controlsStyle}>
     <LeftControls
       bind:currentSaveName

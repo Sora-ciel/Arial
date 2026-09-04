@@ -23,7 +23,11 @@ export const MODE_DEFINITIONS = {
     id: 'habit',
     label: 'Habit Tracker Mode',
     addBlockTypes: [],
-    showRightControls: false
+    // The right panel carries themes, saved files and the cloud — none of
+    // which is about blocks, and all of which is wanted here as much as
+    // anywhere else. It was hidden because this mode adds no blocks, which
+    // confused "nothing to add" with "nothing to configure".
+    showRightControls: true
   },
   task: {
     id: 'task',

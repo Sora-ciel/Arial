@@ -163,15 +163,15 @@
     min-width: 200px;
     padding: 10px 12px;
     border-radius: var(--block-control-radius, 8px);
-    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
-    background: var(--block-header-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 8%, transparent));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--app-border, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent)));
+    background: var(--block-header-bg, var(--app-surface, color-mix(in srgb, var(--mode-text-color, #ffffff) 8%, transparent)));
     color: inherit;
   }
 
   .habit-form button {
     padding: 10px 16px;
     border-radius: var(--block-control-radius, 8px);
-    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, var(--app-border, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent)));
     background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 12%, transparent));
     color: inherit;
     cursor: pointer;
@@ -261,7 +261,7 @@
     border-radius: 12px;
     border-width: var(--block-border-width, 1px);
     border-style: dashed;
-    border-color: var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
+    border-color: var(--block-border-color, var(--app-border, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent)));
   }
 </style>
 
