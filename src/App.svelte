@@ -4964,7 +4964,6 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
         on:toggleAutoSync={toggleAutoSync}
         on:toggleBlocksFollowTheme={toggleBlocksFollowTheme}
         on:toggleBlocksFollowThemeAll={toggleBlocksFollowThemeAll}
-        on:updateColors={handleControlColorChange}
         on:selectTheme={handleThemeSelect}
         on:openAdvancedCss={() => (showAdvancedCssPage = true)}
       />

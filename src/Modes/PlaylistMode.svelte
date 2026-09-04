@@ -72,11 +72,12 @@
     ? selectedPlaylist.trackIds.map(id => tracks.find(t => t.id === id)).filter(Boolean)
     : tracks;
 
-  // Rows are rendered a page at a time. A library of a few thousand builds a
-  // punishing amount of DOM in one go on a phone, and nobody scrolls that far
-  // before searching anyway.
-  const PAGE_SIZE = 200;
-  let visibleLimit = PAGE_SIZE;
+  // Every row, every time. This used to render 200 at a time behind a "show
+  // more" button, on the theory that nobody scrolls a few thousand rows before
+  // searching — but a playlist is a thing you look down, and having to ask for
+  // the rest of your own music on every visit is a worse cost than the DOM.
+  // Covers still arrive one at a time, so a long list draws immediately and
+  // fills in as it goes.
 
   // Search runs over everything the tags gave us, not just the title, so
   // "beatles" or "1998" finds the track as readily as its name does.
@@ -88,9 +89,7 @@
       .some(field => String(field).toLowerCase().includes(needle));
   }
   $: searchNeedle = search.trim().toLowerCase();
-  // Back to the first page whenever the list itself changes.
-  $: searchNeedle, selectedPlaylistId, (visibleLimit = PAGE_SIZE);
-  $: renderedTracks = visibleTracks.slice(0, visibleLimit);
+  $: renderedTracks = visibleTracks;
   $: loadCoversFor(renderedTracks);
   $: listedTracks = searchNeedle
     ? playlistTracks.filter(track => matchesSearch(track, searchNeedle))
@@ -991,11 +990,6 @@
     background: color-mix(in srgb, var(--mode-text-color, #fff) 12%, transparent);
   }
 
-  .pl-show-more {
-    display: block;
-    width: 100%;
-    margin: 10px 0 4px;
-  }
 
   .pl-empty { opacity: 0.6; font-size: 0.85rem; padding: 20px 4px; line-height: 1.5; }
   .pl-busy { font-size: 0.8rem; opacity: 0.8; }
@@ -1242,13 +1236,6 @@
             {/if}
           </div>
         {/each}
-        {#if visibleTracks.length > visibleLimit}
-          <button
-            class="pl-btn pl-show-more"
-            on:click={() => (visibleLimit += PAGE_SIZE)}
-          >Show {Math.min(PAGE_SIZE, visibleTracks.length - visibleLimit)} more
-            ({visibleTracks.length - visibleLimit} left)</button>
-        {/if}
       {/if}
     </div>
   </div>

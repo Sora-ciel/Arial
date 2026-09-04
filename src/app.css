@@ -189,6 +189,22 @@ img {
 
 
 
+/* ── Links in written text follow whatever they sit in ────────────
+   A link inside a note was a fixed indigo, which belonged to no theme and on
+   a dark or a coloured block was often the least readable thing on screen.
+   `inherit` is what makes it structural: the colour comes from the block, the
+   mode or the theme — whichever is in force — so a link is right in all of
+   them without naming any. The dimming is what still marks it as a link once
+   the colour no longer does, and it rides on top of the theme's own text
+   opacity rather than replacing it. */
+.tiptap a,
+.ProseMirror a {
+  color: inherit;
+  opacity: 0.72;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 a {
   font-weight: 500;
   color: #646cff;

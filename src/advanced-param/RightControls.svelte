@@ -46,7 +46,6 @@
   function syncLogTime(at) {
     return new Date(at).toLocaleTimeString();
   }
-  import AdvancedParameters1 from "./AdvancedParameters1.svelte";
   import StylePresetPage from "./StylePresetPage.svelte";
 
   const dispatch = createEventDispatcher();
@@ -172,9 +171,6 @@
     dispatch("toggleAutoSync");
   }
 
-  function handleColorChange(event) {
-    dispatch("updateColors", event.detail);
-  }
 
   function handleThemeSelect(event) {
     dispatch("selectTheme", event.detail);
@@ -690,12 +686,6 @@
           />
         </div>
 
-        <!-- Much the longest section in the drawer, and rarely the reason it
-             was opened — keep it folded away until it's actually wanted. -->
-        <details class="tab-section collapsible-section">
-          <summary class="section-summary"><h4>🎨 Fine-tune colors</h4></summary>
-          <AdvancedParameters1 {controlColors} on:change={handleColorChange} />
-        </details>
       </div>
     </div>
   </details>

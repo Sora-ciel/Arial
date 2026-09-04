@@ -4,21 +4,48 @@
     {
       "name": "arial-dev",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
+      "runtimeArgs": [
+        "run",
+        "dev"
+      ],
       "port": 5173,
       "autoPort": true
     },
     {
       "name": "arial-staging",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:staging"],
+      "runtimeArgs": [
+        "run",
+        "dev:staging"
+      ],
       "port": 5174
     },
     {
       "name": "monitoring-dashboard",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "5055", "--bind", "127.0.0.1", "--directory", "monitoring"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "5055",
+        "--bind",
+        "127.0.0.1",
+        "--directory",
+        "monitoring"
+      ],
       "port": 5055
+    },
+    {
+      "name": "arial-preview",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "run",
+        "preview",
+        "--",
+        "--port",
+        "4173",
+        "--strictPort"
+      ],
+      "port": 4173
     }
   ]
 }
