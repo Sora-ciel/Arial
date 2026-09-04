@@ -45,6 +45,31 @@ export const BLOCK_THEME_DEFAULTS = {
 export const CUSTOM_THEME_ID = 'custom';
 export const DEFAULT_PREVIEW_BG = 'rgba(20, 20, 24, 0.8)';
 
+/**
+ * The canvas's two backgrounds, which start life as one colour.
+ *
+ * Canvas mode paints an outer area and an inner one. Nothing says they should
+ * differ, and when they do the seam between them is visible — four of the six
+ * built-in themes drifted apart that way, each by a shade or two, so the same
+ * app looked subtly different depending on which theme was on.
+ *
+ * A theme that names only one colour now gets it for both, which is what makes
+ * this structural rather than a one-time tidy-up: a new theme cannot arrive
+ * mismatched by omission, and anyone adding one gets a single background
+ * without having to know there were ever two. Naming both still works, for a
+ * theme that genuinely wants the distinction.
+ */
+export function normalizeCanvasColors(raw = {}) {
+  const given = raw || {};
+
+  // Whichever was provided seeds the other. Outer leads because it is the
+  // colour the app is framed in.
+  const outerBg = given.outerBg || given.innerBg || CONTROL_COLOR_DEFAULTS.canvas.outerBg;
+  const innerBg = given.innerBg || outerBg;
+
+  return { ...CONTROL_COLOR_DEFAULTS.canvas, ...given, outerBg, innerBg };
+}
+
 export function normalizeControlColors(raw = {}) {
   const left = {
     ...CONTROL_COLOR_DEFAULTS.left,
@@ -56,10 +81,7 @@ export function normalizeControlColors(raw = {}) {
     ...(raw.right || {})
   };
 
-  const canvas = {
-    ...CONTROL_COLOR_DEFAULTS.canvas,
-    ...(raw.canvas || {})
-  };
+  const canvas = normalizeCanvasColors(raw.canvas);
 
   return { left, right, canvas };
 }

@@ -227,7 +227,7 @@
         },
         canvas: {
           outerBg: '#000000',
-          innerBg: '#050303'
+          innerBg: '#000000'
         }
       },
       blockTheme: normalizeBlockTheme({
@@ -270,7 +270,7 @@
         },
         canvas: {
           outerBg: '#1d0e0c',
-          innerBg: '#241210'
+          innerBg: '#1d0e0c'
         }
       },
       blockTheme: normalizeBlockTheme({
@@ -312,7 +312,7 @@
         },
         canvas: {
           outerBg: '#100616',
-          innerBg: '#15081d'
+          innerBg: '#100616'
         }
       },
       blockTheme: normalizeBlockTheme({
@@ -354,7 +354,7 @@
         },
         canvas: {
           outerBg: '#0d1116',
-          innerBg: '#11161c'
+          innerBg: '#0d1116'
         }
       },
       blockTheme: normalizeBlockTheme({
