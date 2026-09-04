@@ -2,6 +2,6 @@
 <resources>
     <string name="app_name">Austavia</string>
     <string name="title_activity_main">Austavia</string>
-    <string name="package_name">com.sora.arial</string>
-    <string name="custom_url_scheme">com.sora.arial</string>
+    <string name="package_name">com.sora.austavia</string>
+    <string name="custom_url_scheme">com.sora.austavia</string>
 </resources>

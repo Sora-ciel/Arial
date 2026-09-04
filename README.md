@@ -1,4 +1,4 @@
-# Codex PWA
+# Austavia
 
 A Svelte + Vite notes/blocks app with local IndexedDB saves and optional Firebase sync.
 
@@ -71,13 +71,13 @@ and `TMP` at `.emulator-tmp/` inside the repo, which is ASCII and short.
 
 ## Download
 
-Latest release: **v0.8.44**
+Latest release: **v0.9.0**
 
 - 🌐 Web: <https://arial-473c1.web.app> — nothing to install
-- 📱 Android: [Arial_0.8.44.apk](https://github.com/Sora-ciel/Arial/releases/download/v0.8.44/Arial_0.8.44.apk)
-- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Arial/releases/download/v0.8.44/Arial_0.8.44_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Arial/releases/download/v0.8.44/Arial_0.8.44_x64_en-US.msi)
+- 📱 Android: [Austavia_0.9.0.apk](https://github.com/Sora-ciel/Austavia/releases/download/v0.9.0/Austavia_0.9.0.apk)
+- 💻 Windows: [installer (.exe)](https://github.com/Sora-ciel/Austavia/releases/download/v0.9.0/Austavia_0.9.0_x64-setup.exe) or [.msi](https://github.com/Sora-ciel/Austavia/releases/download/v0.9.0/Austavia_0.9.0_x64_en-US.msi)
 
-[![All releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Arial/releases/latest)
+[![All releases](https://img.shields.io/badge/Download-Latest-blue)](https://github.com/Sora-ciel/Austavia/releases/latest)
 
 The Android build is unlisted, so Android will warn about installing outside
 the Play Store. Music plays with the screen off, which needs the notification
@@ -293,7 +293,7 @@ owns with it.
 
 Web traffic — visitors, referrers, which download link gets clicked — is not
 covered here and needs something like Plausible or Umami on the hosted app.
-Worth adding the week Arial is first pushed somewhere public; before that it
+Worth adding the week Austavia is first pushed somewhere public; before that it
 measures a flat line.
 
 ## Sync behavior
@@ -332,7 +332,7 @@ build_tauri.bat        # windows -> .msi + .exe
 build_apk.bat          # android -> signed .apk
 ```
 
-Copy all three into `release/` as `Arial_<version>.*` to match the download
+Copy all three into `release/` as `Austavia_<version>.*` to match the download
 links. The browser themes version separately, from `THEME_VERSION` in
 `../Hato skins/tools/build_hato_assets.py`.
 

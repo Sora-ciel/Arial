@@ -1,8 +1,8 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Austavia",
-  "version": "0.8.44",
-  "identifier": "com.sora.codex",
+  "version": "0.9.0",
+  "identifier": "com.sora.austavia",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",

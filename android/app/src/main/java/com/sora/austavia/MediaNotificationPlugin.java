@@ -1,4 +1,4 @@
-package com.sora.arial;
+package com.sora.austavia;
 
 import android.Manifest;
 import android.content.Intent;
