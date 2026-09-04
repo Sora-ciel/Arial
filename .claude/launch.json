@@ -7,6 +7,18 @@
       "runtimeArgs": ["run", "dev"],
       "port": 5173,
       "autoPort": true
+    },
+    {
+      "name": "arial-staging",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev:staging"],
+      "port": 5174
+    },
+    {
+      "name": "monitoring-dashboard",
+      "runtimeExecutable": "python",
+      "runtimeArgs": ["-m", "http.server", "5055", "--bind", "127.0.0.1", "--directory", "monitoring"],
+      "port": 5055
     }
   ]
 }

@@ -465,7 +465,7 @@
 
   .panel {
     width: min(1420px, 100%);
-    max-height: calc(100vh - clamp(24px, 6vh, 72px));
+    max-height: calc(100dvh - clamp(24px, 6vh, 72px));
     background: rgba(18, 20, 28, 0.96);
     border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.08);

@@ -504,7 +504,7 @@
       color-mix(in srgb, var(--mode-accent) 14%, var(--mode-bg))
     );
     width: 100%;
-    min-height: calc(100vh - 120px);
+    min-height: calc(100dvh - 120px);
     padding: 20px;
     color: var(--mode-text);
     background: var(--mode-bg);

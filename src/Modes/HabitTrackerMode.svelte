@@ -20,6 +20,18 @@
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  // The styles below reach for the block theme's variables and fall back when
+  // one does not resolve. That fallback is not a rare path here, it is the
+  // usual one: `--block-header-bg` is declared on .app as `var(--bg)`, and
+  // `--bg` is block-scoped — every block sets it inline from its own colour.
+  // Nothing in this mode is a block, so it never resolves, and a var() inside a
+  // custom property is substituted where it is *declared*, not where it is
+  // used, so defining --bg here could not rescue it either.
+  //
+  // Hence the fallbacks are written in terms of the canvas colours rather than
+  // as fixed values. This mode was not ignoring the theme; it was reading
+  // variables that cannot resolve outside a block and landing on a hardcoded
+  // dark blue every time.
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg}; --mode-text-color: ${modeTextColor};`;
 
   const formatDateKey = date =>
@@ -145,9 +157,9 @@
     gap: 18px;
     padding: 30px;
     width: 100%;
-    height: calc(100vh - var(--controls-height, 56px));
+    height: calc(100dvh - var(--controls-height, 56px));
     overflow-y: auto;
-    background: var(--canvas-inner-bg, #0b0f19);
+    background: var(--canvas-inner-bg, #000000);
     color: var(--mode-text-color, #ffffff);
     font-family: var(--block-body-font, inherit);
   }
@@ -182,16 +194,16 @@
     min-width: 200px;
     padding: 10px 12px;
     border-radius: var(--block-control-radius, 8px);
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
-    background: var(--block-header-bg, rgba(10, 16, 26, 0.7));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
+    background: var(--block-header-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 8%, transparent));
     color: var(--block-header-text, inherit);
   }
 
   .habit-form button {
     padding: 10px 16px;
     border-radius: var(--block-control-radius, 8px);
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.2));
-    background: var(--block-media-button-bg, rgba(18, 28, 44, 0.8));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
+    background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 12%, transparent));
     color: var(--block-media-button-text, inherit);
     cursor: pointer;
   }
@@ -204,8 +216,8 @@
   .habit-row {
     border-radius: var(--block-border-radius, 16px);
     padding: 16px;
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.12));
-    background: var(--block-header-bg, rgba(12, 18, 30, 0.6));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 12%, transparent));
+    background: var(--block-header-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 6%, transparent));
     box-shadow: var(--block-shadow, none);
     display: grid;
     grid-template-columns: minmax(160px, 220px) 1fr auto;
@@ -238,8 +250,8 @@
   .day-button {
     border-radius: var(--block-control-radius, 10px);
     padding: 8px 6px;
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.15));
-    background: var(--block-media-button-bg, rgba(10, 14, 22, 0.6));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 15%, transparent));
+    background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 7%, transparent));
     color: var(--block-media-button-text, inherit);
     display: flex;
     flex-direction: column;
@@ -249,15 +261,15 @@
   }
 
   .day-button.done {
-    background: var(--block-accent-color, rgba(80, 200, 140, 0.25));
-    border-color: var(--block-accent-color, rgba(80, 200, 140, 0.6));
-    color: var(--block-accent-text, #ffffff);
+    background: var(--block-accent-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 28%, transparent));
+    border-color: var(--block-accent-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 55%, transparent));
+    color: var(--block-accent-text, var(--canvas-inner-bg, #000000));
   }
 
   .day-button.missed {
     background: transparent;
-    border-color: var(--block-focus-outline, rgba(230, 90, 90, 0.6));
-    color: var(--block-focus-outline, #ffffff);
+    border-color: var(--block-focus-outline, color-mix(in srgb, var(--mode-text-color, #ffffff) 45%, transparent));
+    color: var(--block-focus-outline, var(--mode-text-color, #ffffff));
   }
 
   .day-status {
@@ -268,8 +280,8 @@
   .habit-actions button {
     border-radius: var(--block-control-radius, 10px);
     padding: 8px 12px;
-    border: var(--block-border-width, 1px) solid var(--block-border-color, rgba(255, 255, 255, 0.18));
-    background: var(--block-media-button-bg, rgba(24, 32, 50, 0.7));
+    border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 18%, transparent));
+    background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 10%, transparent));
     color: var(--block-media-button-text, inherit);
     cursor: pointer;
   }
@@ -280,7 +292,7 @@
     border-radius: 12px;
     border-width: var(--block-border-width, 1px);
     border-style: dashed;
-    border-color: var(--block-border-color, rgba(255, 255, 255, 0.2));
+    border-color: var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
   }
 </style>
 

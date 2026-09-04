@@ -21,16 +21,42 @@ service firebase.storage {
 
     // A ceiling so a compromised or scripted client can't park unbounded data
     // in the bucket. Comfortably above the 100MB limit the app itself enforces
-    // on video.
+    // on video. This bounds one upload; storageFull below bounds the total.
     function withinSizeLimit() {
       return request.resource.size < 120 * 1024 * 1024;
     }
 
+    // Set as a custom claim by trackStorageUpload in functions/index.js once
+    // an account's stored bytes pass its plan's limit, and cleared again when
+    // deletes bring it back under. These rules cannot read the running total
+    // themselves — Storage rules can query Firestore but not the Realtime
+    // Database, where the counter lives — so the answer is carried on the
+    // user's own token instead.
+    //
+    // The claim is absent rather than false when an account is under its
+    // limit, so this must read as true for a token that has never carried it.
+    //
+    // The membership check is not defensive padding, it is the whole thing:
+    // reading a claim that is not present throws (`Property storageFull is
+    // undefined on object`) rather than returning null, and a rule that
+    // throws denies. Written as a bare `token.storageFull != true` this
+    // clause rejects every upload from every account under its limit — which
+    // is all of them.
+    function notOverQuota() {
+      return !('storageFull' in request.auth.token)
+        || request.auth.token.storageFull != true;
+    }
+
     match /users/{uid}/{allPaths=**} {
       allow read: if isOwner(uid);
+
       // `create, update` rather than `write`, because `write` also covers
       // delete — where request.resource is null and the size check would throw.
-      allow create, update: if isOwner(uid) && withinSizeLimit();
+      allow create, update: if isOwner(uid) && withinSizeLimit() && notOverQuota();
+
+      // Deliberately not subject to notOverQuota. Deleting is the only way out
+      // of a full account, and gating it behind the quota would leave someone
+      // who filled their storage permanently unable to empty it.
       allow delete: if isOwner(uid);
     }
 

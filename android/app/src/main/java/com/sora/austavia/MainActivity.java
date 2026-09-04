@@ -1,4 +1,4 @@
-package com.sora.arial;
+package com.sora.austavia;
 
 import com.getcapacitor.BridgeActivity;
 

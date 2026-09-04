@@ -26,8 +26,14 @@
     saveRemoteFile,
     isSyncableFileId,
     subscribeRemoteIndex,
-    checkSyncCompatibility
+    checkSyncCompatibility,
+    loadRemoteThemes,
+    saveRemoteTheme,
+    deleteRemoteTheme,
+    sweepOrphanBlockAttachments,
+    subscribeStorageUsage
   } from './firebaseClient.js';
+  import { reconcileThemes } from './utils/themeSync.js';
   import {
     CONTROL_COLOR_DEFAULTS,
     BLOCK_THEME_DEFAULTS,
@@ -54,6 +60,12 @@
   // Sync writes down what it decided, so a loop can be read back instead of
   // guessed at. See utils/syncLog.js.
   import { logSync, describeDifference } from './utils/syncLog.js';
+  // How long a typing save waits, and the ceiling that stops it waiting for
+  // ever. See utils/saveScheduling.js.
+  import { nextSaveDelay } from './utils/saveScheduling.js';
+  // Turns an SDK failure into something a person can act on. See
+  // utils/syncErrors.js.
+  import { explainSyncFailure } from './utils/syncErrors.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -859,6 +871,11 @@
   function persistCustomThemes(themes) {
     if (typeof localStorage === 'undefined') return;
     try {
+      // updatedAt and syncedAt are kept because both survive a restart or they
+      // are worthless. updatedAt is what settles which of two devices' copies
+      // is newer; syncedAt is what tells this device it has seen a theme in
+      // the cloud, which is the only thing separating a theme deleted on
+      // another device from one made here and never uploaded.
       const serializable = themes.map(({
         id,
         name,
@@ -866,7 +883,9 @@
         controlColors,
         blockTheme,
         previewBg,
-        createdAt
+        createdAt,
+        updatedAt,
+        syncedAt
       }) => ({
         id,
         name,
@@ -874,7 +893,9 @@
         controlColors,
         blockTheme,
         previewBg,
-        createdAt
+        createdAt,
+        updatedAt,
+        syncedAt
       }));
       localStorage.setItem(
         CUSTOM_THEMES_STORAGE_KEY,
@@ -947,6 +968,7 @@
       blockTheme: payload.blockTheme,
       previewBg: payload.previewBg,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       isCustom: true
     };
   }
@@ -1452,6 +1474,83 @@
     selectedThemeId = CUSTOM_THEME_ID;
   }
 
+  // ── Theme sync ──────────────────────────────────────────────────────────
+  //
+  // Local always comes first and never waits on the network: a theme is saved
+  // to this device, and the cloud is told afterwards. If that fails, or there
+  // is no signed-in account, nothing is lost and nothing is blocked — the
+  // theme is still there, and the next sign-in will push it, because a theme
+  // with no syncedAt is one the cloud has never seen.
+
+  function markThemeSynced(themeId, updatedAt) {
+    const index = customThemes.findIndex(theme => theme.id === themeId);
+    if (index === -1) return;
+
+    const updated = { ...customThemes[index], updatedAt, syncedAt: Date.now() };
+    customThemes = [
+      ...customThemes.slice(0, index),
+      updated,
+      ...customThemes.slice(index + 1)
+    ];
+    persistCustomThemes(customThemes);
+  }
+
+  async function pushThemeToCloud(theme) {
+    if (!firebaseReady || !authUser || !theme) return;
+
+    try {
+      const saved = await saveRemoteTheme(theme);
+      if (saved) markThemeSynced(theme.id, saved.updatedAt);
+    } catch (error) {
+      console.warn('Could not sync this theme to the cloud:', error);
+    }
+  }
+
+  async function removeThemeFromCloud(themeId) {
+    if (!firebaseReady || !authUser || !themeId) return;
+
+    try {
+      await deleteRemoteTheme(themeId);
+    } catch (error) {
+      console.warn('Could not remove this theme from the cloud:', error);
+    }
+  }
+
+  // Runs on every sign-in rather than once, because it is a reconcile and not
+  // a migration: what it does with a theme depends on whether this device has
+  // ever seen that theme in the cloud, so running it again is safe and running
+  // it again is how a second device catches up.
+  async function syncThemesWithCloud() {
+    if (!firebaseReady || !authUser) return;
+
+    try {
+      const remote = await loadRemoteThemes();
+      const { themes, toUpload } = reconcileThemes(customThemes, remote);
+
+      const now = Date.now();
+      const remoteIds = new Set(remote.map(theme => theme.id));
+      customThemes = themes.map(theme =>
+        remoteIds.has(theme.id) ? { ...theme, syncedAt: now } : theme
+      );
+      persistCustomThemes(customThemes);
+
+      for (const theme of toUpload) {
+        await pushThemeToCloud(theme);
+      }
+
+      // A theme the reconcile dropped may have been the one on screen.
+      if (
+        selectedThemeId !== CUSTOM_THEME_ID
+        && !availableThemes.some(theme => theme.id === selectedThemeId)
+        && STYLE_PRESETS.length
+      ) {
+        applyThemePreset(STYLE_PRESETS[0]);
+      }
+    } catch (error) {
+      console.warn('Could not sync themes with the cloud:', error);
+    }
+  }
+
   function handleAdvancedThemeSave(event) {
     const payload = normalizeThemePayload(event.detail || {});
     if (!payload) return;
@@ -1461,6 +1560,7 @@
 
     customThemes = [...customThemes, newTheme];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(newTheme);
 
     applyThemePreset(newTheme);
 
@@ -1481,7 +1581,8 @@
     const existing = customThemes[index];
     const updatedTheme = {
       ...existing,
-      ...payload
+      ...payload,
+      updatedAt: Date.now()
     };
 
     customThemes = [
@@ -1490,6 +1591,7 @@
       ...customThemes.slice(index + 1)
     ];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(updatedTheme);
 
     applyThemePreset(updatedTheme);
     showAdvancedCssPage = false;
@@ -1504,6 +1606,7 @@
 
     customThemes = customThemes.filter(theme => theme.id !== id);
     persistCustomThemes(customThemes);
+    removeThemeFromCloud(id);
 
     if (selectedThemeId === id) {
       const fallback = customThemes[customThemes.length - 1] || STYLE_PRESETS[0] || null;
@@ -1531,6 +1634,7 @@
 
     customThemes = [...customThemes, newTheme];
     persistCustomThemes(customThemes);
+    pushThemeToCloud(newTheme);
 
     applyThemePreset(newTheme);
     showAdvancedCssPage = false;
@@ -1741,6 +1845,9 @@
   let savedList = [];
   let firebaseReady = isFirebaseConfigured();
   let authUser = null;
+  // The account's stored-byte record, streamed from storage/{uid}. Null until
+  // someone signs in and the first snapshot arrives.
+  let storageUsage = null;
   let uploadInProgress = false;
   let downloadInProgress = false;
   let fileInputRef;
@@ -1849,6 +1956,8 @@
   let cloudSyncMemoryByFile = loadCloudSyncMemory();
   let autoSyncEnabled = loadAutoSyncEnabled();
   let autoSyncUploadIntervalId = null;
+  // Downloads used to have no equivalent. See startAutoSyncDownloadBackstop.
+  let autoSyncDownloadIntervalId = null;
   let stopRemoteIndexWatch = () => {};
   let autoSyncDirty = false;
   // Per file, not a single joined string - lets the upload tick re-sync only
@@ -1866,10 +1975,30 @@
     persistCloudSyncMemory(cloudSyncMemoryByFile);
   }
 
+  // Set when a block is deleted, so the sweep below only runs on a save that
+  // could have orphaned something. Sweeping every save would mean listing
+  // storage every few seconds while someone types, for an answer that is
+  // almost always "nothing to do".
+  let blocksWereDeleted = false;
+
+  // Runs after the save, never before it, and never allowed to fail it: a
+  // leftover upload is a smaller problem than a note that would not save.
+  async function sweepDeletedBlockAttachments(fileName) {
+    if (!blocksWereDeleted || !firebaseReady || !authUser) return;
+    blocksWereDeleted = false;
+
+    try {
+      await sweepOrphanBlockAttachments(fileName, blocks.map(block => block.id));
+    } catch (error) {
+      console.warn('Could not remove attachments for deleted blocks:', error);
+    }
+  }
+
   async function saveRemoteFileWithMemory(fileName, payload, options = {}) {
     const result = await saveRemoteFile(fileName, payload, options);
     const syncedAt = Date.now();
     rememberCloudSyncForFile(fileName, syncedAt);
+    await sweepDeletedBlockAttachments(fileName);
     return result;
   }
 
@@ -1907,6 +2036,20 @@
   let _saveInFlight = false;
   let _pendingSave = null;       // latest payload waiting to run
   let _debounceTimer = null;     // for non-critical (typing) saves
+  // When the current run of unsaved changes began. The deadline in
+  // nextSaveDelay is measured from this and never moves, so no amount of
+  // continued typing can hold a write off indefinitely.
+  let _firstQueuedAt = 0;
+
+  function flushPendingSave() {
+    _debounceTimer = null;
+    _firstQueuedAt = 0;
+
+    if (!_pendingSave) return;
+    const payload = _pendingSave;
+    _pendingSave = null;
+    _runSave(payload);
+  }
 
   async function persistAutosave(blocksToPersist, ordersToPersist = modeOrders, settingsToPersist = modeSettings, { immediate = false } = {}) {
     // No folder open — a fresh install, or the last one was just deleted.
@@ -1922,23 +2065,28 @@
     };
 
     if (!immediate) {
-      // Debounce: replace any queued save, schedule flush
+      // Replace whatever was queued — only the newest state is worth writing —
+      // and restart the quiet window. Restarting is the point: the previous
+      // version armed a timer on the first keystroke and then returned early on
+      // every one after it, which is a 300ms throttle rather than a debounce,
+      // and wrote the whole folder that often for as long as typing continued.
       _pendingSave = payload;
-      if (_debounceTimer) return;
-      _debounceTimer = setTimeout(() => {
-        _debounceTimer = null;
-        if (_pendingSave) {
-          const p = _pendingSave;
-          _pendingSave = null;
-          _runSave(p);
-        }
-      }, 300);
+
+      const now = Date.now();
+      if (!_firstQueuedAt) _firstQueuedAt = now;
+
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(
+        flushPendingSave,
+        nextSaveDelay({ now, firstQueuedAt: _firstQueuedAt })
+      );
       return;
     }
 
     // Immediate: flush debounce timer, run (or queue behind in-flight save)
     clearTimeout(_debounceTimer);
     _debounceTimer = null;
+    _firstQueuedAt = 0;
     _pendingSave = null;
     await _runSave(payload);
   }
@@ -2508,11 +2656,27 @@
       const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
       if (!blob) throw new Error('The image came back empty.');
 
+      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const name = `${currentSaveName || 'austavia'}-${mode}-${stamp}.png`;
+
+      // Same reasoning as saving a picture from the lightbox: on a phone a
+      // download lands somewhere the gallery does not index, so the screenshot
+      // exists and is nowhere to be found. The system sheet offers Photos.
+      const file = new File([blob], name, { type: 'image/png' });
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file] });
+          return;
+        } catch (error) {
+          if (error?.name === 'AbortError') return; // dismissed on purpose
+          console.warn('Sharing the screenshot failed, saving it instead:', error);
+        }
+      }
+
       const url = URL.createObjectURL(blob);
       const link = document.createElement('a');
-      const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
       link.href = url;
-      link.download = `${currentSaveName || 'arial'}-${mode}-${stamp}.png`;
+      link.download = name;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -2551,6 +2715,10 @@
     if (deletingBlock?.type === 'image') {
       markCloudAttachmentDirty();
     }
+    // Any block can carry an upload, not just an image one — a picture pasted
+    // into written text is stored the same way — so every deletion arms the
+    // sweep rather than only the obvious ones.
+    blocksWereDeleted = true;
     pushHistory(blocks, modeOrders);
   }
 
@@ -3271,6 +3439,50 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
 
   $: autoSyncEnabled, firebaseReady, authUser, refreshRemoteIndexWatch();
 
+  // Downloads were driven by that subscription and by nothing else, while
+  // uploads had a ten-second timer behind them. One listener that is not
+  // connected — a phone with the app in the background, a socket dropped, wifi
+  // handed over to mobile data — and this device never hears that anything
+  // changed. Not late: never, until something else happens to wake it. The
+  // other device meanwhile uploads perfectly and its log says so, which is what
+  // makes it look like the cloud has the changes and is refusing to hand them
+  // over.
+  //
+  // Thirty seconds rather than ten, because the subscription is still the fast
+  // path and this only has to catch what it misses. A tick that finds nothing
+  // reads the index and stops there — pullRemoteUpdatesIfNeeded compares a
+  // fingerprint before it touches a single folder.
+  function startAutoSyncDownloadBackstop() {
+    if (autoSyncDownloadIntervalId !== null) return;
+
+    autoSyncDownloadIntervalId = window.setInterval(() => {
+      pullRemoteUpdatesIfNeeded().catch(error => {
+        console.error('Auto sync download backstop failed:', error);
+      });
+    }, 30_000);
+  }
+
+  // Coming back to the app is the moment a phone is most likely to be holding a
+  // dead subscription, and the moment someone is most likely to be looking for
+  // the note they wrote on the other device. Re-attach the listener and ask
+  // once, rather than waiting up to another thirty seconds.
+  function handleVisibilityForSync() {
+    // Leaving is the last safe moment to write. A typing save can now sit for
+    // up to SAVE_MAX_WAIT_MS, and on a phone "hidden" is very often the last
+    // thing that happens before the app is killed outright, so the queued
+    // change has to go to disk here rather than wait out a timer that may never
+    // fire.
+    if (document.visibilityState !== 'visible') {
+      flushPendingSave();
+      return;
+    }
+
+    refreshRemoteIndexWatch();
+    pullRemoteUpdatesIfNeeded().catch(error => {
+      console.error('Auto sync download on resume failed:', error);
+    });
+  }
+
   async function autoSyncUploadTick(options = {}) {
     if (!autoSyncEnabled || !firebaseReady || !authUser || uploadInProgress || cloudBootstrapInProgress) return;
     const force = options.force === true;
@@ -3323,7 +3535,10 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     }
     if (failures.length) {
       const [{ fileName, error }] = failures;
-      const detail = error?.message || String(error || 'unknown error');
+      // The account's own record is passed in because the error cannot tell
+      // "you are out of space" from "something else refused this" — both
+      // arrive as an identical storage/unauthorized.
+      const detail = explainSyncFailure(error, { storageUsage });
       syncFailureNotice = failures.length > 1
         ? `${failures.length} folders could not sync. "${fileName}": ${detail}`
         : `"${fileName}" could not sync: ${detail}`;
@@ -3751,6 +3966,9 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   }
 
   let stopAuthListener = () => {};
+  // Torn down and re-attached on every auth change, so one account's figures
+  // can never be left on screen for the next person to sign in.
+  let stopStorageUsageListener = null;
 
   onMount(async () => {
     Pc = window.innerWidth > MOBILE_BREAKPOINT;
@@ -3776,6 +3994,20 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     if (firebaseReady) {
       stopAuthListener = onAuthStateChange(user => {
         authUser = user;
+        // Signing in is the moment this device's themes and the account's
+        // themes need to agree. Not awaited: sync is a background nicety and
+        // must never hold up the app starting.
+        if (user) syncThemesWithCloud();
+
+        stopStorageUsageListener?.();
+        stopStorageUsageListener = null;
+        storageUsage = null;
+
+        if (user) {
+          stopStorageUsageListener = subscribeStorageUsage(usage => {
+            storageUsage = usage;
+          });
+        }
       });
       checkSyncCompatibility()
         .then(result => {
@@ -3879,6 +4111,11 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       });
     }, 10_000);
 
+    startAutoSyncDownloadBackstop();
+    document.addEventListener('visibilitychange', handleVisibilityForSync);
+    // Closing the tab or window is the other last-safe-moment.
+    window.addEventListener('pagehide', flushPendingSave);
+
     autoSyncUploadTick().catch(error => {
       console.error('Initial auto sync upload tick failed:', error);
     });
@@ -3894,10 +4131,17 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     controlsResizeObserver?.disconnect();
     observedControlsEl = null;
     stopAuthListener?.();
+    stopStorageUsageListener?.();
     stopRemoteIndexWatch();
+    document.removeEventListener('visibilitychange', handleVisibilityForSync);
+    window.removeEventListener('pagehide', flushPendingSave);
     if (autoSyncUploadIntervalId !== null) {
       window.clearInterval(autoSyncUploadIntervalId);
       autoSyncUploadIntervalId = null;
+    }
+    if (autoSyncDownloadIntervalId !== null) {
+      window.clearInterval(autoSyncDownloadIntervalId);
+      autoSyncDownloadIntervalId = null;
     }
     if (deferredLastSaveTimer !== null) {
       window.clearTimeout(deferredLastSaveTimer);
@@ -4197,7 +4441,12 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   justify-content: center;
   gap: 8px;
   flex: 0 0 auto;
-  width: 26px;
+  /* Wide enough for the readout at its widest, which is "100". It used to be
+     26px, which fits "7" and not "100" — and a flex item's min-width is auto,
+     so the label quietly grew to fit its content instead of clipping it. The
+     slider is a fixed 14px and never moved; what widened as the volume went up
+     was the number underneath it. */
+  width: 36px;
   color: var(--dlg-btn-text, var(--dlg-text, #fff));
   cursor: pointer;
 }
@@ -4215,6 +4464,14 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
   opacity: 0.7;
   font-variant-numeric: tabular-nums;
   color: var(--dlg-btn-text, var(--dlg-text, #fff));
+}
+
+/* Reserves three digits whatever the number is, so the readout keeps the same
+   footprint from 0 to 100 and the icon beside it stops shuffling sideways.
+   tabular-nums above keeps the digits themselves from changing width. */
+.pp-vol-number {
+  min-width: 3ch;
+  text-align: right;
 }
 
 @media (max-width: 1024px) {
@@ -4632,7 +4889,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
               aria-label="Volume"
             />
             <span class="pp-vol-readout">
-              {Math.round(musicVolume * 100)}
+              <span class="pp-vol-number">{Math.round(musicVolume * 100)}</span>
               <PlayerIcon name={musicVolume === 0 ? 'mute' : 'volume'} size={13} />
             </span>
           </label>
@@ -4652,6 +4909,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     <div class="right-controls">
       <RightControls
         {savedList}
+        {storageUsage}
         {load}
         {deleteSave}
         {createNewFile}

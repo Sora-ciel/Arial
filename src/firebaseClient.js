@@ -7,6 +7,16 @@ import {
   findEmbeddedDataUrls,
   payloadCarriesDataUrl
 } from './utils/syncRules.js';
+// What may be written to themes/, and which of two copies of one theme wins.
+// See utils/themeSync.js.
+import {
+  isSyncableThemeId,
+  themeForSync,
+  themeFromSync
+} from './utils/themeSync.js';
+// Which stored attachments no longer belong to a block. See
+// utils/attachmentCleanup.js.
+import { orphanedAttachmentIds } from './utils/attachmentCleanup.js';
 
 
 export { firebaseConfig, firebaseSyncNamespace };
@@ -512,6 +522,134 @@ export async function deleteRemoteFile(fileId) {
   }
 
   return { fileId };
+}
+
+// Watches this account's stored-byte record.
+//
+// Push rather than poll, like the remote index: the server rewrites the whole
+// record on every upload and delete, so the app sees a new total the moment
+// one lands instead of on a timer. The node is readable by its owner and by
+// nobody else — database.rules.json grants storage/{uid} to that uid alone.
+export function subscribeStorageUsage(callback) {
+  let detach = () => {};
+  let cancelled = false;
+
+  getFirebaseContext()
+    .then(ctx => {
+      if (cancelled || !ctx) return;
+      const user = ctx.auth.currentUser;
+      if (!user) return;
+
+      const usageRef = ctx.dbApi.ref(ctx.db, `storage/${user.uid}`);
+      const unsubscribe = ctx.dbApi.onValue(
+        usageRef,
+        snapshot => callback(snapshot.exists() ? snapshot.val() : null),
+        error => console.warn('Storage usage subscription failed:', error)
+      );
+      detach = unsubscribe;
+    })
+    .catch(error => console.warn('Storage usage subscription failed:', error));
+
+  return () => {
+    cancelled = true;
+    detach();
+  };
+}
+
+// Removes the uploads left behind by blocks that no longer exist.
+//
+// Deleting an image block never removed its upload: attachments were only
+// cleaned up when a whole folder was deleted, so a picture taken out of a note
+// stayed in the bucket for good, invisible and charged for. Harmless while
+// storage was free; not harmless when storage is what is being sold, and
+// actively broken once a ceiling exists — deleting is the only way out of a
+// full account, and it did not give the space back.
+//
+// Compares against what storage actually holds rather than against deletions
+// remembered as they happened, because remembering is wrong in both
+// directions: an undo restores a block while the memory still says to delete
+// it, and a redo removes one again without the memory noticing.
+export async function sweepOrphanBlockAttachments(fileId, keepBlockIds = []) {
+  if (!isFirebaseConfigured()) return null;
+
+  // A blank fileId would make `attachments/`, whose trailing slash is
+  // stripped, and this function deletes what it is pointed at.
+  if (!isSyncableFileId(fileId)) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  const root = getStorageUserPath(user.uid, `attachments/${fileId}`);
+  const listing = await ctx.storageApi.listAll(ctx.storageApi.ref(ctx.storage, root));
+
+  const orphans = orphanedAttachmentIds(
+    listing.prefixes.map(prefix => prefix.name),
+    keepBlockIds
+  );
+
+  for (const blockId of orphans) {
+    await deleteStorageFolder(ctx, `${root}/${blockId}`);
+  }
+
+  return { removed: orphans };
+}
+
+// ── Custom themes ───────────────────────────────────────────────────────────
+//
+// One node per theme under themes/{themeId}, synced whole. A theme is looked
+// at as a whole or not at all, so there is nothing to gain from merging it a
+// field at a time and a great deal to lose — two devices could each end up
+// holding half of a theme nobody designed.
+//
+// Every id goes through isSyncableThemeId before it reaches a path. A blank
+// one would make `themes/`, whose trailing slash is stripped, and the write
+// would land on the node holding every theme and replace the lot — the same
+// way a blank folder name once threatened every folder.
+
+export async function loadRemoteThemes() {
+  if (!isFirebaseConfigured()) return [];
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  const snapshot = await ctx.dbApi.get(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, 'themes'))
+  );
+  if (!snapshot.exists()) return [];
+
+  return Object.values(snapshot.val() || {})
+    .map(themeFromSync)
+    .filter(Boolean);
+}
+
+export async function saveRemoteTheme(theme) {
+  if (!isFirebaseConfigured()) return null;
+
+  const payload = themeForSync(theme);
+  if (!payload) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  await ctx.dbApi.set(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `themes/${payload.id}`)),
+    payload
+  );
+
+  return payload;
+}
+
+export async function deleteRemoteTheme(themeId) {
+  if (!isFirebaseConfigured()) return null;
+  if (!isSyncableThemeId(themeId)) return null;
+
+  const ctx = await getFirebaseContext();
+  const user = requireUser(ctx.auth.currentUser);
+
+  await ctx.dbApi.remove(
+    ctx.dbApi.ref(ctx.db, getUserPath(user.uid, `themes/${themeId}`))
+  );
+
+  return { themeId };
 }
 
 export async function uploadAttachmentFromDataUrl(dataUrl, options = {}) {

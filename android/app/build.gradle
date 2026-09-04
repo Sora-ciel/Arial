@@ -8,14 +8,14 @@ if (hasKeystoreProperties) {
 }
 
 android {
-    namespace "com.sora.arial"
+    namespace "com.sora.austavia"
     compileSdk rootProject.ext.compileSdkVersion
     defaultConfig {
-        applicationId "com.sora.arial"
+        applicationId "com.sora.austavia"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 13
-        versionName "0.8.44"
+        versionCode 14
+        versionName "0.9.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

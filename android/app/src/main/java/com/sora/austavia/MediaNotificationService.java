@@ -1,4 +1,4 @@
-package com.sora.arial;
+package com.sora.austavia;
 
 import android.app.Notification;
 import android.app.NotificationChannel;
@@ -34,14 +34,14 @@ import androidx.core.app.NotificationCompat;
  */
 public class MediaNotificationService extends Service {
 
-    public static final String CHANNEL_ID = "arial_playback";
+    public static final String CHANNEL_ID = "austavia_playback";
     public static final int NOTIFICATION_ID = 4711;
 
-    public static final String ACTION_UPDATE = "com.sora.arial.UPDATE";
-    public static final String ACTION_PREVIOUS = "com.sora.arial.PREVIOUS";
-    public static final String ACTION_TOGGLE = "com.sora.arial.TOGGLE";
-    public static final String ACTION_NEXT = "com.sora.arial.NEXT";
-    public static final String ACTION_STOP = "com.sora.arial.STOP";
+    public static final String ACTION_UPDATE = "com.sora.austavia.UPDATE";
+    public static final String ACTION_PREVIOUS = "com.sora.austavia.PREVIOUS";
+    public static final String ACTION_TOGGLE = "com.sora.austavia.TOGGLE";
+    public static final String ACTION_NEXT = "com.sora.austavia.NEXT";
+    public static final String ACTION_STOP = "com.sora.austavia.STOP";
 
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_ARTIST = "artist";
@@ -66,7 +66,7 @@ public class MediaNotificationService extends Service {
         super.onCreate();
         createChannel();
 
-        session = new MediaSessionCompat(this, "ArialPlayback");
+        session = new MediaSessionCompat(this, "AustaviaPlayback");
         session.setCallback(new MediaSessionCompat.Callback() {
             @Override
             public void onPlay() { dispatch(ACTION_TOGGLE); }

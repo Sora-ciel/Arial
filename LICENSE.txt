@@ -1,12 +1,12 @@
 Arial
 
-Required Notice: Copyright 2025 Sora-ciel (https://github.com/Sora-ciel/Arial)
+Required Notice: Copyright 2025 Sora-ciel (https://github.com/Sora-ciel/Austavia)
 
 This software is source-available, not open source. You may read it, run it,
 copy it, change it and share it, for any purpose that is not commercial. Using
 it commercially — including inside a business — requires a separate licence
 from the copyright holder. To ask for one, open an issue at
-https://github.com/Sora-ciel/Arial/issues or contact Sora-ciel.
+https://github.com/Sora-ciel/Austavia/issues or contact Sora-ciel.
 
 Releases up to and including v0.8.44 were published under the MIT licence.
 Nothing here withdraws that: anyone who received those versions keeps the

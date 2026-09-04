@@ -13,6 +13,10 @@
               ".validate": false
             },
 
+            "plan": {
+              ".validate": false
+            },
+
             "files": {
               ".write": "auth !== null && auth.uid === $uid && root.child('sync/' + $ns + '/users/' + $uid + '/blocked').val() !== true",
               "$fileId": {
@@ -25,9 +29,97 @@
               "$fileId": {
                 ".validate": "newData.hasChildren(['fileId', 'updatedAt']) && newData.child('fileId').val() === $fileId && newData.child('updatedAt').isNumber()"
               }
+            },
+
+            "themes": {
+              ".write": "auth !== null && auth.uid === $uid && root.child('sync/' + $ns + '/users/' + $uid + '/blocked').val() !== true",
+              "$themeId": {
+                ".validate": "newData.hasChildren(['id', 'name', 'updatedAt'])",
+
+                "id": { ".validate": "newData.isString() && newData.val() === $themeId" },
+                "name": { ".validate": "newData.isString() && newData.val().length > 0 && newData.val().length <= 100" },
+                "description": { ".validate": "newData.isString() && newData.val().length <= 300" },
+                "previewBg": { ".validate": "newData.isString() && newData.val().length <= 200" },
+                "createdAt": { ".validate": "newData.isNumber()" },
+                "updatedAt": { ".validate": "newData.isNumber()" },
+
+                "controlColors": {
+                  "$group": {
+                    "$field": { ".validate": "newData.isString() && newData.val().length <= 200" }
+                  }
+                },
+
+                "blockTheme": {
+                  "$field": { ".validate": "newData.isString() && newData.val().length <= 200" }
+                },
+
+                "$other": { ".validate": false }
+              }
             }
           }
         }
+      }
+    },
+
+    "admins": {
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid"
+      }
+    },
+
+    "usage": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "storage": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+      "$uid": {
+        ".read": "auth !== null && auth.uid === $uid"
+      }
+    },
+
+    "activity": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "alerts": {
+      ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+    },
+
+    "monitoring": {
+      "config": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+        ".write": "auth !== null && root.child('admins').child(auth.uid).val() === true",
+        "recipient": {
+          ".validate": "newData.isString() && newData.val().matches(/^[^@ ]+@[^@ ]+[.][^@ ]+$/)"
+        },
+        "projectDailyByteAlert": {
+          ".validate": "newData.isNumber() && newData.val() >= 1048576"
+        },
+        "digestTopUsers": {
+          ".validate": "newData.isNumber() && newData.val() >= 1 && newData.val() <= 50"
+        },
+        "digestOnQuietDays": {
+          ".validate": "newData.isBoolean()"
+        },
+        "alertsEnabled": {
+          ".validate": "newData.isBoolean()"
+        },
+        "alertSteps": {
+          "$index": {
+            ".validate": "newData.isNumber() && newData.val() > 0 && newData.val() <= 1000"
+          }
+        },
+        "$other": {
+          ".validate": false
+        }
+      },
+      "status": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
+      },
+
+      "stats": {
+        ".read": "auth !== null && root.child('admins').child(auth.uid).val() === true"
       }
     }
   }

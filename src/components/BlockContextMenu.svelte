@@ -122,7 +122,7 @@
     position: fixed;
     z-index: 9100;
     min-width: 148px;
-    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - 16px);
     overflow-y: auto;
     background: #111111;
     border: 1px solid rgba(255, 255, 255, 0.12);

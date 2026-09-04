@@ -1,6 +1,6 @@
 {
-  "appId": "com.sora.arial",
-  "appName": "Arial",
+  "appId": "com.sora.austavia",
+  "appName": "Austavia",
   "webDir": "dist",
   "plugins": {
     "SocialLogin": {

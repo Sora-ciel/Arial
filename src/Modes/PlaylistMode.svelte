@@ -4,6 +4,7 @@
   import PlayerIcon from '../components/PlayerIcons.svelte';
   import ScrollingText from '../components/ScrollingText.svelte';
   import { ensureMusicCover, forgetCoverlessTrack } from '../utils/musicCovers.js';
+  import { tracksWithPendingWork } from '../utils/playlistMerge.js';
   import {
     readAudioTags,
     formatDuration,
@@ -41,7 +42,28 @@
     `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};` +
     ` --mode-text-color: ${modeTextColor};`;
 
-  $: tracks = Array.isArray(library?.tracks) ? library.tracks : [];
+  // What a run has produced but not yet committed.
+  //
+  // Showing a track and saving the library used to be the same act: the only
+  // way to put something on screen was updateLibrary, which rewrites the whole
+  // folder and pushes a sync. So an import committed once at the very end,
+  // which is correct for the saving and wrong for the looking — nothing was
+  // visible or playable until the last file had been copied, even though the
+  // first one was ready in a second.
+  //
+  // These two hold the same information before it has been saved, so the list
+  // can show progress while the commits stay exactly as rare as they were.
+  let addedNotYetCommitted = [];
+  let scanUpdatesNotYetCommitted = new Map();
+
+  // Merging is in utils/playlistMerge.js, where it can be tested: the ways it
+  // could go wrong — a track listed twice as a commit lands, or one deleted
+  // mid-scan coming back — are invisible until they happen to somebody.
+  $: tracks = tracksWithPendingWork(
+    library?.tracks,
+    addedNotYetCommitted,
+    scanUpdatesNotYetCommitted
+  );
   $: playlists = Array.isArray(library?.playlists) ? library.playlists : [];
 
   let selectedPlaylistId = null;
@@ -187,9 +209,13 @@
 
     for (let i = 0; i < files.length; i += 1) {
       const file = files[i];
-      // Repainting on every file costs more than the copy itself.
+      // Repainting on every file costs more than the copy itself, so the list
+      // catches up in the same rhythm the progress message does. The tracks
+      // themselves are pushed on every pass below; this is only how often the
+      // screen is told about them.
       if (i % 20 === 0) {
         busyMessage = `Adding ${i + 1} of ${files.length}…`;
+        addedNotYetCommitted = [...added];
         await new Promise(resolve => setTimeout(resolve, 0));
       }
 
@@ -212,7 +238,13 @@
     }
 
     const importedCount = added.length;
-    if (importedCount) updateLibrary({ ...library, tracks: [...tracks, ...added] });
+    if (importedCount) {
+      // `tracks` already includes the overlay, so the committed list is built
+      // from `library` to avoid folding the same additions in twice.
+      const committed = Array.isArray(library?.tracks) ? library.tracks : [];
+      updateLibrary({ ...library, tracks: [...committed, ...added] });
+    }
+    addedNotYetCommitted = [];
     await refreshAvailability();
     busyMessage = '';
 
@@ -255,6 +287,21 @@
       if (!sinceCommit) return;
       sinceCommit = 0;
       updateLibrary({ ...library, tracks: [...working.values()] });
+      // Committed, so the overlay has nothing left to add.
+      scanUpdatesNotYetCommitted = new Map();
+    };
+
+    // Tags were only visible when the library was committed, which is every
+    // fiftieth track — so a run under fifty showed nothing at all until it
+    // finished, and a longer one moved in blocks. Publishing the overlay more
+    // often puts each title and artist on screen as it is read, without making
+    // the saves any more frequent than they were.
+    const SHOW_SCANNED_EVERY = 5;
+    let sinceShown = 0;
+
+    const showProgress = () => {
+      sinceShown = 0;
+      scanUpdatesNotYetCommitted = new Map(working);
     };
 
     for (const track of targets) {
@@ -285,10 +332,12 @@
 
         working.set(track.id, merged);
         sinceCommit += 1;
+        sinceShown += 1;
       } catch (error) {
         console.warn('Could not read tags for a track:', error);
       }
 
+      if (sinceShown >= SHOW_SCANNED_EVERY) showProgress();
       if (sinceCommit >= SCAN_COMMIT_EVERY) commit();
 
       // Handing the thread back after every track, not every batch. Reading a
@@ -613,7 +662,7 @@
       const url = URL.createObjectURL(archive);
       const a = document.createElement('a');
       a.href = url;
-      a.download = 'arial-music.zip';
+      a.download = 'austavia-music.zip';
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

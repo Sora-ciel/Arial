@@ -22,8 +22,16 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# every env file, not just `.env` — `.env.staging` carries a second project's
+# config and the bare pattern would not have matched it
 .env
+.env.*
 .firebase/
+
+# emulator scratch: an ASCII temp dir Java can open a socket in, plus the
+# debug logs the emulators drop in the working directory
+.emulator-tmp/
+*-debug.log
 
 # packaged installers, staged for a GitHub release
 release/

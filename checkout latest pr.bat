@@ -2,7 +2,7 @@
 setlocal
 cd /d "%~dp0"
 
-set REPO=Sora-ciel/Arial
+set REPO=Sora-ciel/Austavia
 
 for /f "usebackq delims=" %%i in (`gh pr list --repo %REPO% --state open --limit 1 --json number --jq .[0].number`) do set "PR=%%i"
 
