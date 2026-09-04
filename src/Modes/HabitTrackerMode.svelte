@@ -1,5 +1,9 @@
 <script>
   import { onMount } from "svelte";
+  // The shared one, rather than the copy that used to live here: that copy did
+  // not understand 4- or 8-digit hex, so a theme using either fell through to
+  // light text and could put it on a light background.
+  import { getReadableTextColor } from "../utils/readableColor.js";
 
   export let modeLabels = {};
   export let activeMode = "default";
@@ -19,7 +23,11 @@
   };
 
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
-  $: modeTextColor = getReadableTextColor(canvasTheme.innerBg);
+  // The theme's own text colour first, and only a computed one when it has
+  // none. This mode used to always compute, so it ignored whatever the theme
+  // actually asked for and picked its own black or white — the one thing a
+  // theme is most obviously entitled to decide.
+  $: modeTextColor = canvasTheme.textColor || getReadableTextColor(canvasTheme.innerBg);
   // The styles below reach for the block theme's variables and fall back when
   // one does not resolve. That fallback is not a rare path here, it is the
   // usual one: `--block-header-bg` is declared on .app as `var(--bg)`, and
@@ -109,45 +117,6 @@
     }
     days = buildDays();
   });
-
-  function getReadableTextColor(color) {
-    if (!color) return "#f5f5f5";
-    const parsed = parseColor(color);
-    if (!parsed) return "#f5f5f5";
-    const [r, g, b] = parsed;
-    const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-    return luminance > 0.6 ? "#121212" : "#f5f5f5";
-  }
-
-  function parseColor(color) {
-    const trimmed = color.trim();
-    if (trimmed.startsWith("#")) {
-      const hex = trimmed.slice(1);
-      if (hex.length === 3) {
-        return [
-          parseInt(hex[0] + hex[0], 16),
-          parseInt(hex[1] + hex[1], 16),
-          parseInt(hex[2] + hex[2], 16)
-        ];
-      }
-      if (hex.length === 6) {
-        return [
-          parseInt(hex.slice(0, 2), 16),
-          parseInt(hex.slice(2, 4), 16),
-          parseInt(hex.slice(4, 6), 16)
-        ];
-      }
-    }
-    const rgbMatch = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
-    if (rgbMatch) {
-      return [
-        Number(rgbMatch[1]),
-        Number(rgbMatch[2]),
-        Number(rgbMatch[3])
-      ];
-    }
-    return null;
-  }
 </script>
 
 <style>
@@ -196,7 +165,7 @@
     border-radius: var(--block-control-radius, 8px);
     border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
     background: var(--block-header-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 8%, transparent));
-    color: var(--block-header-text, inherit);
+    color: inherit;
   }
 
   .habit-form button {
@@ -204,7 +173,7 @@
     border-radius: var(--block-control-radius, 8px);
     border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 20%, transparent));
     background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 12%, transparent));
-    color: var(--block-media-button-text, inherit);
+    color: inherit;
     cursor: pointer;
   }
 
@@ -252,7 +221,7 @@
     padding: 8px 6px;
     border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 15%, transparent));
     background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 7%, transparent));
-    color: var(--block-media-button-text, inherit);
+    color: inherit;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -282,7 +251,7 @@
     padding: 8px 12px;
     border: var(--block-border-width, 1px) solid var(--block-border-color, color-mix(in srgb, var(--mode-text-color, #ffffff) 18%, transparent));
     background: var(--block-media-button-bg, color-mix(in srgb, var(--mode-text-color, #ffffff) 10%, transparent));
-    color: var(--block-media-button-text, inherit);
+    color: inherit;
     cursor: pointer;
   }
 

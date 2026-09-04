@@ -2,7 +2,6 @@
   import { createEventDispatcher, onMount } from 'svelte';
   import { setCanvasScale, setCanvasRef } from '../canvasState.js';
   import ModeBackground from '../components/ModeBackground.svelte';
-  import { backgroundImageFor } from '../utils/modeBackground.js';
   import { MIN_CANVAS_WIDTH, MIN_ZOOM, MAX_ZOOM, getInitialCanvasScale } from '../utils/canvasFit.js';
   import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import TexteBlock from '../components/TexteBlock.svelte';
@@ -484,11 +483,6 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
-  // The board paints its own colour across the whole canvas, which would sit
-  // squarely on top of a wallpaper. When there is one, the board steps aside.
-  $: hasBackground = Boolean(
-    backgroundImageFor(backgroundSettings, { isMobile: isMobileViewport })
-  );
 
   // Opening another folder used to keep whatever zoom the last one was left
   // at. The component is not rebuilt when the folder changes — only its blocks
@@ -544,18 +538,31 @@
 
 
 
+/* The board paints nothing at all.
+ *
+ * It used to fill itself with the inner background, which put an opaque sheet
+ * between the viewport and everything behind it — so a wallpaper was covered
+ * up, and the canvas showed two colours meeting at the board's edge whenever
+ * the inner and outer ones differed at all.
+ *
+ * With the board transparent there is exactly one colour on the canvas, the
+ * outer one, and a wallpaper is seen whole rather than through a hole the
+ * shape of the board.
+ */
 .canvas-inner {
   position: absolute;
   inset: 0 auto auto 0;
   transform-origin: top left;
-  background: var(--canvas-inner-bg, #000000);
+  background: transparent;
 }
 
  .canvas-zoom-shell {
   position: relative;
   /* Above the wallpaper, which sits at the bottom of the viewport's stack. */
   z-index: 1;
-  background: var(--canvas-inner-bg, #000000);
+  /* Transparent for the same reason the board is: it is the same sheet, one
+     layer out. */
+  background: transparent;
 }
 
 /* Pinned to the canvas viewport and deliberately outside everything the zoom
@@ -636,7 +643,6 @@
         style:width={`${canvasWidth}px`}
         style:height={`${canvasHeight}px`}
         style:transform={`scale(${scale})`}
-        style:background={hasBackground ? 'transparent' : (canvasTheme.innerBg || defaultCanvasColors.innerBg)}
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
       {#each blocks as block (`${block.id}-${block._version || 0}`)}
