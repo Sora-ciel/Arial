@@ -10,6 +10,7 @@
   export let focusedBlockId = null;
   export let simpleNoteColumnCount = 2;
   export let singleNoteSettings = {};
+  export let canvasBackgroundSettings = {};
   export let colors = {};
   export let birthdayModeUnlocked = false;
   export let birthdayUnlockMessage = '';
@@ -65,6 +66,12 @@
 
   $: isSimpleNoteMode = Boolean(activeModeDefinition?.settings?.simpleColumns);
   $: isSingleNoteMode = Boolean(activeModeDefinition?.settings?.singleBackground);
+  // Canvas mode has the same wallpaper Single Note does, so it gets the same
+  // panel. Which settings object the panel writes to is the only difference,
+  // and that is what backgroundSettingsKey answers.
+  $: hasModeBackground = isSingleNoteMode || mode === "default";
+  $: backgroundSettingsKey = isSingleNoteMode ? "single" : "default";
+  $: backgroundSettings = isSingleNoteMode ? singleNoteSettings : canvasBackgroundSettings;
   $: availableAddBlockTypes = activeModeDefinition?.addBlockTypes || [];
   $: canAddBlock = (type) => availableAddBlockTypes.includes(type);
   $: addBlockDefinitions = getBlockDefinitions(availableAddBlockTypes);
@@ -145,14 +152,16 @@
   // <=1024px breakpoint (compactUI) the rest of the toolbar already uses.
   let bgPanelOpen = false;
   $: bgImageKey = compactUI ? 'backgroundImageMobile' : 'backgroundImage';
-  $: bgImage = singleNoteSettings?.[bgImageKey] || '';
-  $: bgOpacity = singleNoteSettings?.bgOpacity ?? 100;
-  $: bgBlur = singleNoteSettings?.bgBlur ?? 0;
-  $: bgLuminosity = singleNoteSettings?.bgLuminosity ?? 100;
-  $: bgSize = singleNoteSettings?.bgSize || 'cover';
+  // Read from and written to whichever mode is showing, so one panel serves
+  // both. Everything below is otherwise identical between them.
+  $: bgImage = backgroundSettings?.[bgImageKey] || '';
+  $: bgOpacity = backgroundSettings?.bgOpacity ?? 100;
+  $: bgBlur = backgroundSettings?.bgBlur ?? 0;
+  $: bgLuminosity = backgroundSettings?.bgLuminosity ?? 100;
+  $: bgSize = backgroundSettings?.bgSize || 'cover';
 
   function setBgSetting(patch) {
-    dispatch('modeSettingChange', { single: patch });
+    dispatch('modeSettingChange', { [backgroundSettingsKey]: patch });
   }
   function onBgFileChange(event) {
     const file = event.target?.files?.[0];
@@ -167,7 +176,7 @@
     // Clearing the slot is enough for an image the reader picked, but a
     // background the theme supplied isn't stored in the file at all — it has
     // to be opted out of, or it would reappear on the next render.
-    if (singleNoteSettings?.backgroundFromTheme) {
+    if (backgroundSettings?.backgroundFromTheme) {
       setBgSetting({ backgroundImage: '', backgroundImageMobile: '', bgThemeOptOut: true });
       return;
     }
@@ -834,7 +843,7 @@ onMount(() => {
   <!-- Controls -->
   <div
     class="left-controls {showMobileMenu ? 'show' : ''}"
-    class:bg-panel-open={isSingleNoteMode && bgPanelOpen}
+    class:bg-panel-open={hasModeBackground && bgPanelOpen}
     bind:this={menuRef}
   >
     <div class="mode-switcher mobile-only">
@@ -950,7 +959,7 @@ onMount(() => {
       </label>
     {/if}
 
-    {#if isSingleNoteMode}
+    {#if hasModeBackground}
       <div class="bg-settings-wrap">
         <button
           class:active={bgPanelOpen}

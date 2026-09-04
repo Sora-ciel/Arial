@@ -66,6 +66,8 @@
   // Turns an SDK failure into something a person can act on. See
   // utils/syncErrors.js.
   import { explainSyncFailure } from './utils/syncErrors.js';
+  // The wallpaper settings shared by Single Note and Canvas mode.
+  import { BACKGROUND_DEFAULTS, normalizeBackgroundSettings } from './utils/modeBackground.js';
   import { ensureMusicCover } from './utils/musicCovers.js';
   import {
     startBackgroundAudio,
@@ -410,17 +412,12 @@
     // Track metadata and playlists sync with the folder; the audio itself
     // stays on each device (see storage.js) and moves via export/import.
     playlist: { tracks: [], playlists: [] },
-    single: {
-      backgroundImage: '',
-      backgroundImageMobile: '',
-      bgOpacity: 100,
-      bgBlur: 0,
-      bgLuminosity: 100,
-      bgSize: 'cover',
-      // Set when the reader removes a background the theme supplied, so it
-      // stays removed for this file instead of coming straight back.
-      bgThemeOptOut: false
-    }
+    // Both wallpapers use the same shape, defined once in
+    // utils/modeBackground.js. Single Note had one first; Canvas mode now has
+    // the same one rather than a second implementation that drifts from it.
+    // `default` is Canvas mode's own id.
+    single: { ...BACKGROUND_DEFAULTS },
+    default: { ...BACKGROUND_DEFAULTS }
   };
 
   function readStoredBackground(value) {
@@ -432,10 +429,6 @@
     const incomingSimple = settings?.simple || {};
     const incomingTask = settings?.task || {};
     const incomingSingle = settings?.single || {};
-    const clampRange = (n, min, max, fallback) => {
-      const v = Number(n);
-      return Number.isFinite(v) ? Math.min(max, Math.max(min, v)) : fallback;
-    };
     return {
       ...DEFAULT_MODE_SETTINGS,
       simple: {
@@ -453,39 +446,18 @@
         tracks: Array.isArray(settings?.playlist?.tracks) ? settings.playlist.tracks : [],
         playlists: Array.isArray(settings?.playlist?.playlists) ? settings.playlist.playlists : []
       },
-      single: {
-        ...DEFAULT_MODE_SETTINGS.single,
-        ...incomingSingle,
-        // A theme's own wallpaper is layered on at render time and never
-        // belongs in a save. An earlier build of the Hato theme did write its
-        // path in, so those are dropped here — otherwise the stored copy
-        // outranks the theme, survives switching to another one, and turns
-        // into a dead image reference the day the theme is removed.
-        backgroundImage: readStoredBackground(incomingSingle.backgroundImage),
-        backgroundImageMobile: readStoredBackground(incomingSingle.backgroundImageMobile),
-        // 0-100: 100 shows the image fully opaque, 0 hides it. Saves from
-        // before 0.8.35 stored a 0-1 fraction instead and are scaled up.
-        // Which format a save uses is read off bgLuminosity, which landed with
-        // the 0-100 rewrite — deciding by magnitude instead made a legitimate
-        // 1% jump to 100%, because the two formats overlap at exactly 1.
-        bgOpacity: (() => {
-          const raw = Number(incomingSingle.bgOpacity);
-          if (!Number.isFinite(raw)) return DEFAULT_MODE_SETTINGS.single.bgOpacity;
-          const legacyFraction =
-            incomingSingle.bgLuminosity === undefined && raw > 0 && raw <= 1;
-          return clampRange(
-            legacyFraction ? raw * 100 : raw,
-            0,
-            100,
-            DEFAULT_MODE_SETTINGS.single.bgOpacity
-          );
-        })(),
-        bgBlur: Math.max(0, Number(incomingSingle.bgBlur) || 0),
-        // Luminosity 0-200: 100 = untouched, below blends black in, above white.
-        bgLuminosity: clampRange(incomingSingle.bgLuminosity, 0, 200, DEFAULT_MODE_SETTINGS.single.bgLuminosity),
-        bgSize: incomingSingle.bgSize === 'contain' ? 'contain' : 'cover',
-        bgThemeOptOut: incomingSingle.bgThemeOptOut === true
-      }
+      // Both wallpapers go through one normaliser, so the awkward parts — the
+      // pre-0.8.35 opacity stored as a 0-1 fraction, all the clamping — are
+      // written once and cannot disagree between the two modes.
+      //
+      // readStoredBackground is handed in rather than known about. A theme's
+      // own wallpaper is layered on at render time and must never reach a
+      // save: an earlier build of the Hato theme wrote its path in, and a
+      // stored copy outranks the theme, survives switching away from it, and
+      // becomes a dead image reference the day that theme is removed. That is
+      // this app's rule, though, not the normaliser's.
+      single: normalizeBackgroundSettings(incomingSingle, { keepImage: readStoredBackground }),
+      default: normalizeBackgroundSettings(settings?.default, { keepImage: readStoredBackground })
     };
   }
 
@@ -1801,6 +1773,11 @@
   // be open when the theme was picked — and it leaves saves untouched, so
   // dropping the theme takes the background with it.
   $: singleNoteSettings = withThemeBackground(modeSettings.single, activeTheme);
+  // Canvas keeps whatever the folder itself set, and nothing else. A theme
+  // supplying a wallpaper is a Single Note arrangement; having one appear over
+  // the board the moment somebody changed theme would be a surprise rather
+  // than a feature.
+  $: canvasBackgroundSettings = modeSettings.default;
 
   function withThemeBackground(single, theme) {
     const themeBg = theme?.singleBackground;
@@ -3842,6 +3819,12 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       patch = { ...patch, task: { ...patch.task, addDirection: detail.taskAddDirection } };
     }
 
+    // Canvas mode's wallpaper, which uses the same settings shape as Single
+    // Note's and reaches here under that mode's own id.
+    if (detail.default && typeof detail.default === 'object') {
+      patch = { ...patch, default: { ...patch.default, ...detail.default } };
+    }
+
     if (detail.single && typeof detail.single === 'object') {
       patch = { ...patch, single: { ...patch.single, ...detail.single } };
     }
@@ -4750,6 +4733,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
       {mode}
       {simpleNoteColumnCount}
       {singleNoteSettings}
+      {canvasBackgroundSettings}
       modeLabels={MODE_LABELS}
       {blocks}
       {savedList}
@@ -4980,6 +4964,7 @@ ${failures.length} could not be uploaded: ${failures.map(f => f.fileName).join('
     <ModeArea
       {mode}
       openFolder={currentSaveName}
+      {canvasBackgroundSettings}
       blocks={modeOrderedBlocks}
       {simpleNoteColumnCount}
       {singleNoteSettings}

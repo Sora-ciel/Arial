@@ -23,6 +23,9 @@
   export let modeLabels = {};
   export let simpleNoteColumnCount = 2;
   export let singleNoteSettings = {};
+  // Canvas mode's wallpaper. Same shape as singleNoteSettings; see
+  // utils/modeBackground.js.
+  export let canvasBackgroundSettings = {};
   export let taskAddDirection = 'above';
   export let musicLibrary = { tracks: [], playlists: [] };
   export let nowPlayingId = null;
@@ -66,6 +69,7 @@
   <DefaultCanvasMode
     {mode}
     {openFolder}
+    backgroundSettings={canvasBackgroundSettings}
     {blocks}
     {focusedBlockId}
     bind:canvasRef

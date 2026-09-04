@@ -1,6 +1,8 @@
 <script>
   import { createEventDispatcher, onMount } from 'svelte';
   import { setCanvasScale, setCanvasRef } from '../canvasState.js';
+  import ModeBackground from '../components/ModeBackground.svelte';
+  import { backgroundImageFor } from '../utils/modeBackground.js';
   import { MIN_CANVAS_WIDTH, MIN_ZOOM, MAX_ZOOM, getInitialCanvasScale } from '../utils/canvasFit.js';
   import { htmlToText as htmlToPlainText } from '../utils/htmlToText.js';
   import TexteBlock from '../components/TexteBlock.svelte';
@@ -17,6 +19,10 @@
   // The folder currently open. Only used to notice when it changes, so the
   // zoom can go back to where a folder is meant to open at.
   export let openFolder = '';
+  // The folder's wallpaper, the same settings Single Note uses. Normalising is
+  // in utils/modeBackground.js and the drawing is ModeBackground.svelte, so the
+  // two modes cannot drift apart.
+  export let backgroundSettings = {};
   export let blocks;
 
   export let canvasRef;
@@ -33,6 +39,12 @@
   const MOBILE_BREAKPOINT = 1024;
   const BLOCK_MARGIN_BOTTOM = 20;
   const WHEEL_ZOOM_SENSITIVITY = 0.0015;
+
+  // Worked out here rather than passed in, the same way Single Note does it —
+  // a wallpaper can differ between a phone and a desktop, and the mode that
+  // draws it is the one that knows which screen it is on.
+  let isMobileViewport =
+    typeof window !== 'undefined' && window.innerWidth <= MOBILE_BREAKPOINT;
 
   let scale = 1;
   let lastDistance = null;
@@ -472,6 +484,12 @@
   $: canvasTheme = { ...defaultCanvasColors, ...(canvasColors || {}) };
   $: canvasCssVars = `--canvas-outer-bg: ${canvasTheme.outerBg}; --canvas-inner-bg: ${canvasTheme.innerBg};`;
 
+  // The board paints its own colour across the whole canvas, which would sit
+  // squarely on top of a wallpaper. When there is one, the board steps aside.
+  $: hasBackground = Boolean(
+    backgroundImageFor(backgroundSettings, { isMobile: isMobileViewport })
+  );
+
   // Opening another folder used to keep whatever zoom the last one was left
   // at. The component is not rebuilt when the folder changes — only its blocks
   // are replaced — so the one refit on mount had already happened, and a folder
@@ -489,7 +507,13 @@
   onMount(() => {
     refitCanvas();
 
+    const onResize = () => {
+      isMobileViewport = window.innerWidth <= MOBILE_BREAKPOINT;
+    };
+    window.addEventListener('resize', onResize);
+
     return () => {
+      window.removeEventListener('resize', onResize);
       stopRightClickPan();
     };
   });
@@ -529,7 +553,25 @@
 
  .canvas-zoom-shell {
   position: relative;
+  /* Above the wallpaper, which sits at the bottom of the viewport's stack. */
+  z-index: 1;
   background: var(--canvas-inner-bg, #000000);
+}
+
+/* Pinned to the canvas viewport and deliberately outside everything the zoom
+   transforms, so the wallpaper neither scales with the board nor scrolls with
+   it — it stays filling the screen the way Single Note's does. Clipped,
+   because the layer inside bleeds past its edges to hide the soft border a
+   blur would otherwise leave. */
+.canvas-bg-holder {
+  position: fixed;
+  top: var(--controls-height, 56px);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 0;
 }
 
 .canvas-content {
@@ -575,6 +617,15 @@
   on:mousedown={onMouseDown}
   on:contextmenu={onContextMenu}
 >
+    <!-- Fixed to the canvas viewport rather than placed on the board, which is
+         the whole point: the board is what the zoom scales, so a wallpaper
+         inside it would grow and shrink with every zoom step. Out here it
+         stays exactly where it is and keeps filling the screen, the way Single
+         Note's does. -->
+    <div class="canvas-bg-holder" aria-hidden="true">
+      <ModeBackground settings={backgroundSettings} isMobile={isMobileViewport} />
+    </div>
+
     <div
       class="canvas-zoom-shell"
       style:width={`${canvasWidth * scale}px`}
@@ -585,7 +636,7 @@
         style:width={`${canvasWidth}px`}
         style:height={`${canvasHeight}px`}
         style:transform={`scale(${scale})`}
-        style:background={canvasTheme.innerBg || defaultCanvasColors.innerBg}
+        style:background={hasBackground ? 'transparent' : (canvasTheme.innerBg || defaultCanvasColors.innerBg)}
       >
       <div class="canvas-content" style:transform={`translateX(${contentOffsetX}px)`}>
       {#each blocks as block (`${block.id}-${block._version || 0}`)}
