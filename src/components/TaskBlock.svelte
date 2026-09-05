@@ -405,7 +405,7 @@
     flex: 1 1 auto;
     border: 1px solid var(--text);
     border-radius: 8px;
-    background: var(--bg);
+    background: transparent;
     color: var(--text);
     padding: 6px 8px;
   }
@@ -417,7 +417,7 @@
   .task-input button {
     border: 1px solid var(--text);
     border-radius: 8px;
-    background: var(--bg);
+    background: transparent;
     color: var(--text);
     padding: 6px 10px;
     cursor: pointer;
@@ -433,6 +433,19 @@
     overflow-y: auto;
   }
 
+  /* Nothing in here repaints the block's own colour.
+   *
+   * A row, the new-task field and its button each filled themselves with
+   * var(--bg) — the same colour the block is already painting behind them. At
+   * full opacity that is invisible and harmless. Once a theme fades the block
+   * background it is neither: the block goes translucent and the rows stay
+   * solid, so a task list ends up a grid of opaque tiles floating on a
+   * see-through card.
+   *
+   * They are part of the block's background, so they let it show through and
+   * fade with it. Their shape comes from borders and spacing, not from a fill,
+   * which is why removing it changes nothing at 100%.
+   */
   .task-item {
     display: flex;
     align-items: center;
@@ -440,7 +453,7 @@
     gap: 6px;
     padding: 4px 6px;
     border-radius: 8px;
-    background: var(--bg);
+    background: transparent;
     border: 1px solid var(--text);
     box-sizing: border-box;
     transition: box-shadow 0.1s ease, opacity 0.1s ease;
@@ -480,7 +493,10 @@
     flex: 1;
     min-width: 0;
     border: 1px solid color-mix(in srgb, var(--text, #fff) 30%, transparent);
-    background: color-mix(in srgb, var(--text, #fff) 8%, var(--bg, #000));
+    /* A veil rather than a colour: 8% of the text colour over whatever the
+       block is, instead of 8% mixed into an opaque copy of it. It looks the
+       same at full opacity and fades with the block at any other. */
+    background: color-mix(in srgb, var(--text, #fff) 8%, transparent);
     color: var(--text, inherit);
     border-radius: 6px;
     padding: 5px 7px;
