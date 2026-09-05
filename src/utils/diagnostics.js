@@ -118,12 +118,30 @@ export function flagSuspicions(report) {
     }
   }
 
+  // Only the themes somebody made. The built-in ones ship as they were drawn —
+  // four of them give their headers a gradient on purpose — so reporting those
+  // as faults buries the one real finding under four that are working exactly
+  // as intended, and teaches the reader to skip this section.
   for (const theme of report.themes || []) {
+    if (!theme.custom) continue;
+    const where = `Custom theme "${theme.name}"`;
+
     if (theme.headerBg && theme.headerBg !== FOLLOWS_BLOCK) {
-      notes.push(
-        `Theme "${theme.name}"${theme.custom ? ' (custom)' : ''} pins its header background to ` +
-          `"${theme.headerBg}" — headers will not match bodies while it is active.`
-      );
+      notes.push(`${where} pins its header background to "${theme.headerBg}", so its headers will not match its bodies.`);
+    }
+
+    for (const [key, label] of [
+      ['bgOpacity', 'block background'],
+      ['headerOpacity', 'block header'],
+      ['textOpacity', 'text']
+    ]) {
+      const value = Number(theme[key]);
+      if (Number.isFinite(value) && value < 100) {
+        notes.push(
+          `${where} has its ${label} opacity at ${value}%` +
+            (value <= 25 ? ' — nearly see-through, so the canvas shows instead of the block.' : '.')
+        );
+      }
     }
   }
 

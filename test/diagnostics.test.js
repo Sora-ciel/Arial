@@ -174,8 +174,36 @@ test('a pinned header on a theme that is not active is still reported', () => {
       { id: 'mine', name: 'My theme', isCustom: true, blockTheme: { headerBg: '#221111' } }
     ]
   });
-  assert.ok(report.notes.some((n) => /My theme.*\(custom\).*pins its header/.test(n)));
+  assert.ok(report.notes.some((n) => /Custom theme "My theme" pins its header/.test(n)));
   assert.match(formatDiagnostics(report), /My theme \[custom\] — header #221111/);
+});
+
+// The real report: four built-in themes use gradient headers on purpose, and
+// burying the one genuine finding under them is how a reader learns to skip
+// this section.
+test('built-in themes are listed but never flagged', () => {
+  const report = buildDiagnostics({
+    themes: [
+      { id: 'aurora', name: 'Aurora Glass', blockTheme: { headerBg: 'linear-gradient(135deg, #082, #0e3)' } },
+      { id: 'paper', name: 'Paper Notebook', blockTheme: { headerBg: 'linear-gradient(120deg, #f9f, #f0e)' } }
+    ]
+  });
+  assert.deepEqual(report.notes, [], 'a theme shipped that way is not a fault');
+  assert.match(formatDiagnostics(report), /Aurora Glass — header linear-gradient/);
+});
+
+test('a custom theme left nearly see-through is called out', () => {
+  const report = buildDiagnostics({
+    themes: [
+      { id: 'copy', name: 'Custom theme Copy', isCustom: true,
+        blockTheme: { headerBg: FOLLOWS_BLOCK, bgOpacity: 6, headerOpacity: 15, textOpacity: 100 } }
+    ]
+  });
+  const notes = report.notes.join(' | ');
+  assert.match(notes, /block background opacity at 6%/);
+  assert.match(notes, /nearly see-through/);
+  assert.match(notes, /block header opacity at 15%/);
+  assert.ok(!/text opacity/.test(notes), 'a dial left at full is not worth a line');
 });
 
 test('themes are listed with their opacities', () => {
