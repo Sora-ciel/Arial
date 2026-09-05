@@ -214,3 +214,32 @@ test('themes are listed with their opacities', () => {
   );
   assert.match(text, /A — header var\(--bg\) · opacity 40%\/100%\/100%/);
 });
+
+// The bug the first two reports missed: the block measured correctly and
+// something else was painted on top of it.
+test('a layer painted over a block is reported, not the block underneath', () => {
+  const notes = flagSuspicions({
+    blockTheme: {},
+    blocks: {},
+    followTheme: {},
+    samples: [{
+      label: 'Text (cleantext)',
+      bodyBg: 'rgb(58, 29, 24)',
+      headerBg: 'rgb(58, 29, 24)',
+      coveredBy: 'tiptap-wrap rgb(29, 14, 12)'
+    }]
+  });
+  const joined = notes.join(' | ');
+  assert.match(joined, /has something painted over it: tiptap-wrap rgb\(29, 14, 12\)/);
+  assert.match(joined, /block itself is rgb\(58, 29, 24\)/);
+});
+
+test('a block with nothing painted over it raises nothing', () => {
+  const notes = flagSuspicions({
+    blockTheme: {},
+    blocks: {},
+    followTheme: {},
+    samples: [{ label: 'Text', bodyBg: 'rgb(58, 29, 24)', headerBg: 'rgb(58, 29, 24)', coveredBy: null }]
+  });
+  assert.deepEqual(notes, []);
+});

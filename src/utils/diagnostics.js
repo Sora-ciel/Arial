@@ -113,6 +113,12 @@ export function flagSuspicions(report) {
     if (sample.bodyBg && sample.headerBg && sample.bodyBg !== sample.headerBg) {
       notes.push(`Block "${sample.label || sample.id}": header ${sample.headerBg} does not match body ${sample.bodyBg}.`);
     }
+    if (sample.coveredBy) {
+      notes.push(
+        `Block "${sample.label || sample.id}" has something painted over it: ${sample.coveredBy}. ` +
+          `The block itself is ${sample.bodyBg}, so that is the colour actually on screen.`
+      );
+    }
     if (sample.bodyBg === 'rgba(0, 0, 0, 0)') {
       notes.push(`Block "${sample.label || sample.id}" has no background at all — the canvas shows through.`);
     }
@@ -243,7 +249,7 @@ export function formatDiagnostics(report) {
     lines.push('');
     lines.push('as drawn');
     for (const s of report.samples) {
-      lines.push(`  ${s.label || s.id}: body ${s.bodyBg} · header ${s.headerBg}`);
+      lines.push(`  ${s.label || s.id}: body ${s.bodyBg} · header ${s.headerBg}${s.coveredBy ? ` · covered by ${s.coveredBy}` : ''}`);
     }
   }
 

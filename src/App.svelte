@@ -1359,11 +1359,22 @@
       const header = el.querySelector('.header');
       const id = el.getAttribute('data-block-id') || `#${i + 1}`;
       const name = header?.querySelector('span')?.textContent?.trim() || 'block';
+      // What is painted *over* the block, not just the block. A text block's
+      // editor gave itself the canvas colour, so the root measured correctly,
+      // matched the header, and the report came back clean about a block that
+      // was visibly two colours. Whatever covers the content area is the thing
+      // being looked at.
+      const covering = [...el.children]
+        .filter(c => c !== header && !c.classList.contains('resize-handle'))
+        .map(c => ({ cls: c.className.toString().split(' ')[0], bg: getComputedStyle(c).backgroundColor }))
+        .find(c => c.bg !== 'rgba(0, 0, 0, 0)');
+
       return {
         id,
         label: `${name} (${typeOf.get(id) || 'unknown'})`,
         bodyBg: getComputedStyle(el).backgroundColor,
-        headerBg: header ? getComputedStyle(header).backgroundColor : '(no header)'
+        headerBg: header ? getComputedStyle(header).backgroundColor : '(no header)',
+        coveredBy: covering ? `${covering.cls} ${covering.bg}` : null
       };
     });
   }

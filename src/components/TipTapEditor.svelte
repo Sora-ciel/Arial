@@ -401,8 +401,25 @@
        browser hands the rest of the gesture to whatever is underneath, so
        scrolling to the end of the text carried on into the canvas. */
     overscroll-behavior: contain;
-    background: var(--active-note-bg, var(--canvas-inner-bg, #000));
-    color: var(--active-note-text, var(--mode-text-color, #fff));
+    /* The editor does not decide what it sits on.
+     *
+     * This used to fall back to the canvas colour, which is right in Single
+     * Note mode — where the note *is* the canvas — and wrong everywhere else:
+     * inside a block it painted the canvas over the block, so a text block's
+     * writing area came out the colour of the board while its header kept the
+     * block's own colour. Only text blocks showed it, because only they hold an
+     * editor; a music or image block was never affected.
+     *
+     * BlockShell did carry an override, but at the same specificity — two
+     * classes each — so which one won came down to the order the stylesheets
+     * happened to load. That is why it looked intermittent.
+     *
+     * Transparent and inherit instead: Single Note mode sets --active-note-bg
+     * and --active-note-text on every note it draws, so it is unaffected, and
+     * anywhere else the editor now shows the colours of whatever contains it.
+     */
+    background: var(--active-note-bg, transparent);
+    color: var(--active-note-text, inherit);
     box-sizing: border-box;
     font-family: Arial, Helvetica, sans-serif;
     font-size: 1.05rem;

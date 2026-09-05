@@ -289,9 +289,11 @@
     display: flex;
     gap: 4px;
   }
+  /* No background or colour here any more. Both were overrides of what the
+     editor imposed on itself, at the same specificity, so the winner depended
+     on stylesheet order — the editor defaults to transparent and inherit now,
+     and a block's own colours reach it the ordinary way. */
   :global(.note .tiptap-wrap) {
-    background: transparent;
-    color: var(--text);
     font-size: 1.1rem;
     font-weight: 500;
     font-family: var(--block-body-font, inherit);
