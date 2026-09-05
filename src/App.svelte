@@ -1340,13 +1340,28 @@
   // screen is the fact that settles a colour question, and it cannot be worked
   // out from the saved values alone — that was exactly the gap when a header
   // stopped matching its body.
-  function sampleDrawnBlocks(limit = 3) {
+  // Every block, whatever draws it. Text and music come from BlockShell as
+  // `.note`; task, image and embed still carry their own shells and their own
+  // root classes. Sampling only `.note` measured three blocks out of eight and
+  // pronounced the folder clean — the five it could not see were exactly the
+  // ones nobody had ruled out.
+  //
+  // Keyed on the attribute rather than those classes, because the classes are
+  // not unique: a music block's *body* is also `.player`, so a class list
+  // matched it twice and reported the inner half as a block of unknown type
+  // with no background. Only a root carries a block id.
+  const BLOCK_ROOTS = '[data-block-id]';
+
+  function sampleDrawnBlocks(limit = 10) {
     if (typeof document === 'undefined') return [];
-    return [...document.querySelectorAll('.note')].slice(0, limit).map((el, i) => {
+    const typeOf = new Map((blocks || []).map(b => [b.id, b.type]));
+    return [...document.querySelectorAll(BLOCK_ROOTS)].slice(0, limit).map((el, i) => {
       const header = el.querySelector('.header');
+      const id = el.getAttribute('data-block-id') || `#${i + 1}`;
+      const name = header?.querySelector('span')?.textContent?.trim() || 'block';
       return {
-        id: el.getAttribute('data-block-id') || `#${i + 1}`,
-        label: header?.querySelector('span')?.textContent?.trim() || 'block',
+        id,
+        label: `${name} (${typeOf.get(id) || 'unknown'})`,
         bodyBg: getComputedStyle(el).backgroundColor,
         headerBg: header ? getComputedStyle(header).backgroundColor : '(no header)'
       };
@@ -1381,6 +1396,7 @@
         allFolders: blocksFollowThemeAll
       },
       blocks,
+      themes: availableThemes,
       samples: sampleDrawnBlocks(),
       sync: {
         signedIn: Boolean(authUser),

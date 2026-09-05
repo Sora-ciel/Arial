@@ -118,11 +118,40 @@ export function flagSuspicions(report) {
     }
   }
 
+  for (const theme of report.themes || []) {
+    if (theme.headerBg && theme.headerBg !== FOLLOWS_BLOCK) {
+      notes.push(
+        `Theme "${theme.name}"${theme.custom ? ' (custom)' : ''} pins its header background to ` +
+          `"${theme.headerBg}" — headers will not match bodies while it is active.`
+      );
+    }
+  }
+
   if (report.sync?.lastError) notes.push(`Last sync error: ${report.sync.lastError}`);
 
   return notes;
 }
 
+/**
+ * The saved themes, reduced to the fields that cause colour complaints.
+ *
+ * A theme that pins its header only misbehaves while it is the active one, so
+ * a snapshot taken under a different theme shows nothing — and the report comes
+ * back clean about a problem the person is looking at. Listing every theme's
+ * header and opacities costs a few lines and answers "was it one of the others"
+ * without a second round trip.
+ */
+export function summariseThemes(themes = []) {
+  return (Array.isArray(themes) ? themes : []).map((theme) => ({
+    id: theme?.id,
+    name: theme?.name,
+    custom: Boolean(theme?.isCustom),
+    headerBg: theme?.blockTheme?.headerBg,
+    bgOpacity: theme?.blockTheme?.bgOpacity,
+    headerOpacity: theme?.blockTheme?.headerOpacity,
+    textOpacity: theme?.blockTheme?.textOpacity
+  }));
+}
 /** The snapshot, assembled from what the app knows about itself. */
 export function buildDiagnostics(input = {}) {
   const report = {
@@ -142,6 +171,7 @@ export function buildDiagnostics(input = {}) {
     canvas: input.canvas || {},
     followTheme: input.followTheme || {},
     blocks: summariseBlocks(input.blocks, input.activeColors),
+    themes: summariseThemes(input.themes),
     samples: input.samples || [],
     sync: input.sync || {},
     library: input.library || {}
@@ -196,6 +226,17 @@ export function formatDiagnostics(report) {
     lines.push('as drawn');
     for (const s of report.samples) {
       lines.push(`  ${s.label || s.id}: body ${s.bodyBg} · header ${s.headerBg}`);
+    }
+  }
+
+  if (report.themes?.length) {
+    lines.push('');
+    lines.push('themes saved');
+    for (const t of report.themes) {
+      lines.push(
+        `  ${t.name}${t.custom ? ' [custom]' : ''} — header ${t.headerBg ?? '(unset)'}` +
+          ` · opacity ${pct(t.bgOpacity)}/${pct(t.headerOpacity)}/${pct(t.textOpacity)}`
+      );
     }
   }
 

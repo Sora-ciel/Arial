@@ -162,3 +162,27 @@ test('an empty app still produces a readable report', () => {
   assert.match(text, /Austavia diagnostics/);
   assert.match(text, /blocks: 0/);
 });
+
+// A theme only misbehaves while it is active, so a snapshot taken under a
+// different one must still show what the others would do.
+test('a pinned header on a theme that is not active is still reported', () => {
+  const report = buildDiagnostics({
+    theme: { id: 'copper-lagoon', name: 'Copper Lagoon' },
+    blockTheme: { headerBg: FOLLOWS_BLOCK },
+    themes: [
+      { id: 'copper-lagoon', name: 'Copper Lagoon', blockTheme: { headerBg: FOLLOWS_BLOCK } },
+      { id: 'mine', name: 'My theme', isCustom: true, blockTheme: { headerBg: '#221111' } }
+    ]
+  });
+  assert.ok(report.notes.some((n) => /My theme.*\(custom\).*pins its header/.test(n)));
+  assert.match(formatDiagnostics(report), /My theme \[custom\] — header #221111/);
+});
+
+test('themes are listed with their opacities', () => {
+  const text = formatDiagnostics(
+    buildDiagnostics({
+      themes: [{ id: 'a', name: 'A', blockTheme: { headerBg: FOLLOWS_BLOCK, bgOpacity: 40, headerOpacity: 100, textOpacity: 100 } }]
+    })
+  );
+  assert.match(text, /A — header var\(--bg\) · opacity 40%\/100%\/100%/);
+});
